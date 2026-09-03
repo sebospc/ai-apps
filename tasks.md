@@ -3101,7 +3101,7 @@ Acceptance:
 
 What breaks for a developer if this does not exist: there is a catalog and no way to use it.
 
-### [x] U4. The catalog on screen, read-only — `PENDING_SHA`
+### [x] U4. The catalog on screen, read-only — `3d46094`
 
 One page. It shows what is in the catalog and does nothing else — no generating, no authoring, per
 the design.

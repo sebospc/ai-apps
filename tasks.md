@@ -3076,7 +3076,7 @@ Acceptance:
 What breaks for a developer if this does not exist: the catalog is empty, so the skill has nothing
 to apply and the format is a guess nobody tested.
 
-### [x] U3. The skill: a developer asks for a feature and gets one — `PENDING_SHA`
+### [x] U3. The skill: a developer asks for a feature and gets one — `97a9c3a`
 
 The whole product surface, from the developer's side. `plugin/skills/apply/SKILL.md` plus the two
 CLI commands it drives.

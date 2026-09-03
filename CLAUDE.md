@@ -339,6 +339,7 @@ SMITH_REFRESH_BASELINE=1 uv run pytest -k analyzer_precision -s  # re-pin what t
 node --test plugin/test                         # plugin CLI tests
 node scripts/rehearse.mjs                       # the finding lifecycle, end to end (needs the API up)
 node scripts/walk_skill.mjs [claude|cursor]     # an agent walks the skill in a real session (needs the API up)
+uv run python scripts/seed_catalog.py           # load catalog/*.yaml into the catalog table
 uv run alembic upgrade head                     # schema (bootstrap does this for you)
 uv run uvicorn smith.main:app --reload          # API on :8000
 cd web && npm run dev                           # UI on :3100 (needs Node >= 20.9)

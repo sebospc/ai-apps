@@ -1,6 +1,6 @@
 """Alembic environment.
 
-Both contexts' adapter modules are imported for their side effect: a table only appears in
+Every context's adapter module is imported for its side effect: a table only appears in
 `Base.metadata` once the module declaring it has been imported, and autogenerate compares against
 that metadata. Miss one and alembic will happily write a revision dropping every table it owns.
 """
@@ -11,6 +11,7 @@ from alembic import context
 from sqlalchemy import create_engine
 
 import smith.auth.postgres  # noqa: F401
+import smith.pergamon.adapters.postgres  # noqa: F401
 import smith.reviewer.adapters.postgres  # noqa: F401
 from smith.db import Base
 from smith.settings import Settings

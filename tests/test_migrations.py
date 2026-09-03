@@ -47,7 +47,15 @@ def test_migrations_build_the_schema_and_stay_in_step_with_the_models() -> None:
     engine = create_engine(url)
     try:
         with engine.connect() as connection:
-            for table in ("users", "projects", "memberships", "api_keys", "reviews", "findings"):
+            for table in (
+                "users",
+                "projects",
+                "memberships",
+                "api_keys",
+                "reviews",
+                "findings",
+                "catalog_entries",
+            ):
                 connection.execute(text(f"SELECT 1 FROM {table}"))
     finally:
         engine.dispose()

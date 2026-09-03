@@ -22,6 +22,8 @@ from smith.auth.postgres import (
 from smith.auth.security import Argon2Hasher
 from smith.auth.service import AuthService
 from smith.db import make_engine, make_session_factory, unit_of_work
+from smith.pergamon.adapters.postgres import SqlCatalogStore
+from smith.pergamon.service import CatalogService
 from smith.reviewer.adapters.depcruise import DependencyCruiserAnalyzer
 from smith.reviewer.adapters.eslint import EslintAnalyzer
 from smith.reviewer.adapters.pmd import PmdAnalyzer
@@ -45,6 +47,7 @@ class Services:
 
     auth: AuthService
     reviewer: ReviewService
+    catalog: CatalogService
     _rules: RuleSource
 
     def rulesets(self) -> list[str]:
@@ -87,7 +90,8 @@ class Container:
             dispositions=SqlDispositionStore(session),
             max_diff_bytes=self.settings.max_diff_bytes,
         )
-        return Services(auth=auth, reviewer=reviewer, _rules=self._rules)
+        catalog = CatalogService(store=SqlCatalogStore(session))
+        return Services(auth=auth, reviewer=reviewer, catalog=catalog, _rules=self._rules)
 
     @contextmanager
     def transaction(self) -> Iterator[tuple[Session, Services]]:

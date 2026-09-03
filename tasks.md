@@ -3025,7 +3025,7 @@ The entries are not invented. The previous Pergamon packaged thirteen features u
 `~/Documents/commerce/projects/features/` and `features-best-run/`, each with a `feature.json`.
 Those files are the input. They are outside this repository and are read, never written.
 
-### [ ] U1. The catalog: one table, two endpoints, and a way in
+### [x] U1. The catalog: one table, two endpoints, and a way in
 
 Nothing exists yet. This is the floor everything else stands on.
 
@@ -4441,3 +4441,34 @@ Append here when a task forces a decision. One line each: what was decided and w
   `properties-duplicate-key` — a rule this task never touched — and the suite failed naming that
   rule and its fixture; restored, green. The corpus reads **105 findings, 0 without a suggestion**,
   down from 24, with the count unmoved and the baseline untouched.
+- 2026-09-03 — U1: an entry has to carry `id`, `title` and `about` and nothing else. Everything past
+  those three lands in a `detail` JSON column exactly as written, so U2 can settle the format —
+  `ask`, `build`, `good`, the fixed integration layer — by writing three real entries, without a
+  migration or a rewrite of the validator. The server does not interpret `detail`: an entry is
+  instructions for an agent, and the agent is what reads them.
+- 2026-09-03 — U1: `catalog/scheduled-cronjob.yaml` is the sketch out of `docs/pergamon.md`, seeded
+  so the loader and both endpoints are proven against something real rather than a test fixture.
+  It is Smith's own writing and names no client anything. **U2 deletes it**, otherwise its
+  "`GET /v1/catalog` returns three entries" reads four.
+- 2026-09-03 — U1: the seed also removes rows whose file was deleted, which the acceptance did not
+  ask for. Three lines, and it makes the catalog what the repository says instead of whatever was
+  ever seeded — otherwise U2 dropping an entry leaves it being served forever.
+- 2026-09-03 — U1: no port declares `YamlCatalogFiles`. Only `scripts/seed_catalog.py` calls it and
+  a script is a composition root, so an interface with one implementation and one caller would be a
+  layer that removes nothing.
+- 2026-09-03 — U1: found by reading the real response rather than the test —
+  `- The job is idempotent: running it twice does not double its effect.` parses as a **mapping**,
+  not a string, because of the unquoted colon, and the endpoint served `{"The job is idempotent":
+  "running it twice..."}` inside `good`. Quoted in the file. U2's format fixture is where this gets
+  caught for every entry, since it is a trap any author walks into.
+- 2026-09-03 — U1: proved red before green, and the first attempt was wrong. The all-or-nothing seed
+  test passed against a deliberately broken script that writes each file as it reads it, because the
+  malformed fixture was called `broken.yaml` and sorted first. Renamed it `z-broken.yaml`, so a
+  valid entry is read before the bad one; the test then failed naming `a-widget` as the row that
+  should not exist. Same drill on the two endpoints: dropping `Depends(catalog_principal)` turned
+  both auth assertions red.
+- 2026-09-03 — U1 measured on postgres, not sqlite: `alembic upgrade head` clean, seed run twice
+  leaves **1 row**, `GET /v1/catalog` returns id/title/about only, `GET /v1/catalog/{id}` returns
+  `detail` whole, an unknown id is 404, and the two refusals match the review endpoints word for
+  word — `authentication required` with no key, `invalid API key` with a bad one. Project count
+  **35 before and 35 after**; the key issued for the check was revoked.

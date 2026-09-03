@@ -13,6 +13,7 @@ from smith.auth import http as auth_http
 from smith.container import Container
 from smith.limits import install_request_limits
 from smith.logs import configure_logging, install_request_log
+from smith.pergamon.adapters import http as catalog_http
 from smith.reviewer.adapters import http as reviewer_http
 from smith.settings import Settings
 
@@ -42,6 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth_http.build_router())
     app.include_router(reviewer_http.build_router())
+    app.include_router(catalog_http.build_router())
 
     @app.get("/health")
     def health() -> dict:

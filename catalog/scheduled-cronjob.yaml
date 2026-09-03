@@ -1,0 +1,21 @@
+id: scheduled-cronjob
+title: A cronjob with its own configuration and a schedule
+about: >
+  A CronJob type, its performable, the ImpEx that creates the instance and its trigger, and the
+  properties that make it configurable per environment.
+
+ask:
+  - What is the job called?
+  - Which extension does it belong in?
+  - What has to be configurable per environment?
+
+build:
+  - A type in items.xml extending CronJob, carrying the job's own attributes.
+  - A JobPerformable registered as a Spring bean.
+  - An ImpEx creating the job instance and its trigger.
+  - The Java class implementing perform().
+
+good:
+  - The performable does not open its own transaction; the framework owns it.
+  - Configuration is read from properties, never hardcoded.
+  - "The job is idempotent: running it twice does not double its effect."

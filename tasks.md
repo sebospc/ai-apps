@@ -3025,7 +3025,7 @@ The entries are not invented. The previous Pergamon packaged thirteen features u
 `~/Documents/commerce/projects/features/` and `features-best-run/`, each with a `feature.json`.
 Those files are the input. They are outside this repository and are read, never written.
 
-### [x] U1. The catalog: one table, two endpoints, and a way in
+### [x] U1. The catalog: one table, two endpoints, and a way in — `e5d0eb4`
 
 Nothing exists yet. This is the floor everything else stands on.
 

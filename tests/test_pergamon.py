@@ -22,6 +22,11 @@ from conftest import LEAD_PASSWORD
 ROOT = Path(__file__).resolve().parent.parent
 SEED = ROOT / "scripts" / "seed_catalog.py"
 
+# The whole format past id, title and about. Every one of these earns its place by being used by
+# at least two of the three entries; a field one entry wants goes in that entry's prose instead.
+SECTIONS = ("ask", "build", "good", "integration")
+INTEGRATION = ("extensions", "localextensions", "platform_extensions", "item_types", "written_against")
+
 CRONJOB = """
 id: scheduled-cronjob
 title: A cronjob with its own configuration and a schedule
@@ -145,6 +150,33 @@ def test_every_entry_in_this_repository_parses() -> None:
 
     assert entries, "catalog/ is empty: the seed would load nothing"
     assert len({e.id for e in entries}) == len(entries)
+
+
+def test_every_entry_in_this_repository_carries_the_whole_format() -> None:
+    """The format settled by writing three real entries, held here rather than in the domain: the
+    server does not interpret an entry, the agent does, and every entry that will exist is a file
+    in this repository — so the suite is the only boundary that sees them all. Without this a
+    fourth entry ships half written and an agent finds out mid-session."""
+    for entry in YamlCatalogFiles(ROOT / "catalog").load_all():
+        assert set(entry.detail) == set(SECTIONS), f"{entry.id}: expected exactly {SECTIONS}"
+
+        for section in ("ask", "build", "good"):
+            lines = entry.detail[section]
+            assert isinstance(lines, list) and lines, f"{entry.id}: {section} is empty"
+            # A line carrying ": " parses as a mapping, so it stays well formed to the loader and
+            # arrives at the agent as nonsense. Quoting the line is the fix.
+            assert all(isinstance(line, str) and line.strip() for line in lines), (
+                f"{entry.id}: a {section} line is not text, quote the one holding a colon"
+            )
+
+        integration = entry.detail["integration"]
+        assert isinstance(integration, dict), f"{entry.id}: integration is not a mapping"
+        assert set(integration) == set(INTEGRATION), f"{entry.id}: expected exactly {INTEGRATION}"
+        for fact in INTEGRATION[:-1]:
+            assert isinstance(integration[fact], list), f"{entry.id}: integration.{fact} is not a list"
+        # Spartacus is optional on purpose: a backend-only feature was written against no storefront
+        # and would have to invent a version to satisfy a required field.
+        assert integration["written_against"].get("sap_commerce"), f"{entry.id}: no platform version"
 
 
 def test_seeding_twice_leaves_one_row_updated_and_a_broken_file_writes_nothing(tmp_path) -> None:

@@ -1,0 +1,60 @@
+id: duplicate-order-prevention
+title: A database lock that stops one cart becoming two orders
+about: >
+  A double-clicked Place Order button, or a request the browser retries, places the same cart
+  twice. A unique index on the source cart code makes the second attempt fail at save time, a
+  daily cronjob clears abandoned locks, and the storefront cancels its own in-flight request.
+  The index is what guarantees it; the storefront part only makes it look right.
+
+ask:
+  - Is the checkout the B2B accelerator facade, which can be extended, or a B2C or custom checkout
+    where the three hooks go in by hand?
+  - What does the buyer see when the second submit loses, the first order's confirmation or an
+    error?
+  - How long may a lock live before cleanup removes it? A day fits most projects; a checkout with
+    a slow payment redirect needs more.
+
+build:
+  - A core extension declaring OrderUniqueIndex in items.xml with a unique index on the source cart
+    code, plus a sourceCartCode attribute on Order if the platform does not already declare one.
+  - A service and DAO over that type - create the lock for a cart code, find it, remove it.
+  - "Three hooks in the checkout flow: create the lock before placing the order, catch the save
+    failure while placing and decide whether an order already exists, and remove the lock after
+    placing and on every failure path."
+  - A facades extension holding those hooks. On B2B they go in a base class extending the
+    accelerator checkout facade, which needs b2bacceleratorfacades; on B2C the same three fragments
+    are placed in the project's own checkout service.
+  - A maintenance cleanup job that deletes locks older than the retention window in batches, and
+    the ImpEx creating the job, the cronjob and a daily trigger.
+  - In the storefront, rebinding the place-order command with the cancel-previous strategy so a
+    fast second submit cancels the first request.
+
+good:
+  - "The database is what prevents the duplicate. A guard in the storefront or in the service still
+    duplicates under two concurrent requests: only the unique index is atomic."
+  - The lock is removed on every way out of checkout, on success, on handled failure and on
+    exception, or the buyer can never retry their own cart.
+  - Delete the stale locks in batches. One transaction over a day of rows is a lock escalation
+    waiting for a busy night.
+  - A typecode is project-wide. Pick one that is free in this project rather than copying one.
+  - If the platform already declares sourceCartCode on Order, do not declare it again.
+  - The storefront module is imported after the Spartacus order module, or the rebinding never
+    takes effect and nothing says so.
+
+integration:
+  extensions:
+    - duplicateordercore
+    - duplicateorderfacades
+  localextensions:
+    - duplicateordercore
+    - duplicateorderfacades
+  platform_extensions:
+    - commerceservices
+    - commercefacades
+    - processing
+  item_types:
+    - OrderUniqueIndex
+    - Order (adds sourceCartCode)
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

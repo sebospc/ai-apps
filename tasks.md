@@ -3046,7 +3046,7 @@ Acceptance:
 
 What breaks for a developer if this does not exist: everything below it.
 
-### [ ] U2. The entries, carried over and cut down
+### [x] U2. The entries, carried over and cut down — PENDING_SHA
 
 Thirteen features exist in the old Pergamon. Carry over **three**, and use them to find out which
 fields the format actually needs.
@@ -4472,3 +4472,43 @@ Append here when a task forces a decision. One line each: what was decided and w
   `detail` whole, an unknown id is 404, and the two refusals match the review endpoints word for
   word — `authentication required` with no key, `invalid API key` with a bad one. Project count
   **35 before and 35 after**; the key issued for the check was revoked.
+- 2026-09-03 — U2 picked `cost-center`, `account-summary` and `duplicate-order-prevention`, and
+  passed over `webp-conversion` for the backend-only slot even though the task offered it. It
+  declares **no item types** — it configures `ConversionMediaFormat` rows, which the platform
+  already owns — so with it in the three, `item_types` would have been used by one entry and the
+  "delete a field only one entry needs" rule would have deleted a field `docs/pergamon.md` names in
+  the fixed layer. Its files also carry a client's extension and class names, which would have had
+  to be written out. It is a good fourth entry, not a good third one.
+- 2026-09-03 — U2 deleted one field the rule caught: **npm dependencies**. Only `account-summary`
+  genuinely adds any (a charting library); `cost-center` has none and
+  `duplicate-order-prevention`'s are `@angular/*` and `@spartacus/*` peers that every storefront
+  already has. The one real fact now reads as a `build` line in that entry — "the summary shows a
+  chart, which means a public charting library the project does not have yet". A structured field
+  that one entry fills is a field an agent has to learn for nothing.
+- 2026-09-03 — U2 also dropped, and these are format decisions rather than the rule firing:
+  `occEndpoints` and `impex` (2 of 3 entries each, so they survived the rule) because both are
+  *what the feature builds*, and `build` already says it in a sentence an agent reads better than a
+  path into an artifact tree that no longer exists. `install` went entirely — it is a step list
+  written for a human copying folders, and Pergamon writes code into a project it has read.
+  `copyTo`, `registerModule` and `cmsComponents` went with it for the same reason: they address a
+  packaged `.tgz` being unpacked, not a feature being written. `version`, `name` and `summary` are
+  `id`, `title` and `about`. `compatibility.node` and `compatibility.angular` follow from the
+  Spartacus version and the design names only the platform and Spartacus ones.
+- 2026-09-03 — U2 settled the format as `ask`, `build`, `good` and one `integration` block holding
+  `extensions`, `localextensions`, `platform_extensions`, `item_types` and `written_against`. The
+  block is nested rather than flat because it is the half that is identical for every feature, and
+  U4 puts it on a screen as its own thing. `extensions` and `item_types` are present and empty on
+  `cost-center`, which is the entry's most interesting fact: the whole feature is a storefront
+  module and there is nothing to author on the server.
+- 2026-09-03 — U2 enforces that format in `tests/test_pergamon.py`, not in
+  `pergamon/domain/models.py`. The server does not interpret an entry, the agent does, and every
+  entry that will ever exist is a file in this repository — so the suite is the one boundary that
+  sees them all, and the domain stays at the three fields U1 left it with. Proved red four ways
+  before trusting it: a missing section, an unquoted line carrying a colon, a missing integration
+  fact and an invented field each fail naming the entry and the defect.
+- 2026-09-03 — U2 measured on postgres, not sqlite: seed loads three entries and removed
+  `scheduled-cronjob` on the same run, `GET /v1/catalog` returns the three, the full entry carries
+  its 3 questions, 6 build steps, 6 traps and the five integration facts, and the deleted sketch is
+  a 404. `written_against.spartacus` is optional in the format check on purpose — a backend-only
+  entry was written against no storefront and should not have to invent a version to be well
+  formed. The project created for the check was deleted through `DELETE /projects/{slug}`.

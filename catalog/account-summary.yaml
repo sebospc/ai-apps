@@ -1,0 +1,63 @@
+id: account-summary
+title: A B2B account summary with balance, credit and financial documents
+about: >
+  A unit's financial position on one storefront page: open balance, credit limit, and a paginated
+  and filterable list of its documents, so invoices, credit memos and delivery notes. Three custom
+  extensions behind it, because the documents do not exist in the platform's model.
+
+ask:
+  - Whose summary is it, the logged-in buyer's own unit only, or any unit they are allowed to
+    select?
+  - Where do the documents come from, imported into Commerce or read live from a finance system?
+  - Where does the credit limit come from? There is nothing in Commerce to compute it from, so it
+    is either an integration or a stub.
+  - Which document types exist here, and which of them count towards the open balance?
+
+build:
+  - A core extension declaring B2BDocument and B2BDocumentType in items.xml, a relation from
+    B2BUnit to its documents, and an enum for whether a type is payable or usable.
+  - A service in that extension that queries a unit's documents with paging, sorting and a filter
+    on document type.
+  - A facades extension - DTO beans, the facade that assembles the summary, and a populator from
+    the model to the DTO.
+  - An OCC extension with a RestController and its own web spring file, mapped at the web root so
+    the storefront reaches it under occ/v2.
+  - Three endpoints - the unit summary, the credit details, and the documents list taking page,
+    size, sort and a document type.
+  - A storefront module with three components (the page, the unit summary, the documents list) and
+    an OCC service calling the three endpoints. The summary shows a chart, which means a public
+    charting library the project does not have yet - adding it is part of the work.
+
+good:
+  - "The open balance is derived, not stored: sum the open amount of the document types flagged to
+    count. A second copy of a number that already exists is a number that drifts."
+  - The credit limit stays a single method to implement. Do not invent a formula for it.
+  - Page in the query, never in the facade. A unit with ten thousand documents must not load them
+    all to show twenty.
+  - Amounts are BigDecimal carrying the document's own currency. Never a double, and never assumed
+    to be the store's currency.
+  - The controller takes a unit from the request, so it has to check the caller may read that unit.
+    Without it, any buyer reads any unit's finances by editing a query parameter.
+  - Three extensions rather than one. Types and services in core, DTOs and facade in facades, the
+    controller in occ - collapsing them is what makes the next feature hard to add.
+
+integration:
+  extensions:
+    - accountsummarycore
+    - accountsummaryfacades
+    - accountsummaryocc
+  localextensions:
+    - accountsummaryocc
+  platform_extensions:
+    - commerceservices
+    - commercefacades
+    - commercewebservices
+    - b2bcommerce
+  item_types:
+    - B2BDocument
+    - B2BDocumentType
+    - B2BDocumentPayableType
+    - B2BUnit2B2BDocument
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

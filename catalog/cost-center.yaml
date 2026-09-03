@@ -1,0 +1,45 @@
+id: cost-center
+title: A cost center selector in the B2B checkout
+about: >
+  Lets a B2B buyer pick which cost center the order is billed against, during checkout. There is
+  no server side to write: cost centers, the cart association and the OCC endpoints all ship with
+  the platform, so the whole feature is one storefront module over standard facades.
+
+ask:
+  - Where do this project's cost centers come from, created in backoffice, imported by ImpEx, or
+    synchronised from an external finance system?
+  - Should the selector show for every B2B buyer, or only when their unit has more than one cost
+    center to choose from?
+  - What should checkout do when the buyer's unit has no cost center at all, block or continue
+    without one?
+
+build:
+  - An Angular module that maps a component onto the CheckoutCostCenterComponent CMS component
+    through ConfigModule.withConfig, and is imported once in the storefront's feature module.
+  - The component reads the buyer's cost centers and the cart's current one from the Spartacus B2B
+    checkout and cart facades, and writes the choice back through the same facade.
+  - Nothing else. B2BCostCenter, the cart's costCenter association and the two OCC calls
+    (GET users/{userId}/costcenters, POST users/{userId}/carts/{cartId}/costcenter) are platform.
+
+good:
+  - "If the work starts by writing an item type or a controller, the wrong feature is being built:
+    everything on the server already exists."
+  - The CMS component has to exist in the content catalog and be placed on the checkout page. A
+    correct module with no CMS component renders nothing, and reads as a broken build.
+  - The selection is stored on the cart, never in component state, so a reload keeps it.
+  - Cost centers are a B2B concept. On a base store without the B2B extensions the facades resolve
+    to nothing and the component is silently empty.
+
+integration:
+  extensions: []
+  localextensions:
+    - b2bcommerce
+    - b2bacceleratorservices
+  platform_extensions:
+    - b2bcommerce
+    - b2bacceleratorservices
+    - commercewebservices
+  item_types: []
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

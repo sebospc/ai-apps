@@ -14,9 +14,14 @@ export default async function ProjectsPage() {
         title="Projects"
         sub={me.email}
         action={
-          <form action={logout}>
-            <button className="text-sm text-muted hover:text-ink">Sign out</button>
-          </form>
+          <div className="flex items-center gap-4">
+            <Link href="/catalog" className="text-sm text-muted hover:text-ink">
+              Catalog
+            </Link>
+            <form action={logout}>
+              <button className="text-sm text-muted hover:text-ink">Sign out</button>
+            </form>
+          </div>
         }
       />
 

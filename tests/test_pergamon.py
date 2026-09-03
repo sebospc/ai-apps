@@ -112,6 +112,40 @@ def test_a_revoked_key_stops_reading_the_catalog(client) -> None:
     assert api.get("/v1/catalog", headers=auth).status_code == 401
 
 
+def test_a_signed_in_human_reads_the_same_catalog_without_a_plugin_key(seeded) -> None:
+    """The web has a session, never an API key. Without a door of its own, a lead cannot see what
+    the catalog holds except by running a command."""
+    api, _auth = seeded
+    api.post("/auth/login", json={"email": "lead@co.com", "password": LEAD_PASSWORD})
+
+    listed = api.get("/catalog")
+    assert listed.status_code == 200
+    # Title order, the same as the plugin door: both audiences read one list, in one order.
+    assert [e["id"] for e in listed.json()["entries"]] == ["scheduled-cronjob", "a-widget"]
+
+    whole = api.get("/catalog/scheduled-cronjob")
+    assert whole.status_code == 200
+    assert whole.json()["detail"]["ask"] == ["What is the job called?"]
+
+
+def test_the_reader_door_refuses_a_visitor_with_no_session(seeded) -> None:
+    api, _auth = seeded
+
+    assert api.get("/catalog").status_code == 401
+    assert api.get("/catalog/scheduled-cronjob").status_code == 401
+
+
+def test_an_id_nobody_wrote_is_a_404_for_a_reader_too(seeded) -> None:
+    """The body is checked, not only the status: a route that does not exist also answers 404, and
+    a test that cannot tell the two apart is green whether the page works or not."""
+    api, _auth = seeded
+    api.post("/auth/login", json={"email": "lead@co.com", "password": LEAD_PASSWORD})
+
+    missing = api.get("/catalog/no-such-feature")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "no such catalog entry"
+
+
 def test_an_entry_without_the_three_fields_is_refused_by_name(tmp_path) -> None:
     (tmp_path / "broken.yaml").write_text("id: half-written\ntitle: No about here\n")
 

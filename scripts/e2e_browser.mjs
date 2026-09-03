@@ -442,6 +442,57 @@ async function main() {
       !ruleIds.includes("no-system-out")
     );
 
+    // --- the catalog on screen, read-only ---------------------------------------------------------
+    // The entries are in the database because `bootstrap.py` seeded them, which is also how the
+    // production stack gets them. Nothing here writes.
+    // Reached the way a lead reaches it, so the navigation link is proven and not only the route.
+    await page.goto(`${WEB}/`);
+    await page.waitForText("Projects");
+    await page.click('a[href="/catalog"]');
+    await page.waitForText("Features Smith knows how to build");
+    const catalog = await page.text();
+    check(
+      "the catalog lists the entries a deployment was seeded with",
+      catalog.includes("A cost center selector in the B2B checkout"),
+      catalog.slice(0, 500)
+    );
+    check(
+      "the catalog page sends a reader to their editor rather than offering to build",
+      catalog.includes("ask for it in your editor"),
+      catalog.slice(0, 500)
+    );
+    const catalogControls = await page.evaluate(
+      `return document.querySelectorAll("button, input, textarea, select, form").length`
+    );
+    check("nothing on the catalog list starts anything", catalogControls === 0, `${catalogControls} controls`);
+    await auditScreen(page, "catalog");
+
+    await page.click('a[href="/catalog/cost-center"]');
+    await page.waitForText("What the agent asks you");
+    const entry = await page.text();
+    check(
+      "an entry shows the questions it will ask the developer",
+      entry.includes("Where do this project's cost centers come from"),
+      entry.slice(0, 600)
+    );
+    check(
+      "an entry shows the integration facts, named rather than printed as JSON",
+      entry.includes("Goes in localextensions.xml") &&
+        entry.includes("b2bacceleratorservices") &&
+        entry.includes("Written against SAP Commerce 2211"),
+      entry.slice(entry.indexOf("Integration"), entry.indexOf("Integration") + 400)
+    );
+    check(
+      "a section this entry has nothing in reads as an answer, not as a gap",
+      entry.includes("None"),
+      entry.slice(entry.indexOf("Integration"), entry.indexOf("Integration") + 400)
+    );
+    const entryControls = await page.evaluate(
+      `return document.querySelectorAll("button, input, textarea, select, form").length`
+    );
+    check("nothing on an entry page starts anything", entryControls === 0, `${entryControls} controls`);
+    await auditScreen(page, "catalog-entry");
+
     // The one irreversible control in the product. It is last on purpose: it removes the project
     // every check above just used.
     await page.goto(`${WEB}/p/${SLUG}/settings`);

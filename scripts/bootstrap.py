@@ -1,4 +1,4 @@
-"""Create the schema, the first lead, a project and its first API key.
+"""Create the schema, the first lead, a project, its first API key, and the catalog.
 
     uv run python scripts/bootstrap.py --email me@co.com --password '...' --project acme
 
@@ -21,8 +21,12 @@ from smith.auth.domain import AuthError, Principal  # noqa: E402
 from smith.auth.postgres import SqlProjectRepository, SqlUserRepository  # noqa: E402
 from smith.container import Container  # noqa: E402
 from smith.migrations import alembic_config  # noqa: E402
+from smith.pergamon.adapters.postgres import SqlCatalogStore  # noqa: E402
+from smith.pergamon.adapters.yaml_catalog import YamlCatalogFiles  # noqa: E402
 from smith.reviewer.domain.models import ReviewConfig  # noqa: E402
 from smith.settings import Settings  # noqa: E402
+
+CATALOG_DIR = Path(__file__).resolve().parent.parent / "catalog"
 
 
 def main() -> int:
@@ -67,6 +71,14 @@ def main() -> int:
         if projects.role_of(user.id, project.id) is None:
             projects.add_member(user.id, project.id, "lead")
             print(f"{user.email} is now lead of {project.slug}")
+
+        # Upsert only, never prune: `seed_catalog.py` owns removing an entry whose file is gone,
+        # and a deployment whose image shipped without `catalog/` must not empty the table.
+        entries = YamlCatalogFiles(CATALOG_DIR).load_all()
+        catalog = SqlCatalogStore(session)
+        for entry in entries:
+            catalog.upsert(entry)
+        print(f"catalog holds {len(entries)} {'entry' if len(entries) == 1 else 'entries'}")
 
         actor = Principal(user_id=user.id, email=user.email, via="session")
         raw, _ = services.auth.issue_key(actor, project.slug, "bootstrap")

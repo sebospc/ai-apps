@@ -24,6 +24,7 @@ RUN uv sync --frozen --no-dev
 COPY alembic.ini ./
 COPY src/ src/
 COPY rules/ rules/
+COPY catalog/ catalog/
 COPY scripts/ scripts/
 
 ENV PATH="/app/.venv/bin:$PATH" \

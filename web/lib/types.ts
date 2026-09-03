@@ -90,3 +90,24 @@ export type ApiKey = {
   last_used_at: string | null;
   revoked: boolean;
 };
+
+// The catalog list is deliberately three fields: a reader scanning it, and an agent matching a
+// developer's words against it, both want titles rather than the whole entry.
+export type CatalogSummary = { id: string; title: string; about: string };
+
+// `detail` is the entry as written. The server does not interpret it; the sections below are the
+// format U2 settled by writing three entries, and `tests/test_pergamon.py` pins them.
+export type CatalogDetail = {
+  ask?: string[];
+  build?: string[];
+  good?: string[];
+  integration?: {
+    extensions?: string[];
+    localextensions?: string[];
+    platform_extensions?: string[];
+    item_types?: string[];
+    written_against?: { sap_commerce?: string; spartacus?: string };
+  };
+};
+
+export type CatalogEntry = CatalogSummary & { detail: CatalogDetail };

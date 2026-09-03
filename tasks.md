@@ -3101,7 +3101,7 @@ Acceptance:
 
 What breaks for a developer if this does not exist: there is a catalog and no way to use it.
 
-### [ ] U4. The catalog on screen, read-only
+### [x] U4. The catalog on screen, read-only — `PENDING_SHA`
 
 One page. It shows what is in the catalog and does nothing else — no generating, no authoring, per
 the design.
@@ -3140,6 +3140,34 @@ What breaks for a developer if this does not exist: the first thing anyone knows
 feels to use is a complaint from the person who tried it.
 
 ## Notes and decisions log
+
+- 2026-09-03 — The four `output/*-2026-09-03.txt` transcripts left untracked are U3's walk output,
+  not a run that died half way. They are the input U5 reads, they name only fixture code
+  (`acmecore`), and they are the same class as the `output/rehearsal-*.txt` already committed. U4
+  left them where they are rather than folding another task's artifacts into its own commit.
+- 2026-09-03 — U4 gave the web its own door onto the catalog rather than teaching the browser to
+  carry an API key. `/v1/catalog` stays exactly as the plugin knows it; `/catalog` and
+  `/catalog/{id}` are the same two reads behind `session_user`, with no `/v1` because the web ships
+  with the server and never talks to an older one. No membership check on either: the catalog is
+  Smith's own writing, identical for every project, and narrowing it by project would invent a
+  scoping the entries do not have.
+- 2026-09-03 — `bootstrap.py` now seeds the catalog, and the Dockerfile copies `catalog/`. Without
+  both, the page renders "The catalog is empty" on every fresh deployment and under
+  `scripts/prod_drill.sh`, where the stack runs in containers and a host-side
+  `uv run python scripts/seed_catalog.py` would have written to the wrong database. Bootstrap
+  upserts and never prunes; `seed_catalog.py` keeps ownership of removing an entry whose file is
+  gone, so an image shipped without `catalog/` cannot empty the table.
+- 2026-09-03 — The entry page renders the four sections U2 settled (`ask`, `build`, `good`,
+  `integration`) by name, with no generic fallback for an unknown key. A section added to the format
+  later has to be added to the page in the same task, and `tests/test_pergamon.py` pins the format
+  so nobody adds one quietly. A generic renderer would read as a JSON dump on a screen whose whole
+  job is to read like a document.
+- 2026-09-03 — An empty list in `integration` prints `None` rather than nothing. `cost-center`
+  genuinely adds no extension and no item type, and a blank row reads as a half-written entry.
+- 2026-09-03 — Trap worth one line, because it cost a browser run: `page.text()` is `innerText`, and
+  `innerText` applies `text-transform`. A heading styled `uppercase` is invisible to
+  `waitForText("What the agent asks you")`. The headings now match the plain `text-sm font-semibold`
+  the settings screen already uses, which is the fix in the right place.
 
 - 2026-09-02 — T4 measured, not assumed: both scripts run twice each against postgres, project count
   **35 before and 35 after**. The e2e reports `already gone` because its happy path deletes the

@@ -3046,7 +3046,7 @@ Acceptance:
 
 What breaks for a developer if this does not exist: everything below it.
 
-### [x] U2. The entries, carried over and cut down — PENDING_SHA
+### [x] U2. The entries, carried over and cut down — `ae8ccdd`
 
 Thirteen features exist in the old Pergamon. Carry over **three**, and use them to find out which
 fields the format actually needs.

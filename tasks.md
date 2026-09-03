@@ -3000,6 +3000,145 @@ What breaks for a developer if this does not exist: nothing. What breaks for who
 product is that the only reviews with real data in them are in projects no account can reach, so
 looking at your own product requires a database client.
 
+## Phase U — Pergamon, from a settled design to something a developer can run
+
+`docs/pergamon.md` closes the decisions and this phase builds exactly what it describes and nothing
+more. Read it before picking a task; it is short, and every "why is it not X" is answered there.
+
+The decisions that bound every task below, so no task has to reopen them:
+
+- **The server has no LLM.** Generation happens in the developer's editor. No providers, no cost,
+  no egress to protect. Anything that needs a model on the server is out of scope by construction.
+- **The server serves the catalog and records nothing.** No commissions, no answers, no generated
+  code. What happens in the session stays in the editor and in git.
+- **The web is read-only.** It shows the catalog. It cannot generate and it cannot author.
+- **The same plugin.** A second skill in `plugin/`, no new install for anyone who has it.
+- **Two things delivered:** the specs as conditions, and the code.
+
+The measurement problem, stated once so no task pretends otherwise: Reviewer has a corpus and a rate
+per 1000 lines. Pergamon has no equivalent yet and cannot be calibrated the way rules are. What
+*can* be checked is that the surface behaves — tests, a real agent completing a real session, a
+browser on the screen. Every task below is verifiable that way. The first honest calibration
+arrives when generated code is fed back through Reviewer, and that is a later phase.
+
+The entries are not invented. The previous Pergamon packaged thirteen features under
+`~/Documents/commerce/projects/features/` and `features-best-run/`, each with a `feature.json`.
+Those files are the input. They are outside this repository and are read, never written.
+
+### [ ] U1. The catalog: one table, two endpoints, and a way in
+
+Nothing exists yet. This is the floor everything else stands on.
+
+Acceptance:
+
+- A `catalog_entries` table: `id` (slug, unique), `title`, `about`, and a JSON column holding the
+  rest of the entry. One table, per the design. A migration, and `uv run alembic upgrade head` green.
+- `GET /v1/catalog` returns every entry as `id`, `title`, `about` and nothing else — small enough
+  for an agent to read whole and match a developer's words against.
+- `GET /v1/catalog/{id}` returns one entry in full, 404 when there is no such id.
+- Both authenticate the way the review endpoints do: a project API key, and a key bound to a person.
+  A request with no key or a revoked one is refused with the same message as any other auth failure.
+- `catalog/*.yaml` in this repository holds the entries, and `scripts/seed_catalog.py` loads them
+  into the table. Re-running it is idempotent: the same file loaded twice leaves one row, updated.
+- A python test that a malformed entry file fails the seed with a message naming the file, rather
+  than loading half the catalog.
+- `uv run pytest` green.
+
+What breaks for a developer if this does not exist: everything below it.
+
+### [ ] U2. The entries, carried over and cut down
+
+Thirteen features exist in the old Pergamon. Carry over **three**, and use them to find out which
+fields the format actually needs.
+
+Pick the three that differ most from each other, so the format is tested rather than confirmed:
+one Spartacus-only (`cost-center` is a thin wrapper), one full-stack with backend extensions
+(`account-summary`), and one backend-only from `projects/features/` (`webp-conversion` or
+`duplicate-order-prevention`).
+
+Acceptance:
+
+- Three files under `catalog/`, each carrying: what it is, what to ask the developer, how it is
+  built in SAP Commerce, and what good looks like. Plus the integration facts the design names:
+  extensions, which go in `localextensions.xml`, required platform extensions, item types, and the
+  platform and Spartacus versions it was written against.
+- Every field in the format is used by at least two of the three entries. **A field only one entry
+  needs is deleted**, and the notes log says which and why — that is the point of carrying three
+  rather than one.
+- The old `feature.json` is the starting point, not the target. Anything in it that exists to serve
+  the previous architecture — install step lists written for a human, `.tgz` artifacts, npm
+  dependency pins — does not come across. Say in the notes log what was dropped.
+- `scripts/seed_catalog.py` loads all three, and `GET /v1/catalog` returns three entries.
+- A fixture test that every file under `catalog/` parses and carries the required fields, so a
+  fourth entry added later cannot be half-written.
+- `uv run pytest` green.
+
+What breaks for a developer if this does not exist: the catalog is empty, so the skill has nothing
+to apply and the format is a guess nobody tested.
+
+### [ ] U3. The skill: a developer asks for a feature and gets one
+
+The whole product surface, from the developer's side. `plugin/skills/apply/SKILL.md` plus the two
+CLI commands it drives.
+
+Acceptance:
+
+- `smith catalog` lists the entries, and `smith catalog <id>` prints one in full. Node standard
+  library only, like every other command in `bin/smith`.
+- `plugin/skills/apply/SKILL.md`, written to the same bar as the review skill: the developer says
+  what they want in their own words, the agent finds the entry, asks that entry's questions one at
+  a time, reads the project itself, and writes the specs and the code. They never type an id, never
+  see JSON, never run a command.
+- The skill's `description` carries the trigger words a developer would actually use, and does not
+  collide with the review skill's. A request mentioning a review must still reach `review`.
+- The agent reads the project for the fixed layer before writing anything: which extensions exist,
+  what is in `localextensions.xml`, which platform extensions are present, what item types are
+  already declared. It reports a conflict rather than writing over it.
+- When an entry asks for acceptance criteria and the developer has none, the agent writes them.
+- `scripts/walk_skill.mjs` grows a Pergamon walkthrough that a real agent completes in a real
+  session, the way it does for `review` today, and it is green in both editors.
+- `node --test plugin/test` green.
+
+What breaks for a developer if this does not exist: there is a catalog and no way to use it.
+
+### [ ] U4. The catalog on screen, read-only
+
+One page. It shows what is in the catalog and does nothing else — no generating, no authoring, per
+the design.
+
+Acceptance:
+
+- A route listing the entries with title and `about`, and one showing a single entry in full.
+- Reachable from the existing navigation, and it obeys the same session and membership rules as
+  every other page.
+- No control on either page starts anything. If a reader wants to apply a feature, the page tells
+  them to ask in their editor, in one sentence.
+- Assertions in `scripts/e2e_browser.mjs`: the list renders the seeded entries, an entry page shows
+  its questions and its integration facts, and the three widths carry no overflow.
+- `cd web && npx next build` green, `node scripts/e2e_browser.mjs` green in real Chrome.
+
+What breaks for a developer if this does not exist: nothing for them. A lead cannot see what the
+catalog holds without running a command, which is the same gap the review screens exist to close.
+
+### [ ] U5. What the walkthrough measured, written down
+
+Not code. U3 puts a real agent through a real session; this reads the transcript and says what
+happened, the way `output/first-review-cursor-*.txt` did for the first review.
+
+Acceptance:
+
+- `output/first-apply-<date>.md` records: which entry, how many questions the agent asked, how many
+  turns until the developer had code, what the agent got wrong about the project, and whether the
+  fixed integration layer caught anything real.
+- The headline number is **turns from asking to having code**, and whatever it reads is the finding,
+  including a number that is worse than hoped.
+- Every defect the reading finds becomes a line in the notes log with a `path:line`, or a task in
+  the next phase. A reading that produces no defects says so and says what it looked for.
+- No rule, no fixture, no constant touched. `uv run pytest` green because nothing changed.
+
+What breaks for a developer if this does not exist: the first thing anyone knows about how Pergamon
+feels to use is a complaint from the person who tried it.
+
 ## Notes and decisions log
 
 - 2026-09-02 — T4 measured, not assumed: both scripts run twice each against postgres, project count

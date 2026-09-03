@@ -74,6 +74,23 @@ good:
   - The job is idempotent: running it twice does not double its effect.
 ```
 
+## The part that is the same for every feature
+
+An entry says what *this* feature needs. On top of that there is a fixed layer that runs whatever
+the feature is, because every SAP Commerce feature lands the same way and gets integrated wrong in
+the same places:
+
+- **Extensions.** Which ones the feature adds, and which of them go into `localextensions.xml`.
+- **Platform dependencies.** Which SAP extensions have to already be there — `commercewebservices`,
+  `b2bcommerce`, and so on. A feature that assumes one the project does not have fails at build.
+- **Item types.** What `items.xml` declares, and whether it collides with something the project
+  already has.
+- **Version fit.** The platform and Spartacus versions the entry was written against, checked
+  against the project's.
+
+This is the half a developer forgets, and it is the same list every time, which is exactly why it
+belongs in the tool rather than in each entry.
+
 ## What a generation delivers
 
 Two things, and only two:
@@ -152,7 +169,11 @@ Each of these was in the previous version and none of it survives decision 1:
 - The catalog table and the two endpoints, with the authorisation Reviewer already has: a key is
   bound to a person, a project's members can read, non-membership and non-existence are
   indistinguishable in the message.
-- One real entry, written for a feature somebody has actually rebuilt more than once. Not a sample.
-  The first entry is the test of whether the four fields above are the right four.
+- Real entries, and they already exist. The previous Pergamon packaged thirteen features with a
+  `feature.json` each, under `~/Documents/commerce/projects/features/` and `features-best-run/`.
+  That format already carries the fixed layer above — `extensions`, `addToLocalextensions`,
+  `requiresPlatformExtensions`, `occEndpoints`, `impex`, `compatibility` — which is evidence it is
+  the right list rather than a guess. The entries are the input; the format is a starting point to
+  cut down, not to copy whole.
 - The skill, and a walkthrough that a real agent completes in a real session, the way
   `scripts/walk_skill.mjs` does for the review skill today.

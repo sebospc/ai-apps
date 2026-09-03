@@ -1,0 +1,158 @@
+# Pergamon — the decisions, before any code
+
+Settled 2026-09-03. This document exists so that the first line of Pergamon is written against a
+shape somebody chose, rather than one that grew. Nothing here is built yet.
+
+The governing rule for all of it: **the little it does, it does very well.** Every section below is
+written to be small. When something can be left out, it is left out and the reason is written down.
+
+## What it is
+
+The same feature gets built many times, by different developers, in a different way each time.
+Pergamon keeps one generalized implementation of it and applies that to a project.
+
+Reviewer checks code that is already written. Pergamon helps write new code from something that
+already works. They share a plugin, an identity model and a deployment.
+
+## The shape, and it is Reviewer's
+
+Four decisions, all of them the same ones Reviewer took, and taken again on purpose rather than
+inherited by accident.
+
+**1. The server has no LLM.** Generation happens in the developer's editor, on their model and their
+tokens. No providers, no cost per generation, no keys to hold. It also means the client's code never
+leaves their machine to be generated against, which is what made the egress protection in the
+previous version necessary and what makes it unnecessary here.
+
+**2. The server serves the catalog and nothing else.** It answers two calls and holds one table.
+
+**3. The web is read-only.** You browse the catalog and read what an entry does. You cannot generate
+from it, and you cannot author from it. This mirrors Reviewer exactly, where the web shows reviews
+and cannot start one.
+
+**4. The server records nothing about a generation.** No commissions table, no answers, no generated
+code. What happens in the session stays in the developer's editor and in their git history.
+
+## What a catalog entry is
+
+Instructions for an agent, not a template with holes. The agent reads the project it is landing in
+and adapts; a template cannot.
+
+An entry carries four things:
+
+- **What it is.** A title and a paragraph, written for a developer scanning a list.
+- **What to ask.** The decisions the code cannot reveal — a name, an extension, what varies per
+  environment. Free text, because the answers are.
+- **How it is built here.** The pieces the feature needs in SAP Commerce, named: a type in
+  `items.xml`, a Spring bean, an ImpEx that creates the instance, the Java class.
+- **What good looks like.** The traps. "The performable does not open its own transaction."
+  "Configuration goes in properties, never hardcoded."
+
+Sketched, for a feature every project rebuilds:
+
+```yaml
+id: scheduled-cronjob
+title: A cronjob with its own configuration and a schedule
+about: >
+  A CronJob type, its performable, the ImpEx that creates the instance and its trigger, and the
+  properties that make it configurable per environment.
+
+ask:
+  - What is the job called?
+  - Which extension does it belong in?
+  - What has to be configurable per environment?
+
+build:
+  - A type in items.xml extending CronJob, carrying the job's own attributes.
+  - A JobPerformable registered as a Spring bean.
+  - An ImpEx creating the job instance and its trigger.
+  - The Java class implementing perform().
+
+good:
+  - The performable does not open its own transaction; the framework owns it.
+  - Configuration is read from properties, never hardcoded.
+  - The job is idempotent: running it twice does not double its effect.
+```
+
+## What a generation delivers
+
+Two things, and only two:
+
+- **The specs**, written as conditions — given this, given that, and the acceptance criteria.
+- **The code.**
+
+When an entry asks for acceptance criteria and the developer has them, they are used. When the
+developer does not, Pergamon writes them: it has already read the project and it knows what the
+feature does, and a tool that stops to demand a document nobody has is friction rather than rigour.
+
+Not delivered, and each was in the previous version: a separate functional spec, separate test
+cases, an implementation guide. They can be added when somebody asks for one by name.
+
+## Nothing is frozen
+
+A delivery is not immutable. The session continues, the developer changes a decision they made
+earlier, adjusts what was written, asks for a different approach on one file. From that point the
+code is theirs.
+
+The previous version froze every delivery for traceability. Git already is that record, and it keeps
+it better than a second copy would. A delivery that cannot be touched stops being useful at exactly
+the moment it is 90% right, which is where it will be almost every time.
+
+The one thing worth keeping from that idea is not immutability but provenance: knowing which entry
+and which version a piece of code came from, so that fixing an entry can be told to the projects that
+started from the broken one. That needs a record the server does not keep today, so it is named here
+and deliberately not built. If it is ever wanted, it is one column and a reason.
+
+## What crosses the wire
+
+The catalog is Smith's own writing and carries no client anything, so it travels freely. The
+project's code does not travel: the agent reads it locally and never sends it. The developer's
+answers do not travel either, since nothing records them.
+
+That is the whole data story, and it is short because of decision 1.
+
+## The surface
+
+Small enough to list completely.
+
+**Server:** one table of catalog entries, and two endpoints.
+
+- `GET /v1/catalog` — every entry as id, title and `about`. Small enough to send whole; the agent
+  matches the developer's words against it.
+- `GET /v1/catalog/{id}` — one entry in full.
+
+Two rather than one because the full entries are long and a developer applies one at a time. Two
+rather than three because nothing is submitted back.
+
+**Plugin:** a second skill in the same plugin. No new install for anyone who already has it, and
+Cursor picks the skill from its description exactly as it picks `review`. The CLI grows the two
+commands the skill needs and nothing else.
+
+**Web:** one page, read-only. The catalog, browsable, laid out to be read rather than operated.
+
+**Authoring:** entries are written as YAML files in the repository and loaded into the table by a
+script, the way `bootstrap.py` loads a first user. This was chosen rather than a web form: adding an
+entry is then a commit somebody reviews, which is what "a person promotes a pattern" means in
+practice, and it costs no screen, no table beyond the one, and no approval flow. Say so if a lead
+should be able to write one without touching git — it changes this line and nothing else in this
+document.
+
+## What is deliberately absent
+
+Each of these was in the previous version and none of it survives decision 1:
+
+- AI provider configuration, model selection, cost metering, generation budgets
+- Provenance-based egress protection — nothing egresses
+- A conversational agent and a generation engine as separate server components
+- Deterministic fallback generators for when a provider is down
+- An approval gate before publication, and immutable frozen deliveries
+
+## What has to be true before the first line is written
+
+- The catalog table and the two endpoints, with the authorisation Reviewer already has: a key is
+  bound to a person, a project's members can read, non-membership and non-existence are
+  indistinguishable in the message.
+- One real entry, written for a feature somebody has actually rebuilt more than once. Not a sample.
+  The first entry is the test of whether the four fields above are the right four.
+- The skill, and a walkthrough that a real agent completes in a real session, the way
+  `scripts/walk_skill.mjs` does for the review skill today.

@@ -9,7 +9,11 @@
  *
  *   scripts/ensure_db.sh
  *   uv run uvicorn smith.main:app --port 8099 &
- *   node scripts/walk_skill.mjs [claude|cursor]
+ *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
+ *   node scripts/walk_skill.mjs [claude|cursor] [review|apply]
+ *
+ * Two walks, one per skill. `review` reasons over real code and argues about it; `apply` starts
+ * from a developer asking for a feature and ends with code in a project it had to read first.
  *
  * Both editors are walked by the same assertions on purpose. A skill that reads well in one and
  * leaks a review id in the other is a skill that is only half written, and the two sessions differ
@@ -31,12 +35,13 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { bootstrapProject, buildRepo, INJECTED_FIXES, introduceProblems } from "./lib/corpus_repo.mjs";
 
@@ -79,20 +84,18 @@ function check(name, condition, detail = "") {
 const EDITORS = {
   claude: {
     binary: "claude",
-    // Claude Code namespaces a plugin skill, so the developer types the command.
-    prompt: "/smith:review",
-    args: (prompt) => [
+    args: (prompt, tools) => [
       "--plugin-dir",
       PLUGIN_DIR,
       "-p",
       prompt,
       "--allowedTools",
-      "Bash,Read,Glob,Grep",
+      tools,
       "--output-format",
       "stream-json",
       "--verbose",
     ],
-    transcript: (date) => `rehearsal-${date}.txt`,
+    suffix: "",
     shellCommands: (messages) =>
       messages
         .filter((m) => m.type === "assistant")
@@ -113,13 +116,10 @@ const EDITORS = {
       cpSync(PLUGIN_DIR, installed, { recursive: true });
       console.log(`refreshed the Cursor install at ${installed}`);
     },
-    // Cursor gives a plugin skill no name and no namespace: the agent picks it from its
-    // description, so the walk asks the way the README tells a developer to ask.
-    prompt: "review this change with Smith",
     // `--force` is this CLI's non-interactive shell approval. Without it a headless run stalls on
     // the first command instead of failing, and there is nobody here to approve one.
     args: (prompt) => ["--plugin-dir", PLUGIN_DIR, "-p", prompt, "--output-format", "stream-json", "--force"],
-    transcript: (date) => `rehearsal-cursor-${date}.txt`,
+    suffix: "-cursor",
     shellCommands: (messages) =>
       messages
         .filter((m) => m.type === "tool_call" && m.subtype === "started")
@@ -165,9 +165,8 @@ function pathWithoutForeignSmith() {
     .join(delimiter);
 }
 
-/** Run the review in a real editor session and return its message stream. */
-function runSession(editor, repo, home) {
-  const args = editor.args(editor.prompt);
+/** Run one session in a real editor and return its message stream. */
+function runSession(editor, args, repo, home) {
   const env = { ...process.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
   // The plugin is not on PATH in either editor after a real install, so this is the developer's
   // setup: whatever the agent finds, it finds by reading the skill.
@@ -218,7 +217,7 @@ function developerText(messages) {
 // --------------------------------------------------------------------------------------------
 
 /**
- * The four things the skill's "Never" section forbids, each as the shape it would actually take.
+ * What the skills' "Never" sections forbid, each as the shape it would actually take.
  *
  * A quoted key is what leaked JSON looks like once it reaches prose; forty hex characters are what
  * a fingerprint looks like; a fenced block holding a `smith` command is an instruction to run it
@@ -226,15 +225,30 @@ function developerText(messages) {
  */
 const FORBIDDEN = [
   { what: "raw JSON", pattern: /\{\s*"[a-z_]+"\s*:/i },
+  { what: "a command for the developer to run", pattern: /```[a-z]*\s*\n[^`]*\bsmith\s+\w/i },
+];
+
+const REVIEW_FORBIDDEN = [
   { what: "a fingerprint", pattern: /\b[0-9a-f]{40}\b|\bfingerprint\b/i },
   { what: "a review id", pattern: /\breview[ _]id\b/i },
   // Our words for our own machinery. The developer knows files, lines and "that one is wrong".
   { what: "a word only this product uses", pattern: /\bdispositions?\b|\bsuppress(ed|ion)?\b/i },
-  { what: "a command for the developer to run", pattern: /```[a-z]*\s*\n[^`]*\bsmith\s+\w/i },
+  // A review asks the developer for nothing but an answer in prose, so any "you can run" in it is
+  // the agent handing back its own work. An applied feature ends in a build they do have to run,
+  // which is why this one is the review's and not shared.
   {
     what: "an instruction to run a command",
     pattern: /\b(you|please)\s+(can\s+|should\s+|could\s+|need\s+to\s+|must\s+)?run\b/i,
   },
+];
+
+const APPLY_FORBIDDEN = [
+  // The id as a word in a sentence, which would be Smith's vocabulary handed to a developer. Not
+  // the same string inside a path: the first walk to reach code named its spec file after the
+  // feature, `duplicate-order-prevention-spec.md`, and a file named after what it describes is a
+  // good name rather than a leak.
+  { what: "the id of the entry it applied", pattern: /(?<![\w/`-])duplicate-order-prevention(?![\w-]|[./][\w])/ },
+  { what: "a word only this product uses", pattern: /\bcatalog entr(y|ies)\b|\bintegration block\b/i },
 ];
 
 function firstMatch(text, pattern) {
@@ -245,81 +259,118 @@ function firstMatch(text, pattern) {
 }
 
 // --------------------------------------------------------------------------------------------
-// the walk
+// the two walks
 // --------------------------------------------------------------------------------------------
 
-function writeTranscript(path, { editor, repo, slug, target, commands, text }) {
-  const invocation = [editor.binary, ...editor.args(editor.prompt)]
-    .map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg))
-    .join(" ");
-  const header = [
-    `# Smith skill walk — ${new Date().toISOString()}`,
-    `# project ${slug} · change in ${target} · repository ${repo}`,
-    `# ${invocation}`,
-    "",
-    "## Commands the agent ran",
-    "",
-    ...(commands.length ? commands.map((c) => `$ ${c}`) : ["(none)"]),
-    "",
-    "## What the developer saw",
-    "",
-  ];
-  writeFileSync(path, `${header.join("\n")}${text}\n`);
+/**
+ * A minimal SAP Commerce project: a manifest, a registration file and one custom extension.
+ *
+ * The apply skill's second step is reading the project before writing anything, so the walk has to
+ * hand it a project with something to find. It is written here rather than taken from the corpus
+ * for two reasons: the transcript stays free of a client's extension names, and what the agent
+ * should have found is known exactly — one extension already there, one platform extension the
+ * entry needs and the project has not enabled, and none of the feature's item types declared.
+ */
+const PROJECT_EXTENSION = "acmecore";
+const UNENABLED_PLATFORM_EXTENSION = "commercefacades";
+const LOCALEXTENSIONS = "core-customize/hybris/config/localextensions.xml";
+const PROJECT_ITEMS = `core-customize/hybris/bin/custom/${PROJECT_EXTENSION}/resources/${PROJECT_EXTENSION}-items.xml`;
+const PROJECT_ITEM_TYPE = "AcmeOpeningHours";
+// Typecodes are unique across the whole platform, so this one being taken is a fact about the
+// project the agent can only learn by reading it.
+const PROJECT_TYPECODE = "12100";
+
+const SKELETON = {
+  "core-customize/manifest.json": `${JSON.stringify(
+    { commerceSuiteVersion: "2211", extensions: ["commerceservices", "commercewebservices"] },
+    null,
+    2
+  )}\n`,
+  // `commercefacades` and `processing` are left out on purpose: the entry needs both, and what the
+  // agent does about a platform extension the project has not enabled is the half of step 2 that a
+  // developer feels — named and carried on with, not silently assumed.
+  [LOCALEXTENSIONS]: `<?xml version="1.0" encoding="ISO-8859-1"?>
+<hybrisconfig xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <extensions>
+    <path dir="\${HYBRIS_BIN_DIR}"/>
+    <extension name="commerceservices"/>
+    <extension name="commercewebservices"/>
+    <extension dir="\${HYBRIS_BIN_DIR}/custom/${PROJECT_EXTENSION}"/>
+  </extensions>
+</hybrisconfig>
+`,
+  [`core-customize/hybris/bin/custom/${PROJECT_EXTENSION}/extensioninfo.xml`]: `<?xml version="1.0" encoding="UTF-8"?>
+<extensioninfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <extension abstractclassprefix="Generated" classprefix="Acme" name="${PROJECT_EXTENSION}">
+    <requires-extension name="commerceservices"/>
+    <coremodule generated="true" packageroot="com.acme.core"/>
+  </extension>
+</extensioninfo>
+`,
+  [PROJECT_ITEMS]: `<?xml version="1.0" encoding="UTF-8"?>
+<items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="items.xsd">
+  <itemtypes>
+    <itemtype code="${PROJECT_ITEM_TYPE}" extends="GenericItem" autocreate="true" generate="true">
+      <deployment table="acmeopeninghours" typecode="${PROJECT_TYPECODE}"/>
+      <attributes>
+        <attribute qualifier="code" type="java.lang.String">
+          <persistence type="property"/>
+        </attribute>
+      </attributes>
+    </itemtype>
+  </itemtypes>
+</items>
+`,
+};
+
+function buildCommerceProject() {
+  const repo = mkdtempSync(join(tmpdir(), "smith-apply-repo-"));
+  for (const [path, contents] of Object.entries(SKELETON)) {
+    mkdirSync(join(repo, dirname(path)), { recursive: true });
+    writeFileSync(join(repo, path), contents);
+  }
+  const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "dev@acme.com");
+  git("config", "user.name", "Walk");
+  git("add", ".");
+  git("commit", "-q", "-m", "a project with one extension in it");
+  return { repo, about: `a project holding ${PROJECT_EXTENSION}` };
 }
 
-async function main() {
-  const name = process.argv[2] ?? "claude";
-  const editor = EDITORS[name];
-  if (!editor) {
-    console.error(`unknown editor "${name}" — one of: ${Object.keys(EDITORS).join(", ")}`);
-    process.exit(1);
-  }
+/** Every path the session wrote or changed, so what the developer got is read off the disk. */
+function filesWritten(repo) {
+  return execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: repo, encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.slice(3).trim());
+}
 
-  const health = await fetch(`${API}/health`).catch(() => null);
-  if (!health?.ok) {
-    console.error(
-      `nothing is answering at ${API}. Start it with:\n  uv run uvicorn smith.main:app --port 8099`
-    );
-    process.exit(1);
-  }
+/**
+ * One string per `<itemtype>` declaration, so a check reads a single type rather than the whole
+ * file. Matching across a file would let one type's code and another's typecode satisfy the same
+ * pattern, which is how an assertion about collisions comes out green on a collision.
+ */
+function itemtypes(xml) {
+  return xml.split(/<itemtype\b/).slice(1);
+}
 
-  const slug = `walk-${Date.now().toString(36)}`;
-  const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
-  const { repo, target } = buildRepo("smith-walk-repo-");
-  const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
-  introduceProblems(repo, target);
-  execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
-    env: { ...process.env, SMITH_HOME: home },
-    stdio: "ignore",
-  });
-
-  editor.beforeSession?.();
-  console.log(`api ${API} · project ${slug} · change in ${target} · editor ${name}`);
-  console.log(`asking ${editor.binary} for "${editor.prompt}", this takes a few minutes\n`);
-
-  let messages;
+function contentsOf(repo, path) {
   try {
-    messages = runSession(editor, repo, home);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
+    return readFileSync(join(repo, path), "utf8");
+  } catch {
+    return "";
   }
+}
 
-  const text = developerText(messages);
-  const commands = editor.shellCommands(messages);
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  const transcript = join(OUTPUT_DIR, editor.transcript(new Date().toISOString().slice(0, 10)));
-  writeTranscript(transcript, { editor, repo, slug, target, commands, text });
-  rmSync(repo, { recursive: true, force: true });
-  console.log(`transcript: ${transcript}\n`);
-
-  const ran = (verb) => commands.some((c) => new RegExp(`smith(["']?\\s|\\s)[^|]*\\b${verb}\\b`).test(c));
+function reviewChecks({ repo, text, commands }) {
+  const ran = (verb) => commands.some((c) => new RegExp(`smith(["\']?\\s|\\s)[^|]*\\b${verb}\\b`).test(c));
   check("the agent asked the server for a plan", ran("plan"), commands.join(" ; ").slice(0, 300));
   check("the agent submitted its own findings", ran("submit"), commands.join(" ; ").slice(0, 300));
   // The plan carries no code, so the agent has to fetch the change itself. The first walk piped the
   // diff through `head -80`: a review of part of a change, with nothing saying which part was lost.
   const truncated = commands.find((c) => /\b(git\s+diff|git\s+show)\b[^\n]*\|[^\n]*\b(head|tail)\b/.test(c));
   check("the agent read the whole change, not the first screen of it", !truncated, truncated);
-  check("the agent said something to the developer", text.length > 0);
   check(
     "the verdict is stated in the developer's words",
     /(^|\n)\s*[*_#>-]*\s*(blocked|clear)\b/i.test(text),
@@ -344,7 +395,225 @@ async function main() {
       lines.join(" / ") || "no numbered line mentions it at all"
     );
   }
-  for (const { what, pattern } of FORBIDDEN) {
+}
+
+function applyChecks({ repo, text, commands }) {
+  const catalogCalls = commands.filter((c) => /\bcatalog\b/.test(c));
+  check("the agent read the catalog before choosing", catalogCalls.length > 0, commands.join(" ; ").slice(0, 300));
+  check(
+    "the agent read the entry it chose, in full",
+    catalogCalls.some((c) => /\bcatalog\s+["\']?[a-z][a-z0-9-]+/.test(c)),
+    catalogCalls.join(" ; ").slice(0, 300)
+  );
+
+  // Step 2 of the skill, read from the developer's side: what it says it found has to be what is
+  // actually in this project. `acmecore` exists nowhere else, so naming it is proof it looked.
+  check(
+    "the agent said which extension the project already has",
+    new RegExp(PROJECT_EXTENSION, "i").test(text),
+    text.slice(0, 400)
+  );
+  check(
+    "the agent named the platform extension the project has not enabled",
+    new RegExp(UNENABLED_PLATFORM_EXTENSION, "i").test(text),
+    text.slice(0, 400)
+  );
+
+  const written = filesWritten(repo);
+  const declared = written
+    .filter((path) => /items\.xml$/i.test(path))
+    .map((path) => contentsOf(repo, path));
+  check(
+    "the feature's item type was declared where it belongs",
+    declared.some((xml) => /OrderUniqueIndex/.test(xml)),
+    written.join(" ; ").slice(0, 300)
+  );
+  check(
+    "the code came with its registration, so the extension would load",
+    /duplicateorder/i.test(contentsOf(repo, LOCALEXTENSIONS)),
+    contentsOf(repo, LOCALEXTENSIONS).slice(0, 300)
+  );
+  check(
+    "the developer got code, not only a plan",
+    written.some((path) => /\.(java|ts|impex)$/i.test(path)),
+    written.join(" ; ").slice(0, 300)
+  );
+  // The one mistake step 2 exists to prevent. Adding a type next to somebody's is ordinary work —
+  // the first walk to reach code put the feature's type in the project's own extension, because the
+  // project prefixes everything `acme` and the entry's names did not fit. What is forbidden is
+  // losing the type that was already there, or handing the new one the typecode it was using.
+  const survivor = itemtypes(contentsOf(repo, PROJECT_ITEMS)).find((block) =>
+    block.includes(`code="${PROJECT_ITEM_TYPE}"`)
+  );
+  check(
+    "the project's own item type survived",
+    Boolean(survivor) && survivor.includes(`typecode="${PROJECT_TYPECODE}"`),
+    (survivor ?? "the type is no longer declared").slice(0, 300)
+  );
+  const stolen = declared
+    .flatMap(itemtypes)
+    .find(
+      (block) =>
+        block.includes(`typecode="${PROJECT_TYPECODE}"`) && !block.includes(`code="${PROJECT_ITEM_TYPE}"`)
+    );
+  check("the taken typecode was not handed to the feature's type", !stolen, (stolen ?? "").slice(0, 300));
+
+  const specs = written
+    .filter((path) => /\.(md|markdown)$/i.test(path))
+    .map((path) => contentsOf(repo, path));
+  check(
+    "the specs were written as conditions, with acceptance criteria",
+    specs.some((doc) => /\bgiven\b/i.test(doc) && /accept|criteri/i.test(doc)),
+    written.filter((path) => /\.md$/i.test(path)).join(" ; ") || "no document was written"
+  );
+}
+
+/**
+ * One walk per skill: what the developer says, what the agent may do, the project it lands in, and
+ * what the transcript has to prove.
+ *
+ * `review` reasons over somebody else's Java and argues about it. `apply` starts from a developer
+ * asking for a feature in their own words and ends with code in a project the agent had to read
+ * first — which is why it is asked in words in both editors: matching what they said against the
+ * catalog is the first thing the skill does, and naming the entry would skip it.
+ */
+/**
+ * What the developer says, once. The three sentences after the first are this entry's `ask` list
+ * answered: which checkout, what the losing submit shows, how long a lock lives.
+ */
+const APPLY_REQUEST =
+  "buyers keep placing the same order twice when they double-click Place Order. It is the B2B " +
+  "accelerator checkout. When the second submit loses, show the first order's confirmation. " +
+  "Clear abandoned locks after a day. Go ahead and write it.";
+
+const WALKS = {
+  review: {
+    // Claude Code namespaces a plugin skill, so the developer types the command. Cursor gives it no
+    // name at all: the agent picks it from its description, so the walk asks the way the README
+    // tells a developer to ask.
+    prompts: { claude: "/smith:review", cursor: "review this change with Smith" },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "rehearsal",
+    setup: () => {
+      const { repo, target } = buildRepo("smith-walk-repo-");
+      introduceProblems(repo, target);
+      return { repo, about: `change in ${target}` };
+    },
+    forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
+    checks: reviewChecks,
+  },
+  apply: {
+    // The developer's request and the answers to the entry's three questions in one message. A
+    // headless session has nobody to answer a question, and the skill is right to ask one and wait
+    // — measured 2026-09-03: asked which checkout it was and stopped, with nothing written. So the
+    // walk plays a developer who says everything up front, which is the only shape of this
+    // conversation a single-shot session can carry to code.
+    prompts: {
+      claude: `/smith:apply ${APPLY_REQUEST}`,
+      cursor: `with Smith, ${APPLY_REQUEST}`,
+    },
+    tools: "Bash,Read,Glob,Grep,Write,Edit",
+    transcript: "apply-walk",
+    setup: buildCommerceProject,
+    before: async (key) => {
+      const listed = await fetch(`${API}/v1/catalog`, { headers: { authorization: `Bearer ${key}` } });
+      const entries = listed.ok ? (await listed.json()).entries : [];
+      if (!entries.some((entry) => entry.id === "duplicate-order-prevention")) {
+        throw new Error(
+          "the catalog does not hold duplicate-order-prevention — load it with:\n" +
+            "  uv run python scripts/seed_catalog.py"
+        );
+      }
+    },
+    forbidden: [...FORBIDDEN, ...APPLY_FORBIDDEN],
+    checks: applyChecks,
+  },
+};
+
+// --------------------------------------------------------------------------------------------
+// the walk
+// --------------------------------------------------------------------------------------------
+
+function writeTranscript(path, { editor, args, repo, slug, about, commands, text }) {
+  const invocation = [editor.binary, ...args]
+    .map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg))
+    .join(" ");
+  const header = [
+    `# Smith skill walk — ${new Date().toISOString()}`,
+    `# project ${slug} · ${about} · repository ${repo}`,
+    `# ${invocation}`,
+    "",
+    "## Commands the agent ran",
+    "",
+    ...(commands.length ? commands.map((c) => `$ ${c}`) : ["(none)"]),
+    "",
+    "## What the developer saw",
+    "",
+  ];
+  writeFileSync(path, `${header.join("\n")}${text}\n`);
+}
+
+async function main() {
+  const name = process.argv[2] ?? "claude";
+  const editor = EDITORS[name];
+  if (!editor) {
+    console.error(`unknown editor "${name}" — one of: ${Object.keys(EDITORS).join(", ")}`);
+    process.exit(1);
+  }
+  const walkName = process.argv[3] ?? "review";
+  const walk = WALKS[walkName];
+  if (!walk) {
+    console.error(`unknown walk "${walkName}" — one of: ${Object.keys(WALKS).join(", ")}`);
+    process.exit(1);
+  }
+
+  const health = await fetch(`${API}/health`).catch(() => null);
+  if (!health?.ok) {
+    console.error(
+      `nothing is answering at ${API}. Start it with:\n  uv run uvicorn smith.main:app --port 8099`
+    );
+    process.exit(1);
+  }
+
+  const slug = `walk-${Date.now().toString(36)}`;
+  const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
+  await walk.before?.(key);
+  const { repo, about } = walk.setup();
+  const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
+  execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
+    env: { ...process.env, SMITH_HOME: home },
+    stdio: "ignore",
+  });
+
+  editor.beforeSession?.();
+  const prompt = walk.prompts[name];
+  const args = editor.args(prompt, walk.tools);
+  console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
+  console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
+
+  let messages;
+  try {
+    messages = runSession(editor, args, repo, home);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  const text = developerText(messages);
+  const commands = editor.shellCommands(messages);
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  const date = new Date().toISOString().slice(0, 10);
+  const transcript = join(OUTPUT_DIR, `${walk.transcript}${editor.suffix}-${date}.txt`);
+  writeTranscript(transcript, { editor, args, repo, slug, about, commands, text });
+  console.log(`transcript: ${transcript}\n`);
+
+  check("the agent said something to the developer", text.length > 0);
+  // The repository is read by the checks, so it outlives the session and is removed after them.
+  try {
+    walk.checks({ repo, text, commands });
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+  for (const { what, pattern } of walk.forbidden) {
     check(`the developer is never shown ${what}`, !pattern.test(text), firstMatch(text, pattern));
   }
 

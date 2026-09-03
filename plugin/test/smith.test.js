@@ -16,6 +16,13 @@ const { execFileSync } = require("child_process");
 
 const smith = require("../bin/smith");
 
+// Every skill the plugin ships. The shape checks below hold for all of them: one that leaks a
+// Claude-only variable or points at a CLI that moved is a skill that fails in silence.
+const SKILLS = fs
+  .readdirSync(path.join(__dirname, "../skills"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name);
+
 function tempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
@@ -504,18 +511,74 @@ test("both editor manifests agree and carry a name Cursor's loader accepts", () 
   assert.ok(fs.existsSync(path.join(pluginRoot, "skills/review/SKILL.md")));
 });
 
+test("catalog lists the entries, and one id fetches that entry in full", async () => {
+  const { server, received } = stubServer({ entries: [{ id: "cost-center", title: "t", about: "a" }] });
+  await withServer(server, async (url) => {
+    const listed = await runCli(["catalog"], { url });
+    assert.equal(listed.status, 0);
+    assert.equal(received[0].url, "/v1/catalog");
+    assert.deepEqual(JSON.parse(listed.stdout).entries[0].id, "cost-center");
+
+    const one = await runCli(["catalog", "cost-center"], { url });
+    assert.equal(one.status, 0);
+    assert.equal(received[1].url, "/v1/catalog/cost-center");
+    assert.equal(received[1].method, "GET");
+  });
+});
+
+// An id reaches the CLI from a model, so it is untrusted input that ends up in a URL path. A
+// slash in it must stay part of the id rather than addressing a different endpoint.
+test("an id carrying a path separator addresses the entry, not another endpoint", async () => {
+  const { server, received } = stubServer({ id: "x", title: "t", about: "a", detail: {} });
+  await withServer(server, async (url) => {
+    await runCli(["catalog", "../reviews/7"], { url });
+    assert.equal(received[0].url, "/v1/catalog/..%2Freviews%2F7");
+  });
+});
+
+// The 404 a developer's agent actually reaches: an id it remembered instead of read. Telling it
+// there is no such review sends it looking in the wrong half of the product.
+test("an unknown entry says to read the catalog again, not that a review is missing", async () => {
+  await withServer(refusingServer(404, "no such catalog entry"), async (url) => {
+    const { stdout, stderr, status } = await runCli(["catalog", "no-such-entry"], { url });
+    assert.equal(status, 1);
+    assert.equal(stdout, "");
+    assert.equal(
+      stderr.trim(),
+      "smith: there is no catalog entry with that id — list the catalog and pick one from it"
+    );
+    assertReadable(stderr);
+  });
+  // The wording is the catalog's own: a missing review still reads as a missing review.
+  const config = { url: "https://smith.example", key: "smk_x" };
+  assert.match(smith.explainHttp(404, null, "", "", config, "/v1/reviews/7"), /no such review/);
+});
+
 // Cursor hands the agent this skill's path and its description, and nothing else — no name, no
 // namespace, no slash command. The description is therefore the only handle a developer's words can
 // catch, and README tells them to catch it by naming Smith. Drop the word and the skill goes dark.
-test("the skill description carries the words Cursor selects it by", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
+function describedBy(name) {
+  const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
   const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/);
-  assert.ok(frontmatter, "SKILL.md must open with frontmatter");
-
+  assert.ok(frontmatter, `${name}/SKILL.md must open with frontmatter`);
   const description = frontmatter[1].match(/^description:\s*(.+)$/m);
-  assert.ok(description, "frontmatter must carry a description");
-  assert.match(description[1], /Smith/);
-  assert.match(description[1], /review/i);
+  assert.ok(description, `${name} frontmatter must carry a description`);
+  return description[1];
+}
+
+test("the skill description carries the words Cursor selects it by", () => {
+  const review = describedBy("review");
+  assert.match(review, /Smith/);
+  assert.match(review, /review/i);
+
+  // Two skills in one plugin and no namespace between them: Cursor picks by description alone, so
+  // the words a developer would use for one must not be the words it selects the other by.
+  const apply = describedBy("apply");
+  assert.match(apply, /Smith/);
+  assert.match(apply, /\b(build|implement)\b/i);
+  // "Not for checking code that is already written" is how it steers a review request away, so the
+  // word may appear once as a boundary and never as a trigger.
+  assert.doesNotMatch(apply, /\bUse when[^.]*\breview\b/i);
 });
 
 // Cursor expands no plugin-root variable and puts nothing on PATH, so the README line is the only
@@ -547,23 +610,26 @@ test("the install line in README puts a smith on PATH that answers", () => {
 
 // `${CLAUDE_PLUGIN_ROOT}` expands to nothing in Cursor, so a Claude-only variable in the skill is a
 // command the agent runs against a path that starts at the filesystem root.
-test("the skill names no variable only one editor defines", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
-  assert.doesNotMatch(skill, /CLAUDE_[A-Z_]+/);
-  for (const editor of ["Claude Code", "Cursor"]) {
-    assert.ok(skill.includes(editor), `SKILL.md does not say how to reach the CLI in ${editor}`);
+test("no skill names a variable only one editor defines", () => {
+  for (const name of SKILLS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
+    assert.doesNotMatch(skill, /CLAUDE_[A-Z_]+/);
+    for (const editor of ["Claude Code", "Cursor"]) {
+      assert.ok(skill.includes(editor), `${name} does not say how to reach the CLI in ${editor}`);
+    }
   }
 });
 
 // Cursor puts nothing on PATH, so this sentence in the skill is the only thing that gets a Cursor
 // agent to the CLI. Move `bin/` or nest the skill one level deeper and the skill goes stale in
 // silence: the agent would run a path that does not exist and report the server as unreachable.
-test("the CLI is where the skill tells the agent to look for it", () => {
-  const skillFile = path.join(__dirname, "../skills/review/SKILL.md");
-  const skill = fs.readFileSync(skillFile, "utf8");
-  assert.match(skill, /two levels\s+above this file/);
+test("the CLI is where every skill tells the agent to look for it", () => {
+  for (const name of SKILLS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
+    assert.match(skill, /two levels\s+above this file/, `${name} does not point at the CLI`);
+  }
 
-  const pluginRoot = path.resolve(path.dirname(skillFile), "../..");
+  const pluginRoot = path.join(__dirname, "..");
   for (const directory of ["bin", "skills"]) {
     assert.ok(fs.existsSync(path.join(pluginRoot, directory)), `${directory}/ is not two levels up`);
   }
@@ -592,11 +658,13 @@ test("the line naming what was hidden is conditional on something being hidden",
 // Measured on 2026-08-21: the skill used to tell the agent to recommend the PATH install line, and
 // a Cursor agent duly closed a "Clear. Nothing to fix." verdict with a shell command to run. The
 // review had already worked without it, so the advice cost the developer a step and bought nothing.
-test("the skill never sends the developer off to install something", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
-  assert.doesNotMatch(skill, /ln -s/);
-  assert.doesNotMatch(skill, /install line/i);
-  assert.ok(skill.includes("never suggest installing anything"));
+test("no skill sends the developer off to install something", () => {
+  for (const name of SKILLS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
+    assert.doesNotMatch(skill, /ln -s/);
+    assert.doesNotMatch(skill, /install line/i);
+    assert.ok(skill.includes("never suggest installing anything"), `${name} may send them to install`);
+  }
 });
 
 // Measured on 2026-08-21, in a real Cursor session: `smith plan` answered "nothing is listening at

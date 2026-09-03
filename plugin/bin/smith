@@ -13,6 +13,7 @@
  *   smith submit <review_id>      # findings JSON on stdin
  *   smith respond <review_id>     # responses JSON on stdin
  *   smith review <review_id>
+ *   smith catalog [<entry_id>]
  *   smith status
  */
 
@@ -267,7 +268,7 @@ function request(config, method, route, body) {
             /* keep raw */
           }
           if (res.statusCode >= 400) {
-            reject(new Error(explainHttp(res.statusCode, parsed, raw, res.statusMessage, config)));
+            reject(new Error(explainHttp(res.statusCode, parsed, raw, res.statusMessage, config, route)));
           } else {
             resolve(parsed);
           }
@@ -289,7 +290,7 @@ function request(config, method, route, body) {
  * The status code and the server's own wording are useless on their own: a developer reading
  * "POST /v1/reviews → 401" has to know the product's internals to know what to do next.
  */
-function explainHttp(statusCode, parsed, raw, statusMessage, config) {
+function explainHttp(statusCode, parsed, raw, statusMessage, config, route = "") {
   const said = sentence(parsed && parsed.detail) || sentence(raw) || sentence(statusMessage);
   if (statusCode === 401) {
     return `the API key is not valid — it may have been revoked. Ask your project lead for a new one, then run: smith auth --url ${config.url || "<server>"} --key <api key>`;
@@ -302,6 +303,11 @@ function explainHttp(statusCode, parsed, raw, statusMessage, config) {
     return said || "the server refused that, and this key may not touch that project";
   }
   if (statusCode === 404) {
+    // The catalog is the one place a wrong id is routine: an agent that names an entry from memory
+    // instead of from the list lands here, and the fix is to read the list again.
+    if (route.startsWith("/v1/catalog/")) {
+      return "there is no catalog entry with that id — list the catalog and pick one from it";
+    }
     return `the server has no such review or endpoint (${said || "not found"})`;
   }
   if (statusCode === 422) {
@@ -485,6 +491,25 @@ async function cmdReview(positional) {
 }
 
 /**
+ * The catalog, or one entry of it.
+ *
+ * No id lists every entry as id, title and about — small enough that the agent reads the whole
+ * thing and matches the developer's words against it. An id returns that entry in full, which is
+ * the instructions the agent then works from.
+ */
+async function cmdCatalog(positional) {
+  const config = requireConfig();
+  const entryId = positional[0];
+  if (entryId === undefined) {
+    console.log(JSON.stringify(await request(config, "GET", "/v1/catalog"), null, 2));
+    return;
+  }
+  // An id is a path segment. Encoding it keeps a stray slash from addressing another endpoint.
+  const route = `/v1/catalog/${encodeURIComponent(entryId)}`;
+  console.log(JSON.stringify(await request(config, "GET", route), null, 2));
+}
+
+/**
  * What is set up and what is not, in sentences.
  *
  * This is the command a developer runs when something is wrong, so it prints prose rather than the
@@ -521,13 +546,14 @@ async function cmdStatus() {
   console.log(lines.join("\n"));
 }
 
-const USAGE = `smith — Smith Reviewer client
+const USAGE = `smith — Smith client
 
   smith auth --url <server> --key <api key>   save credentials (~/.smith/config.json, mode 600)
   smith plan [--base <ref>] [--title <text>]  send the diff, print the review plan
   smith submit <review_id>                    send findings from stdin, print the verdict
   smith respond <review_id>                   send the developer's answers from stdin, print the verdict
   smith review <review_id>                    print a review the conversation lost track of
+  smith catalog [<entry_id>]                  list the implementation catalog, or print one entry
   smith status                                show configuration and reachability
 `;
 
@@ -545,6 +571,8 @@ async function main(argv) {
       return cmdRespond(positional);
     case "review":
       return cmdReview(positional);
+    case "catalog":
+      return cmdCatalog(positional);
     case "status":
       return cmdStatus();
     default:

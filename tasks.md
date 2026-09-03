@@ -3076,7 +3076,7 @@ Acceptance:
 What breaks for a developer if this does not exist: the catalog is empty, so the skill has nothing
 to apply and the format is a guess nobody tested.
 
-### [ ] U3. The skill: a developer asks for a feature and gets one
+### [x] U3. The skill: a developer asks for a feature and gets one — `PENDING_SHA`
 
 The whole product surface, from the developer's side. `plugin/skills/apply/SKILL.md` plus the two
 CLI commands it drives.
@@ -4512,3 +4512,38 @@ Append here when a task forces a decision. One line each: what was decided and w
   a 404. `written_against.spartacus` is optional in the format check on purpose — a backend-only
   entry was written against no storefront and should not have to invent a version to be well
   formed. The project created for the check was deleted through `DELETE /projects/{slug}`.
+
+- 2026-09-03 — U3's collision check measured the wrong thing at first. It asserted the project's
+  `items.xml` was never touched, and the first walk to reach code put the feature's type inside the
+  project's own extension deliberately: the project prefixes everything and the entry's names did
+  not fit, so it kept `AcmeOpeningHours` at typecode 12100 and gave the new type 12101. Adding a
+  type beside somebody's is ordinary work; the defect is losing theirs. The check now reads one
+  `<itemtype>` block at a time — the project's type still declared with its own typecode, and no
+  other type carrying it. Proved red three ways before trusting it green: the file overwritten with
+  only the feature's type, a session that kept the type and moved its typecode, and the legitimate
+  case, which stays green. Matching across a whole file was rejected on the way: one type's `code`
+  and another's `typecode` satisfy the same pattern, which is how an assertion about collisions
+  comes out green on a collision.
+- 2026-09-03 — U3 changed the skill because a walk went red, not because it read badly. The Cursor
+  session reported "there are no extension or item-type collisions" without naming one thing it had
+  read, so the developer had no evidence it had opened their project at all. Step 2 now says to name
+  what was read every time, including when nothing collides. The worked example uses invented names
+  (`shopcore`, typecode 13400) rather than the walk's fixture, so an agent parroting the page instead
+  of reading the checkout still fails the check.
+- 2026-09-03 — U3 measured, four real sessions against postgres: apply and review, in Claude Code and
+  in Cursor, 15 checks each, all green. The apply walk plays a developer who says everything up
+  front. That is not the skill being lenient: a first run asked which checkout it was and stopped
+  with nothing written, which is the skill behaving correctly and the reason a single-shot session
+  cannot leave the entry's questions unanswered.
+- 2026-09-03 — the walk transcripts stay out of the commit. `output/*.md` is gitignored and `*.txt`
+  is not, and the review walk's transcript carries corpus file paths. U5 is the task that writes the
+  reading, and it writes a `.md`.
+- 2026-09-03 — observed in U3's Cursor apply walk, not fixed: the session opens with "I'm using
+  Smith's implementation catalog to add the duplicate-order guard", which is our machinery narrated
+  as news and is what the skill's Never section forbids. The first thing the developer hears should
+  be the feature, in their words. Left for U5's reading to weigh rather than answered with a
+  forbidden pattern here, since the pattern would have to spell out our own vocabulary and every
+  walk after it would be measuring the wording of one editor.
+- 2026-09-03 — observed while running U3, out of its scope: `scripts/walk_skill.mjs` bootstraps a
+  project per run and never removes it, so four walks left four `walk-*` projects in postgres.
+  `scripts/rehearse.mjs` and `scripts/e2e_browser.mjs` both delete what they create.

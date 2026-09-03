@@ -1,0 +1,580 @@
+#!/usr/bin/env node
+"use strict";
+
+/**
+ * smith — the plugin's hands.
+ *
+ * It collects the diff, talks to the Smith server and prints JSON. It does no reasoning: that is
+ * the agent's job, using the plan this prints. Node standard library only, so there is nothing to
+ * install and nothing to keep up to date.
+ *
+ *   smith auth --url https://smith.co --key smk_...
+ *   smith plan [--base main]
+ *   smith submit <review_id>      # findings JSON on stdin
+ *   smith respond <review_id>     # responses JSON on stdin
+ *   smith review <review_id>
+ *   smith status
+ */
+
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const http = require("http");
+const https = require("https");
+const { execFileSync } = require("child_process");
+
+const MAX_FILE_BYTES = 400_000;
+const MAX_FILES = 400;
+// Binary and vendored paths carry no review value and would blow the payload up.
+const SKIP = /(^|\/)(node_modules|\.git|dist|build|target|\.next|vendor)\//;
+const BINARY = /\.(png|jpe?g|gif|ico|svg|pdf|zip|jar|war|class|woff2?|ttf|eot|mp4|webp)$/i;
+// Enough of a line to identify it; the server caps the field at the same number.
+const MAX_QUOTED_LINE = 500;
+
+// --------------------------------------------------------------------------------------------
+// config
+// --------------------------------------------------------------------------------------------
+
+function configPath() {
+  return path.join(process.env.SMITH_HOME || path.join(os.homedir(), ".smith"), "config.json");
+}
+
+function readConfig() {
+  let stored = {};
+  try {
+    stored = JSON.parse(fs.readFileSync(configPath(), "utf8"));
+  } catch {
+    stored = {};
+  }
+  return {
+    url: (process.env.SMITH_URL || stored.url || "").replace(/\/+$/, ""),
+    key: process.env.SMITH_KEY || stored.key || "",
+  };
+}
+
+function writeConfig(config) {
+  const file = configPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  // The API key is a credential: never group- or world-readable.
+  fs.writeFileSync(file, JSON.stringify(config, null, 2), { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+  return file;
+}
+
+// --------------------------------------------------------------------------------------------
+// git
+// --------------------------------------------------------------------------------------------
+
+function git(args, cwd) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function repoRoot(cwd) {
+  try {
+    return git(["rev-parse", "--show-toplevel"], cwd).trim();
+  } catch {
+    throw new Error("not inside a git repository");
+  }
+}
+
+function defaultBase(root) {
+  for (const ref of ["origin/main", "origin/master", "main", "master"]) {
+    try {
+      git(["rev-parse", "--verify", "--quiet", ref], root);
+      return ref;
+    } catch {
+      /* try the next one */
+    }
+  }
+  return null;
+}
+
+/**
+ * The change under review: uncommitted work if there is any, otherwise this branch against its base.
+ * That ordering matches how a review actually happens — you ask before you commit, and you ask
+ * again before you push.
+ */
+function collectDiff(root, base) {
+  if (base) {
+    const spec = `${base}...HEAD`;
+    return { diff: git(["diff", spec], root), spec, names: nameStatus(root, ["diff", "--name-status", spec]) };
+  }
+  const working = git(["diff", "HEAD"], root);
+  if (working.trim()) {
+    return { diff: working, spec: "HEAD", names: nameStatus(root, ["diff", "--name-status", "HEAD"]) };
+  }
+  const auto = defaultBase(root);
+  if (!auto) return { diff: "", spec: "HEAD", names: [] };
+  const spec = `${auto}...HEAD`;
+  return { diff: git(["diff", spec], root), spec, names: nameStatus(root, ["diff", "--name-status", spec]) };
+}
+
+function nameStatus(root, args) {
+  return git(args, root)
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("\t");
+      // Renames come through as R100<TAB>old<TAB>new — the new path is the one to read.
+      return { status: parts[0][0], path: parts[parts.length - 1] };
+    });
+}
+
+/**
+ * Fill in each finding's `quoted_line` from the working tree.
+ *
+ * A finding's identity on the server is the rule, the file and the offending line's *content*. The
+ * agent's payload carries no content, so without this every agent finding of one rule in one file
+ * is the same finding: the developer rules out one and the others go quiet too, quoting them on a
+ * reason they never gave. The plugin runs inside the repository, so it can read the line the agent
+ * pointed at — which is why this is here and not on the server, and why the agent sends no more
+ * than it did before.
+ *
+ * Never an error. A finding whose line cannot be read is submitted exactly as it arrived.
+ */
+function quoteFindings(root, findings) {
+  if (!root) return findings;
+  const cache = new Map();
+  const linesOf = (file) => {
+    if (!cache.has(file)) cache.set(file, readLines(root, file));
+    return cache.get(file);
+  };
+  return findings.map((finding) => {
+    if (!finding || typeof finding !== "object" || Array.isArray(finding)) return finding;
+    const { file, line } = finding;
+    const lines = Number.isInteger(line) && line >= 1 ? linesOf(file) : null;
+    const quoted = lines && line <= lines.length ? lines[line - 1].trim() : "";
+    // An empty line carries no identity, and the server reads a missing field the same way.
+    return quoted ? { ...finding, quoted_line: quoted.slice(0, MAX_QUOTED_LINE) } : finding;
+  });
+}
+
+/** A file's lines, or null when it is missing, unreadable, oversized or outside the repository. */
+function readLines(root, file) {
+  if (typeof file !== "string" || !file) return null;
+  const normalized = file.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || normalized.split("/").includes("..")) return null;
+  try {
+    // realpath, not join: a symlink inside the repository must not be a way out of it.
+    const full = fs.realpathSync(path.join(root, normalized));
+    if (!full.startsWith(fs.realpathSync(root) + path.sep)) return null;
+    if (fs.statSync(full).size > MAX_FILE_BYTES) return null;
+    return fs.readFileSync(full, "utf8").split("\n");
+  } catch {
+    return null;
+  }
+}
+
+function readChangedFiles(root, names) {
+  const files = [];
+  for (const entry of names) {
+    if (files.length >= MAX_FILES) break;
+    if (entry.status === "D" || SKIP.test(entry.path) || BINARY.test(entry.path)) continue;
+    const full = path.join(root, entry.path);
+    try {
+      if (fs.statSync(full).size > MAX_FILE_BYTES) continue;
+      const content = fs.readFileSync(full, "utf8");
+      if (content.includes("\u0000")) continue; // binary that slipped past the extension check
+      files.push({ path: entry.path, content });
+    } catch {
+      /* deleted or unreadable in the working tree — the diff still covers it */
+    }
+  }
+  return files;
+}
+
+/**
+ * The SAP Commerce release this repository is on, from its `manifest.json`.
+ *
+ * Rules are version-scoped on the server, and the server never touches git — so the repository is
+ * only readable from here. Empty when nothing says: the server then applies every rule, which is
+ * the safe direction to be wrong in.
+ */
+function platformVersion(root) {
+  let paths;
+  try {
+    paths = git(["ls-files", "manifest.json", "*/manifest.json", "**/manifest.json"], root)
+      .split("\n")
+      .filter(Boolean)
+      .slice(0, 40); // a monorepo can carry many; the first one that names a version wins
+  } catch {
+    return "";
+  }
+  for (const relative of paths) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(root, relative), "utf8"));
+      const raw = manifest.commerceSuiteVersion || manifest.commerceVersion;
+      const version = raw && String(raw).match(/\d+(?:\.\d+)*/);
+      if (version) return version[0];
+    } catch {
+      /* not JSON, unreadable, or not a Commerce manifest — try the next one */
+    }
+  }
+  return "";
+}
+
+function branchName(root) {
+  try {
+    return git(["rev-parse", "--abbrev-ref", "HEAD"], root).trim();
+  } catch {
+    return "";
+  }
+}
+
+// --------------------------------------------------------------------------------------------
+// http
+// --------------------------------------------------------------------------------------------
+
+function request(config, method, route, body) {
+  return new Promise((resolve, reject) => {
+    let target;
+    try {
+      target = new URL(config.url + route);
+    } catch {
+      reject(new Error(`invalid server URL: ${config.url || "(unset)"}`));
+      return;
+    }
+    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const client = target.protocol === "https:" ? https : http;
+    const req = client.request(
+      target,
+      {
+        method,
+        headers: {
+          Authorization: `Bearer ${config.key}`,
+          ...(payload ? { "Content-Type": "application/json", "Content-Length": payload.length } : {}),
+        },
+        timeout: 120_000,
+        // Try both address families, the way curl does. Node 20 does this by default and Node 18
+        // does not, so without this a server on `localhost` bound to 127.0.0.1 is unreachable from
+        // any Node 18 shell — which is what Cursor's agent runs — and the developer is told the
+        // server is not answering while curl reaches it.
+        autoSelectFamily: true,
+      },
+      (res) => {
+        let raw = "";
+        res.on("data", (chunk) => (raw += chunk));
+        res.on("end", () => {
+          let parsed = null;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            /* keep raw */
+          }
+          if (res.statusCode >= 400) {
+            reject(new Error(explainHttp(res.statusCode, parsed, raw, res.statusMessage, config)));
+          } else {
+            resolve(parsed);
+          }
+        });
+      }
+    );
+    req.on("timeout", () =>
+      req.destroy(new Error(`the Smith server at ${config.url} did not answer within 120s`))
+    );
+    req.on("error", (err) => reject(explainNetwork(err, config)));
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+/**
+ * Every failure the developer sees is one sentence they can act on.
+ *
+ * The status code and the server's own wording are useless on their own: a developer reading
+ * "POST /v1/reviews → 401" has to know the product's internals to know what to do next.
+ */
+function explainHttp(statusCode, parsed, raw, statusMessage, config) {
+  const said = sentence(parsed && parsed.detail) || sentence(raw) || sentence(statusMessage);
+  if (statusCode === 401) {
+    return `the API key is not valid — it may have been revoked. Ask your project lead for a new one, then run: smith auth --url ${config.url || "<server>"} --key <api key>`;
+  }
+  if (statusCode === 403) {
+    // The one 403 a developer reaches by accident: a key issued for a different project.
+    if (/another project/.test(said)) {
+      return "that review belongs to a different project, and an API key only works on its own — ask your project lead for a key for this project";
+    }
+    return said || "the server refused that, and this key may not touch that project";
+  }
+  if (statusCode === 404) {
+    return `the server has no such review or endpoint (${said || "not found"})`;
+  }
+  if (statusCode === 422) {
+    // The server writes its own refusals for a developer to read: "there is no finding 4 in this
+    // review". Quoting one is better than anything this side could say about it.
+    return said || "the server rejected the request: it was not in the shape it expected";
+  }
+  if (statusCode >= 500) {
+    // The server hands back a reference for exactly this: it is the only thing that finds the
+    // failure in a log full of other people's reviews.
+    const reference = parsed && typeof parsed.request_id === "string" ? parsed.request_id : "";
+    const where = reference ? `check its log for ${reference}` : "check its log";
+    return `the Smith server at ${config.url} failed while handling that (${statusCode}). Ask whoever runs it to ${where}`;
+  }
+  return `the server refused that (${statusCode})${said ? `: ${said}` : ""}`;
+}
+
+/**
+ * The server's words when they are prose a developer can act on, and nothing when they are not.
+ *
+ * FastAPI's validation errors are a structured list and a proxy's error page is HTML; putting
+ * either in front of someone who asked for a code review only tells them the tool is broken.
+ */
+function sentence(value) {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  return text && !/^[{[<]/.test(text) ? text.slice(0, 300) : "";
+}
+
+function explainNetwork(err, config) {
+  const where = config.url || "(no server configured)";
+  if (err.code === "ECONNREFUSED") return new Error(`nothing is listening at ${where}`);
+  if (err.code === "ENOTFOUND" || err.code === "EAI_AGAIN") {
+    return new Error(`cannot resolve the host in ${where}`);
+  }
+  if (err.code === "ECONNRESET") return new Error(`the connection to ${where} was cut`);
+  if (err.code === "CERT_HAS_EXPIRED" || err.code === "DEPTH_ZERO_SELF_SIGNED_CERT") {
+    return new Error(`the TLS certificate at ${where} is not trusted`);
+  }
+  return new Error(`could not reach the Smith server at ${where}: ${err.message}`);
+}
+
+function readStdin() {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => (raw += chunk));
+    process.stdin.on("end", () => resolve(raw));
+    process.stdin.on("error", reject);
+  });
+}
+
+// --------------------------------------------------------------------------------------------
+// commands
+// --------------------------------------------------------------------------------------------
+
+function parseArgs(argv) {
+  const flags = {};
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) {
+      const name = argv[i].slice(2);
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) flags[name] = true;
+      else {
+        flags[name] = next;
+        i++;
+      }
+    } else positional.push(argv[i]);
+  }
+  return { flags, positional };
+}
+
+function requireConfig() {
+  const config = readConfig();
+  if (!config.url || !config.key) {
+    throw new Error("not configured — run: smith auth --url <server> --key <api key>");
+  }
+  return config;
+}
+
+async function cmdAuth(flags) {
+  const url = typeof flags.url === "string" ? flags.url.replace(/\/+$/, "") : "";
+  const key = typeof flags.key === "string" ? flags.key : "";
+  if (!url || !key) throw new Error("usage: smith auth --url <server> --key <api key>");
+  const file = writeConfig({ url, key });
+  // Prove the credential works now, rather than at the worst possible moment mid-review.
+  await request({ url, key }, "GET", "/health");
+  console.log(`saved ${file} (mode 600), server reachable`);
+}
+
+async function cmdPlan(flags) {
+  const config = requireConfig();
+  const root = repoRoot(process.cwd());
+  const base = typeof flags.base === "string" ? flags.base : null;
+  const { diff, spec, names } = collectDiff(root, base);
+  if (!diff.trim()) throw new Error(`no changes to review (compared against ${spec})`);
+
+  const plan = await request(config, "POST", "/v1/reviews", {
+    diff,
+    branch: branchName(root),
+    title: typeof flags.title === "string" ? flags.title : "",
+    platform_version: platformVersion(root),
+    files: readChangedFiles(root, names),
+  });
+  console.log(JSON.stringify({ ...plan, compared_against: spec }, null, 2));
+}
+
+async function cmdSubmit(positional) {
+  const config = requireConfig();
+  const reviewId = Number(positional[0]);
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    throw new Error("usage: smith submit <review_id>   (findings JSON on stdin)");
+  }
+  const raw = (await readStdin()).trim();
+  let parsed;
+  try {
+    parsed = raw ? JSON.parse(raw) : { findings: [] };
+  } catch {
+    throw new Error("stdin is not valid JSON — expected {\"findings\": [...]} or [...]");
+  }
+  const findings = Array.isArray(parsed) ? parsed : parsed.findings || [];
+  let root = null;
+  try {
+    root = repoRoot(process.cwd());
+  } catch {
+    /* submitting from outside a repository still works, just without the quoted lines */
+  }
+  const verdict = await request(config, "POST", `/v1/reviews/${reviewId}/findings`, {
+    findings: quoteFindings(root, findings),
+  });
+  console.log(JSON.stringify(verdict, null, 2));
+  // Non-zero on a blocking verdict so a hook or CI step can gate on it without parsing JSON.
+  if (verdict.blocking) process.exitCode = 1;
+}
+
+/** The review id a command was pointed at, or a usage error the developer can act on. */
+function reviewIdFrom(positional, usage) {
+  const reviewId = Number(positional[0]);
+  if (!Number.isInteger(reviewId) || reviewId <= 0) throw new Error(usage);
+  return reviewId;
+}
+
+/**
+ * What the agent said about the findings. Accepts `{responses: [...]}` or a bare array, because an
+ * agent writing JSON by hand does both and neither is ambiguous.
+ */
+function responsesFrom(raw) {
+  const text = (raw || "").trim();
+  const malformed = new Error(
+    'stdin is not valid JSON — expected {"responses": [{"finding": 1, "disposition": "fixed"}]}'
+  );
+  if (!text) throw malformed;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw malformed;
+  }
+  const responses = Array.isArray(parsed) ? parsed : parsed.responses;
+  if (!Array.isArray(responses) || responses.length === 0) throw malformed;
+  return responses;
+}
+
+async function cmdRespond(positional) {
+  const config = requireConfig();
+  const reviewId = reviewIdFrom(
+    positional,
+    "usage: smith respond <review_id>   (responses JSON on stdin)"
+  );
+  const responses = responsesFrom(await readStdin());
+  const verdict = await request(config, "POST", `/v1/reviews/${reviewId}/respond`, { responses });
+  console.log(JSON.stringify(verdict, null, 2));
+  if (verdict.blocking) process.exitCode = 1;
+}
+
+async function cmdReview(positional) {
+  const config = requireConfig();
+  const reviewId = reviewIdFrom(positional, "usage: smith review <review_id>");
+  console.log(JSON.stringify(await request(config, "GET", `/v1/reviews/${reviewId}`), null, 2));
+}
+
+/**
+ * What is set up and what is not, in sentences.
+ *
+ * This is the command a developer runs when something is wrong, so it prints prose rather than the
+ * JSON the other commands speak: JSON is for the agent, and nothing is broken yet when it is read.
+ */
+async function cmdStatus() {
+  const config = readConfig();
+  const lines = [];
+
+  if (!config.url) lines.push(`No server yet. Run: smith auth --url <server> --key <api key>`);
+  else lines.push(`Server: ${config.url}`);
+
+  if (!config.key) {
+    lines.push("No API key yet. Ask your project lead for one, then run the same smith auth command.");
+  } else {
+    // Prefix only: the rest is a credential and this output gets pasted into bug reports.
+    lines.push(`Key: ${config.key.slice(0, 12)}… (stored in ${configPath()})`);
+  }
+
+  try {
+    lines.push(`Repository: ${repoRoot(process.cwd())}`);
+  } catch {
+    lines.push("Not inside a git repository, so there is nothing to review from here.");
+  }
+
+  if (config.url && config.key) {
+    try {
+      await request(config, "GET", "/health");
+      lines.push("The server answered. You are ready to run a review.");
+    } catch (err) {
+      lines.push(`The server did not answer: ${err.message}`);
+    }
+  }
+  console.log(lines.join("\n"));
+}
+
+const USAGE = `smith — Smith Reviewer client
+
+  smith auth --url <server> --key <api key>   save credentials (~/.smith/config.json, mode 600)
+  smith plan [--base <ref>] [--title <text>]  send the diff, print the review plan
+  smith submit <review_id>                    send findings from stdin, print the verdict
+  smith respond <review_id>                   send the developer's answers from stdin, print the verdict
+  smith review <review_id>                    print a review the conversation lost track of
+  smith status                                show configuration and reachability
+`;
+
+async function main(argv) {
+  const { flags, positional } = parseArgs(argv);
+  const command = positional.shift();
+  switch (command) {
+    case "auth":
+      return cmdAuth(flags);
+    case "plan":
+      return cmdPlan(flags);
+    case "submit":
+      return cmdSubmit(positional);
+    case "respond":
+      return cmdRespond(positional);
+    case "review":
+      return cmdReview(positional);
+    case "status":
+      return cmdStatus();
+    default:
+      process.stdout.write(USAGE);
+      process.exitCode = command ? 1 : 0;
+  }
+}
+
+if (require.main === module) {
+  main(process.argv.slice(2)).catch((err) => {
+    console.error(`smith: ${err.message}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  parseArgs,
+  platformVersion,
+  explainHttp,
+  explainNetwork,
+  responsesFrom,
+  reviewIdFrom,
+  readConfig,
+  writeConfig,
+  configPath,
+  collectDiff,
+  readChangedFiles,
+  quoteFindings,
+  nameStatus,
+  SKIP,
+  BINARY,
+  MAX_FILE_BYTES,
+};

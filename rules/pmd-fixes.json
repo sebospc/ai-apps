@@ -1,0 +1,15 @@
+{
+  "CloseResource": "Open it in a try-with-resources block so it closes on every path.",
+  "EmptyCatchBlock": "Log the exception with LOG.error, or rethrow it.",
+  "MissingStaticMethodInNonInstantiatableClass": "Add a static factory method that returns an instance, or widen the constructor.",
+  "UseLocaleWithCaseConversions": "Pass an explicit locale, toLowerCase(Locale.ROOT), so the result does not follow the server's default.",
+  "LiteralsFirstInComparisons": "Put the literal first: \"value\".equals(other).",
+  "UnusedFormalParameter": "Remove the parameter and the arguments passed to it at the call sites.",
+  "UseStandardCharsets": "Use StandardCharsets.UTF_8 instead of the charset name.",
+  "PreserveStackTrace": "Pass the caught exception as the cause: throw new XException(message, e).",
+  "DoubleBraceInitialization": "Build it with Map.of(...)/List.of(...) or plain put/add calls, without the anonymous subclass.",
+  "UnusedPrivateField": "Delete the field; nothing reads it.",
+  "NonExhaustiveSwitch": "Add the missing enum cases, or a default branch.",
+  "UnusedLocalVariable": "Delete the variable; nothing reads it.",
+  "MissingOverride": "Add @Override to the method."
+}

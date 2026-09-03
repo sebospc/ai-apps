@@ -1,0 +1,97 @@
+# The stack as it would run on a host, rather than on the laptop that wrote it.
+#
+#   SMITH_SECRET_KEY=... SMITH_DB_PASSWORD=... podman compose -f docker-compose.prod.yml up -d
+#
+# What makes it different from docker-compose.yml: Caddy is the only published service, secrets come
+# from the environment and the file refuses to start without them, every service says how it is
+# healthy so the next one waits for it, and everything comes back after a reboot.
+#
+# `scripts/prod_drill.sh` runs this same file and then proves it with the browser suite.
+
+# Its own project, so `down` here can never reach the development stack's containers or its volume.
+name: smith-prod
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    container_name: smith-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smith
+      POSTGRES_PASSWORD: ${SMITH_DB_PASSWORD:?set SMITH_DB_PASSWORD}
+      POSTGRES_DB: reviewer
+    # No published port. The database answers the other containers and nothing else on the machine.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smith -d reviewer"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    container_name: smith-prod-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SMITH_DATABASE_URL: postgresql+psycopg://smith:${SMITH_DB_PASSWORD:?set SMITH_DB_PASSWORD}@postgres:5432/reviewer
+      SMITH_SECRET_KEY: ${SMITH_SECRET_KEY:?set SMITH_SECRET_KEY, e.g. openssl rand -hex 32}
+      # Caddy terminates TLS, so the session cookie can carry Secure. The web image sets the same
+      # flag on its copy of the cookie by virtue of NODE_ENV=production.
+      SMITH_COOKIE_SECURE: "true"
+    healthcheck:
+      # curl is in the image already: PMD's install step needed it.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build: ./web
+    container_name: smith-prod-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Inside the network there is nothing to encrypt and no certificate to trust.
+      SMITH_API_URL: http://api:8000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:3100/login"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: smith-prod-caddy
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      SMITH_SITE: ${SMITH_SITE:-localhost}
+      SMITH_TLS: ${SMITH_TLS:-internal}
+    ports:
+      # Rootless podman cannot bind a port below 1024, so the defaults are high and a laptop reaches
+      # the UI at https://localhost:8443. On a host that can bind them, set both to 443 and 80 — the
+      # redirect Caddy serves on :80 assumes the standard pair.
+      - "${SMITH_HTTPS_PORT:-8443}:443"
+      - "${SMITH_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Holds the CA and the issued certificate. Losing it means a new CA on every restart, which
+      # every client would then have to be told about again.
+      - caddy-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:2019/config/"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  caddy-data:

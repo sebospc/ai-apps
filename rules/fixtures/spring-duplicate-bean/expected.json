@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "spring-duplicate-bean-id", "file": "resources/acme-spring.xml", "line": 4}
+  ]
+}

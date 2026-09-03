@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "empty-catch", "file": "core/src/OrderService.java", "line": 13}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "hardcoded-secret", "file": "core/src/PaymentClient.java", "line": 6}
+  ]
+}

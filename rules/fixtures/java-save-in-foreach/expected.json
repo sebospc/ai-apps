@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "modelservice-save-in-loop", "file": "core/src/TemplateEntryService.java", "line": 15}
+  ]
+}

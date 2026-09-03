@@ -1,0 +1,8 @@
+diff --git a/integration/src/CustomerRowConverter.java b/integration/src/CustomerRowConverter.java
+--- a/integration/src/CustomerRowConverter.java
++++ b/integration/src/CustomerRowConverter.java
+@@ -13,4 +13,5 @@ public class CustomerRowConverter extends AbstractImpexConverter {
+     public String convert(final Map<Integer, String> row, final Long sequenceId) {
++        userService.setCurrentUser(userService.getAdminUser());
+         return super.convert(row, sequenceId);
+     }

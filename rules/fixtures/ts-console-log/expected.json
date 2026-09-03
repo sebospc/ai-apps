@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "no-console-log",
+      "file": "src/app/checkout-payment.component.ts",
+      "line": 9
+    }
+  ]
+}

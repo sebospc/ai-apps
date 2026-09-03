@@ -1,0 +1,10 @@
+diff --git a/web/src/RequestTraceFilter.java b/web/src/RequestTraceFilter.java
+--- a/web/src/RequestTraceFilter.java
++++ b/web/src/RequestTraceFilter.java
+@@ -40,4 +40,8 @@ public class RequestTraceFilter {
+     private void traceCookies(final HttpServletRequest request) {
++        for (final Cookie cookie : request.getCookies()) {
++            LOG.debug("cookie [" + cookie.getName() + "] value [" + cookie.getValue() + "]");
++        }
++    }
+     }

@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: smith-postgres
+    # Comes back on its own after a crash or a machine restart. Unattended runs depend on it.
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smith
+      POSTGRES_PASSWORD: smith
+      POSTGRES_DB: reviewer
+    ports:
+      - "5433:5432"
+    volumes:
+      - smith-pgdata:/var/lib/postgresql/data
+      - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/10-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smith -d reviewer"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: smith-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Inside the network postgres answers on its own name and the standard port; :5433 is only
+      # how a developer on the host reaches it.
+      SMITH_DATABASE_URL: postgresql+psycopg://smith:smith@postgres:5432/reviewer
+      SMITH_SECRET_KEY: ${SMITH_SECRET_KEY:-change-me-openssl-rand-hex-32}
+      SMITH_COOKIE_SECURE: "false"
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./web
+    container_name: smith-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # The browser never calls the API: pages and Server Actions do, from inside this network.
+      SMITH_API_URL: http://api:8000
+    ports:
+      - "3100:3100"
+
+volumes:
+  smith-pgdata:

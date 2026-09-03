@@ -1,0 +1,31 @@
+# The only door into the stack. TLS ends here; everything behind it speaks plain HTTP on a private
+# network that publishes no ports of its own.
+#
+# One origin serves the UI and the API because their routes do not overlap. That is worth more than
+# it looks: the plugin and the browser trust the same certificate, and there is no CORS to configure
+# and no second hostname to keep alive.
+
+{$SMITH_SITE:localhost} {
+	# Caddy's own CA. Right for a laptop and for anything already sitting behind a load balancer that
+	# holds the real certificate. Set SMITH_TLS to an email address to have Caddy fetch one instead.
+	tls {$SMITH_TLS:internal}
+
+	# The API's paths. Everything else is the UI, including Next's assets.
+	@api path /v1/* /auth/* /projects /projects/* /health
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3100
+	}
+
+	encode zstd gzip
+
+	# The server decides what a client may read; the browser should not be guessing either.
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		-Server
+	}
+}

@@ -1,0 +1,14 @@
+{
+  "name": "smith",
+  "description": "Smith Reviewer plugin, distributed from the Smith repository.",
+  "owner": {
+    "name": "Smith"
+  },
+  "plugins": [
+    {
+      "name": "smith",
+      "source": "./plugin",
+      "description": "Code review against your team's rules. The Smith server runs the deterministic checks and decides the verdict; your agent does the reasoning locally, on your own model."
+    }
+  ]
+}

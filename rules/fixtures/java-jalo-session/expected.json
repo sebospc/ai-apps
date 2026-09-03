@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "service-no-session", "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java", "line": 10}
+  ]
+}

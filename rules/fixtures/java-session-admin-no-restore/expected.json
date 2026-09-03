@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "session-admin-no-restore", "file": "integration/src/CustomerRowConverter.java", "line": 14}
+  ]
+}

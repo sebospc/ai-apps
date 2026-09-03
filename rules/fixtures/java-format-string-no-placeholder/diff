@@ -1,0 +1,11 @@
+diff --git a/core/src/CouponPromotionPopulator.java b/core/src/CouponPromotionPopulator.java
+--- a/core/src/CouponPromotionPopulator.java
++++ b/core/src/CouponPromotionPopulator.java
+@@ -30,4 +30,9 @@ public class CouponPromotionPopulator {
+     public void populate(final CartModel source, final CartData target) {
++        try {
++            couponsUtil.addCouponPromotions(source, target);
++        } catch (final PromotionLookupException exception) {
++            LOG.warn(String.format("Promotion not available", exception.getMessage(), stackTraceOf(exception)));
++        }
+     }

@@ -1,0 +1,8 @@
+diff --git a/core/src/acme/OrderSyncService.java b/core/src/acme/OrderSyncService.java
+--- a/core/src/acme/OrderSyncService.java
++++ b/core/src/acme/OrderSyncService.java
+@@ -12,3 +12,5 @@ public class OrderSyncService {
+     public void sync(final OrderModel order) {
++        final RestTemplate client = new RestTemplate();
++        client.postForObject(endpoint, order.getCode(), String.class);
+     }

@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "impex-no-hardcoded-pk",
+      "file": "resources/stock-levels.impex",
+      "line": 7
+    }
+  ]
+}

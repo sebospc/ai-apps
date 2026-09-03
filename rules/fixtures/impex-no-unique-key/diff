@@ -1,0 +1,8 @@
+diff --git a/resources/orders.impex b/resources/orders.impex
+--- a/resources/orders.impex
++++ b/resources/orders.impex
+@@ -1,2 +1,5 @@
+ # order statuses
++INSERT_UPDATE OrderStatus;code;name[lang=en]
++;PROCESSING;Processing
++;SHIPPED

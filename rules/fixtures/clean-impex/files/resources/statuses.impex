@@ -1,0 +1,4 @@
+# order statuses
+INSERT_UPDATE OrderStatus;code[unique=true];name[lang=en]
+;PROCESSING;Processing
+;SHIPPED;Shipped

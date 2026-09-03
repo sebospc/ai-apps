@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "modelservice-remove-in-loop",
+      "file": "core/src/ObsoleteMediaCleanupJob.java",
+      "line": 12
+    }
+  ]
+}

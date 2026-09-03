@@ -1,0 +1,32 @@
+diff --git a/core/src/CustomerFacade.java b/core/src/CustomerFacade.java
+--- a/core/src/CustomerFacade.java
++++ b/core/src/CustomerFacade.java
+@@ -1,8 +1,10 @@
+ package com.acme.facades;
+ 
++import de.hybris.platform.core.model.user.CustomerModel;
++
+ public interface CustomerFacade
+ {
+     CustomerData getCustomerForUid(String uid);
+ 
++    CustomerModel getCustomerModelForUid(String uid);
+ }
+diff --git a/core/src/DefaultCustomerFacade.java b/core/src/DefaultCustomerFacade.java
+--- a/core/src/DefaultCustomerFacade.java
++++ b/core/src/DefaultCustomerFacade.java
+@@ -1,10 +1,14 @@
+ package com.acme.facades.impl;
+ 
++import de.hybris.platform.core.model.user.CustomerModel;
++
+ public class DefaultCustomerFacade implements CustomerFacade
+ {
+     private CustomerService customerService;
+ 
++    @Override
++    public CustomerModel getCustomerModelForUid(final String uid)
++    {
++        return customerService.getUserForUID(uid);
++    }
+ }

@@ -1,0 +1,32 @@
+# A client overlay. It holds only what differs from the base ruleset it is composed with:
+# `sap-commerce-base+acme` reads the base first, then this file.
+#
+#   disabled:   base rule ids this client switches off — the guideline and every check reporting it
+#   rules:      extra guidelines, same shape as the base
+#   checks:     extra checks, same shape as the base
+
+disabled:
+  # This team's build already fails on a stray print through its own Checkstyle profile, so the base
+  # rule only repeats a message they have seen. They dismiss all of it.
+  - no-system-out
+
+rules:
+  - id: acme-outbound-via-gateway
+    text: "Outbound HTTP must go through IntegrationGateway, never a hand-built client."
+    severity: critical
+    why: "The gateway carries this client's mTLS setup, retries and audit trail. A direct client has none of it."
+    fix: "Inject IntegrationGateway and call it instead of building a REST client."
+    default_issue_type: bug
+
+checks:
+  - id: java/acme-direct-rest-client
+    rule_id: acme-outbound-via-gateway
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    pattern: "new\\s+(RestTemplate|OkHttpClient)\\s*\\("
+    match_on: added
+    message: "Outbound HTTP client built by hand."
+    suggestion: "Inject IntegrationGateway and call it instead."

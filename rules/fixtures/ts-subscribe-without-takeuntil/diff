@@ -1,0 +1,12 @@
+diff --git a/src/app/order-status.component.ts b/src/app/order-status.component.ts
+--- a/src/app/order-status.component.ts
++++ b/src/app/order-status.component.ts
+@@ -10,5 +10,8 @@
+   constructor(private readonly orderService: OrderService) {}
+ 
+   ngOnInit(): void {
++    this.orderService.getStatus(this.orderCode).subscribe((status) => {
++      this.status = status;
++    });
+   }
+ }

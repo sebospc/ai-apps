@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "flexiblesearch-in-loop", "file": "core/src/ProductLookup.java", "line": 23}
+  ]
+}

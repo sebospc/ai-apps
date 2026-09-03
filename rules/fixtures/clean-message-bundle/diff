@@ -1,0 +1,11 @@
+diff --git a/resources/messages/base_en.properties b/resources/messages/base_en.properties
+--- a/resources/messages/base_en.properties
++++ b/resources/messages/base_en.properties
+@@ -1,0 +1,7 @@
++profile.newPassword=New password
++profile.checkPassword=Confirm new password
++text.company.user.resetPassword=Reset password
++text.account.profile.updatePasswordForm=Update password
++text.account.profile.passwordStrength.weak=Weak
++password.reset.token.expired=The link used to reset your password has expired.
++registration.error.account.token.missing=Missing token

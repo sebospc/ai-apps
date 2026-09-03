@@ -1,0 +1,14 @@
+diff --git a/core/src/com/acme/occ/validators/UnitForSiteValidator.java b/core/src/com/acme/occ/validators/UnitForSiteValidator.java
+--- a/core/src/com/acme/occ/validators/UnitForSiteValidator.java
++++ b/core/src/com/acme/occ/validators/UnitForSiteValidator.java
+@@ -29,5 +29,10 @@
+    {
+       final OrderEntryWsDTO entry = (OrderEntryWsDTO) target;
+       final ProductModel product = productService.getProductForCode(entry.getProduct().getCode());
++      final List<String> allowedUnits = productUnitDao.findUnitCodesByProduct(product.getCode());
++      if (!allowedUnits.contains(entry.getUnit().getCode()))
++      {
++         errors.rejectValue("unit.code", "unit.not.allowed", "This unit is not sold for the product");
++      }
+    }
+ }

@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "properties-hardcoded-secret", "file": "config/local.properties", "line": 2}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "impex-no-unique-key", "file": "resources/orders.impex", "line": 2}
+  ]
+}

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="smith-java"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+  <description>
+    The java rules that name a defect, and nothing else.
+
+    Until 2026-08-22 this was `rulesets/java/quickstart.xml`, PMD's kitchen sink. Measured over a
+    150-file slice of a real SAP Commerce codebase it fired 36 distinct rules, 244 findings, 13.15
+    per 1000 lines — against 14 findings from everything in `rules/*.yaml` put together. PMD was
+    95% of what a developer read, and all 82 of its criticals came from three style rules:
+    GuardLogStatement, FinalParameterInAbstractMethod and AvoidUsingVolatile. A push was blocked
+    from merging by a missing `if (LOG.isDebugEnabled())` and by `final` on an interface parameter,
+    where `final` does nothing at all.
+
+    Every rule below reported a defect on that corpus. The rules that survived are listed one by
+    one rather than by category: a category is a promise about code nobody has measured, and the
+    counts in the comments are the evidence each rule earned its place with.
+
+    A rule added here needs its one-line fix in `pmd-fixes.json`, beside this file. PMD's own text
+    names the defect and never the change, and a finding that does not say what to type is half a
+    finding. The suite fails naming any rule the two files disagree about.
+  </description>
+
+  <!-- errorprone: the four rules that fired on real code. The rest of the category is dropped,
+       measured — pulling it whole (with multithreading, without codestyle) reports 178 findings,
+       9.60 per 1000, and 139 of them are AvoidDuplicateLiterals, AvoidCatchingGenericException,
+       ReplaceJavaUtilDate and UseConcurrentHashMap. Those are house opinions, not defects. -->
+  <rule ref="category/java/errorprone.xml/CloseResource"/>                                <!-- 5 -->
+  <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>                              <!-- 1 -->
+  <rule ref="category/java/errorprone.xml/MissingStaticMethodInNonInstantiatableClass"/>  <!-- 1 -->
+  <rule ref="category/java/errorprone.xml/UseLocaleWithCaseConversions"/>                 <!-- 1 -->
+
+  <!-- bestpractices: the nine that named something wrong. GuardLogStatement lives here too and is
+       deliberately absent — 53 findings, the single loudest rule in the review, and a guarded log
+       call is a micro-optimisation, not a bug. -->
+  <rule ref="category/java/bestpractices.xml/LiteralsFirstInComparisons"/>  <!-- 3 -->
+  <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>       <!-- 3 -->
+  <rule ref="category/java/bestpractices.xml/UseStandardCharsets"/>         <!-- 3 -->
+  <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>          <!-- 2 -->
+  <rule ref="category/java/bestpractices.xml/DoubleBraceInitialization"/>   <!-- 2 -->
+  <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>          <!-- 2 -->
+  <rule ref="category/java/bestpractices.xml/NonExhaustiveSwitch"/>         <!-- 1 -->
+  <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>         <!-- 1 -->
+  <rule ref="category/java/bestpractices.xml/MissingOverride"/>             <!-- 1 -->
+
+  <!-- codestyle: dropped whole. 100 of the 244 findings and not one of them a defect —
+       UnnecessaryImport 34 (the same statement as `no-star-import`, which this repository deleted
+       for being 30% of the output and zero defects), FinalParameterInAbstractMethod 28,
+       TypeParameterNamingConventions 19, UselessParentheses 16. Formatting is a formatter's job. -->
+
+  <!-- multithreading: dropped whole. Its only critical was AvoidUsingVolatile, and `volatile` is
+       the correct tool often enough that flagging it blocks more good changes than bad ones.
+       DoNotUseThreads fires 6 times on a platform whose own APIs hand you threads. -->
+
+  <!-- design: dropped whole. Cyclomatic complexity, coupling and law-of-Demeter counts are a
+       conversation to have about a module, not a line to change in a diff. -->
+
+  <!-- documentation: dropped whole. Comment size and javadoc presence are not review findings. -->
+
+  <!-- performance: dropped whole. Every rule in it is a guess about a hot path the analyzer cannot
+       see; on this corpus the ones quickstart ships fired only on code nobody profiles. -->
+
+  <!-- security: dropped, though it is only HardCodedCryptoKey and InsecureCryptoIv. Both are real
+       defects and both fired zero times on 18,550 lines, so there is no evidence either is precise
+       here. Add them back with a corpus measurement, not with a hunch. -->
+
+</ruleset>

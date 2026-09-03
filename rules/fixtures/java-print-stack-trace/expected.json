@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "no-printstacktrace", "file": "core/src/ImportJob.java", "line": 16}
+  ]
+}

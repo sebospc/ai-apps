@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "format-string-no-placeholder", "file": "core/src/CouponPromotionPopulator.java", "line": 34}
+  ]
+}

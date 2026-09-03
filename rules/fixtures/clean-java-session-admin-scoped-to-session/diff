@@ -1,0 +1,29 @@
+diff --git a/integration/src/PriceRowImportTask.java b/integration/src/PriceRowImportTask.java
+new file mode 100644
+--- /dev/null
++++ b/integration/src/PriceRowImportTask.java
+@@ -0,0 +1,24 @@
++package com.acme.integration.batch;
++
++import de.hybris.platform.servicelayer.session.Session;
++
++public class PriceRowImportTask
++{
++	public BatchHeader execute(final BatchHeader header)
++	{
++		final Session localSession = getSessionService().createNewSession();
++		getUserService().setCurrentUser(userService.getAdminUser());
++		try
++		{
++			for (final File file : header.getTransformedFiles())
++			{
++				processFile(file);
++			}
++		}
++		finally
++		{
++			getSessionService().closeSession(localSession);
++		}
++		return header;
++	}
++}

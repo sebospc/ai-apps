@@ -1,0 +1,14 @@
+diff --git a/core/testsrc/PaymentClientTest.java b/core/testsrc/PaymentClientTest.java
+--- a/core/testsrc/PaymentClientTest.java
++++ b/core/testsrc/PaymentClientTest.java
+@@ -8,4 +8,10 @@ public class PaymentClientTest {
++    private static final String API_KEY = "sk_test_0000000000000";
++
++    @Test
++    public void chargesTheCard() {
++        try {
++            client.charge(order);
++        } catch (final PaymentException expected) {
++        }
++    }
+ }

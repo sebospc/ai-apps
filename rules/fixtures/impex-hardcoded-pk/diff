@@ -1,0 +1,10 @@
+diff --git a/resources/stock-levels.impex b/resources/stock-levels.impex
+--- a/resources/stock-levels.impex
++++ b/resources/stock-levels.impex
+@@ -3,3 +3,6 @@
+ INSERT_UPDATE StockLevel;productCode[unique=true];available;warehouse(code)[default='acmeWarehouse01']
+ ;DRILL-100;25
+ ;DRILL-200;40
++
++INSERT_UPDATE StockLevel;productCode[unique=true];available;warehouse(pk)[default=8796093022208]
++;SCALER-300;15

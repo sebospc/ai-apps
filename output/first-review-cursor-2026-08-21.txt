@@ -1,0 +1,31 @@
+One prompt in Cursor, from an empty ~/.smith to a verdict.
+Recorded 2026-08-21 for task J5, against cursor-agent 2026.08.11-e8db854 and a live API on :8099.
+The prompt carried the server URL and the API key, the way plugin/README.md tells a developer to ask.
+The key is redacted here; it was a throwaway issued for this run.
+
+--- prompt -------------------------------------------------------------------------------
+review this change with Smith. My Smith server is http://localhost:8099 and my key is smk_<redacted>
+
+--- commands the agent ran ---------------------------------------------------------------
+node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith auth --url http://localhost:8099 --key 'smk_<redacted>' && node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith plan
+
+git diff HEAD -- 'i18ndictionary/acceleratoraddon/web/src/co/smith/i18ndictionary/constants/I18ndictionaryWebConstants.java'
+
+echo '{"findings": []}' | node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith submit 183
+
+--- what the developer saw ---------------------------------------------------------------
+I'll follow the Smith review skill and run the review against your local server.
+Authenticating with your Smith server, then pulling the review plan.
+Pulling the full diff and reading the changed file for the review.
+Deterministic checks already cover the issues in this change; submitting an empty finding list so we don't duplicate them.
+**Blocked:** 1 critical finding must be resolved before merge.
+
+1. `I18ndictionaryWebConstants.java:30` — JaloSession/SessionContext usage; use ServiceLayer APIs (`modelService`, `userService`, etc.) instead.
+2. `I18ndictionaryWebConstants.java:29` — `System.out.println`; use a logger.
+3. `I18ndictionaryWebConstants.java:30` — unused local variable `ctx`.
+4. `I18ndictionaryWebConstants.java:13` — unused import `java.util.*`.
+5. `I18ndictionaryWebConstants.java:13` — wildcard import; use explicit imports.
+
+Not shown: none ruled out.
+
+Want me to fix any of these, or is something off?

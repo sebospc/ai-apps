@@ -1,0 +1,448 @@
+# Paths this project's reviews ignore entirely. Override the built-in list (documentation,
+# images, lockfiles, build output — `IGNORE_PATHS` in reviewer/domain/models.py) by adding an
+# `ignore_paths:` list here; a change touching nothing else is never turned into a review.
+#
+# Any rule or check may carry `since:` (inclusive) and `until:` (exclusive) to bound it to platform
+# releases — `until: "2211"` stops a rule firing on 2211 and later. The plugin detects the version
+# from the repository's manifest; when it detects nothing, every rule applies.
+
+rules:
+  - id: facades-no-dao
+    text: "Facades must never call DAOs directly. Always go through a Service."
+    severity: critical
+    why: "Bypasses service-layer validation and transaction management."
+    fix: "Inject and call the corresponding Service instead."
+    default_issue_type: logic
+
+  - id: no-model-in-facade
+    text: "Facades must not expose Model classes to their callers. Return DTOs/Data objects."
+    severity: critical
+    why: "Leaks persistence layer into API layer."
+    fix: "Use Populator/Converter to map Model → Data."
+    default_issue_type: logic
+
+  - id: service-no-session
+    text: "Services must not access JaloSession or SessionContext directly."
+    severity: critical
+    why: "Jalo layer is deprecated. Use ServiceLayer APIs."
+    fix: "Use modelService, userService, etc."
+    default_issue_type: bug
+
+  - id: dao-uses-flexible-search
+    text: "DAOs must use FlexibleSearchService, not raw JDBC or JaloSession queries."
+    severity: warning
+    why: "FlexibleSearch is type-safe and cache-aware."
+    fix: "Inject FlexibleSearchService, use FlexibleSearchQuery."
+    default_issue_type: bug
+
+  - id: no-business-logic-in-controller
+    text: "Controllers/OCC endpoints must not contain business logic. Delegate to facades."
+    severity: critical
+    why: "Controllers are entry points only. Logic belongs in facade/service."
+    fix: "Move logic to facade, call facade from controller."
+    default_issue_type: logic
+
+  - id: populator-null-check
+    text: "Populators must null-check source fields before setting target."
+    severity: warning
+    why: "NPE in populators crash the entire convert chain."
+    fix: "Add if(source.getX() != null) before target.setX()."
+    default_issue_type: bug
+
+  - id: impex-no-hardcoded-pk
+    text: "ImpEx must never use hardcoded PKs."
+    severity: critical
+    why: "PKs differ between environments."
+    fix: "Use unique attributes or &references."
+    default_issue_type: bug
+
+  - id: extension-dependency-direction
+    text: "Custom extensions must not create circular dependencies."
+    severity: warning
+    why: "Circular deps break build order and ant clean all."
+    fix: "Extract shared code to a common extension."
+    default_issue_type: logic
+
+  - id: interceptor-must-be-registered
+    text: "Interceptors must be registered in *-spring.xml with interceptorMapping."
+    severity: warning
+    why: "Unregistered interceptor does nothing silently."
+    fix: "Add <bean> + <InterceptorMapping> in Spring config."
+    default_issue_type: bug
+
+  - id: cronjob-performable-no-transaction
+    text: "CronJob Performables should not manage transactions manually."
+    severity: warning
+    why: "Platform handles tx per-cronjob. Manual tx causes nested issues."
+    fix: "Remove manual Transaction.begin()/commit(). Let platform manage."
+    default_issue_type: bug
+
+  - id: no-scattered-condition
+    text: >
+      Do not repeat the same business-logic condition (user type checks, feature flags,
+      eligibility checks) across multiple facades or controllers. Use a Spring filter,
+      interceptor, BeforeViewHandler, or a centralized eligibility service injected automatically.
+    severity: warning
+    why: "Scattered conditions are fragile — one missed check = security/logic bug. Cross-cutting concerns belong in filters/interceptors, not per-method if-blocks."
+    fix: "Extract the condition into a Spring filter or BeforeViewHandler that applies automatically. If a service is used, ensure it is injected globally via AOP or interceptor — not manually in each facade."
+    default_issue_type: logic
+
+  - id: test-must-mock-services
+    text: "Unit tests must mock service dependencies, not rely on running platform."
+    severity: suggestion
+    scope: "**/*Test.java"
+    why: "Platform-dependent tests are slow and fragile."
+    fix: "Use Mockito to mock injected services."
+    default_issue_type: style
+
+  - id: populator-no-duplicate-fields
+    text: "Populators must not set the same target field more than once."
+    severity: warning
+    why: "Duplicate setters silently overwrite — usually a copy-paste bug."
+    fix: "Remove the duplicate setter call."
+    default_issue_type: bug
+
+  - id: validator-no-db-query
+    text: "Validators (implementing org.springframework.validation.Validator) must not query the database directly."
+    severity: warning
+    why: "Validators run per-request, often multiple times. DB queries here cause N+1 performance issues."
+    fix: "Move DB lookups to the service/facade layer and pass results to the validator."
+    default_issue_type: performance
+
+  - id: solr-indexed-property-must-exist
+    text: "SOLR indexed properties must reference existing attributes in items.xml."
+    severity: critical
+    why: "Missing attribute causes full indexing failure."
+    fix: "Verify attribute exists in type system before indexing."
+    default_issue_type: bug
+
+  - id: items-xml-deployment-table
+    text: >
+      Many-to-Many RelationTypes must declare a deployment table with explicit typecode.
+      CRITICAL: This rule ONLY applies when BOTH sourceElement AND targetElement have cardinality="many".
+      If either end has cardinality="one", it is a 1:N relation — do NOT flag it, do NOT suggest adding a deployment.
+    severity: warning
+    why: "Auto-assigned typecodes can collide across extensions. Only M:N relations need a junction table. 1:N relations use a FK on the child — adding a deployment to 1:N is WRONG."
+    fix: |
+      Add <deployment table='...' typecode='NNNNN'/> ONLY when BOTH ends are cardinality="many".
+
+      FLAG THIS (M:N — both 'many'):
+        <sourceElement type="Product" cardinality="many" .../>
+        <targetElement type="Category" cardinality="many" .../>
+        → Needs: <deployment table="ProdCatRel" typecode="10200"/>
+
+      DO NOT FLAG (1:N — one end is 'one'):
+        <sourceElement type="Order" cardinality="one" .../>
+        <targetElement type="OrderEntry" cardinality="many" .../>
+        → No deployment. This is correct as-is.
+    default_issue_type: bug
+
+  - id: no-system-out
+    text: "Do not use System.out.println or System.err. Use LOG."
+    severity: warning
+    why: "stdout is not captured by platform logging."
+    fix: "Use private static final Logger LOG = LoggerFactory.getLogger(...)."
+    default_issue_type: style
+
+  # ── Harvested catalog ────────────────────────────────────────────────────────
+  # Patterns reimplemented (not copied) from: angular-eslint + @ngrx/eslint-plugin +
+  # eslint-plugin-rxjs-x (MIT) for the frontend; PMD/SpotBugs (BSD/LGPL) + SAP Commerce
+  # best practices for the backend. Rule ideas are not copyrightable; no rule code is pasted.
+
+  # Spartacus / Angular (frontend — the reviewer had zero coverage before this)
+  - id: rxjs-takeuntil
+    text: "RxJS subscriptions in components must complete on destroy (takeUntilDestroyed / takeUntil) or use the async pipe."
+    severity: warning
+    why: "An un-terminated subscription leaks memory and fires after the component is gone."
+    fix: "Add takeUntilDestroyed() / takeUntil(this.destroy$), or render with the async pipe."
+    scope: "*.ts"
+    default_issue_type: bug
+  - id: no-subscribe-in-component
+    text: "Prefer the async pipe over calling .subscribe() inside an Angular component."
+    severity: suggestion
+    why: "Manual subscribe means manual unsubscribe; the async pipe manages the lifecycle."
+    fix: "Bind the observable in the template with | async."
+    scope: "*.ts"
+    default_issue_type: style
+  - id: no-nested-subscribe
+    text: "Do not nest .subscribe() inside another .subscribe()."
+    severity: warning
+    why: "Nested subscribes break cancellation and error propagation."
+    fix: "Compose with switchMap/mergeMap/concatMap."
+    scope: "*.ts"
+    default_issue_type: logic
+  - id: onpush-changedetection
+    text: "Components with immutable @Input data should use ChangeDetectionStrategy.OnPush."
+    severity: suggestion
+    why: "Default change detection re-checks the whole tree on every event."
+    fix: "Add changeDetection: ChangeDetectionStrategy.OnPush to the @Component."
+    scope: "*.ts"
+    default_issue_type: performance
+  - id: ngrx-effect-catcherror
+    text: "NgRx effects must handle errors (catchError) so the effect stream does not die."
+    severity: critical
+    why: "An unhandled error completes the effect; it stops reacting to all future actions."
+    fix: "Add catchError inside the inner pipe and map to a failure action."
+    scope: "*.ts"
+    default_issue_type: bug
+  - id: ngrx-selector-memoized
+    text: "Derive store state with memoized selectors (createSelector), not inline map in components."
+    severity: suggestion
+    why: "Inline derivations recompute every change-detection cycle and bypass memoization."
+    fix: "Move the projection into a createSelector."
+    scope: "*.ts"
+    default_issue_type: performance
+  - id: ssr-no-direct-window
+    text: "Do not access window/document/localStorage directly — it breaks SSR."
+    severity: warning
+    why: "These globals are undefined during server-side rendering."
+    fix: "Guard with isPlatformBrowser or inject DOCUMENT / a platform abstraction."
+    scope: "*.ts"
+    default_issue_type: bug
+  - id: lazy-load-feature-modules
+    text: "Feature modules should be lazy-loaded, not eagerly imported into the root module."
+    severity: suggestion
+    why: "Eager imports inflate the initial bundle."
+    fix: "Use loadChildren / a dynamic import in the routing config."
+    scope: "*.ts"
+    default_issue_type: performance
+
+  # SAP Commerce backend (whole-codebase patterns the AI judges with graph context)
+  - id: flexiblesearch-in-loop
+    text: "Do not run FlexibleSearch queries inside a loop."
+    severity: critical
+    why: "One query per iteration is an N+1 that hammers the DB."
+    fix: "Fetch the set in a single query before the loop, or batch the lookups."
+    default_issue_type: performance
+  - id: modelservice-save-in-loop
+    text: "Do not call modelService.save() inside a loop."
+    severity: warning
+    why: "Per-iteration saves multiply DB round-trips and transaction overhead."
+    fix: "Collect the models and save once: modelService.saveAll(models)."
+    default_issue_type: performance
+  - id: cronjob-idempotent
+    text: "CronJob perform() must be idempotent and return a PerformResult."
+    severity: warning
+    why: "A non-idempotent job double-applies effects on retry/abort; a missing result hides failures."
+    fix: "Make the job re-runnable and return new PerformResult(Result.SUCCESS, Status.FINISHED)."
+    default_issue_type: logic
+  - id: searchrestriction-bypass
+    text: "Do not disable SearchRestrictions (catalog/visibility) without an explicit, justified reason."
+    severity: warning
+    why: "Bypassing restrictions can leak staged/unauthorized data into responses."
+    fix: "Scope the query to the right CatalogVersion instead of disabling restrictions."
+    default_issue_type: security
+  - id: cluster-unsafe-static-state
+    text: "Do not hold mutable business state in static fields — it is not cluster-safe."
+    severity: warning
+    why: "Static state diverges across cluster nodes and is lost on restart."
+    fix: "Use a Service bean, the cache, or persisted models instead of static mutable state."
+    default_issue_type: bug
+  - id: missing-transaction-boundary
+    text: "Multi-step model mutations that must be atomic need a transaction boundary."
+    severity: warning
+    why: "A partial failure leaves the DB half-updated."
+    fix: "Wrap the steps in Transaction.current().execute(...)."
+    default_issue_type: logic
+
+  # ImpEx
+  - id: impex-insert-vs-insert-update
+    text: "Use INSERT_UPDATE for idempotent imports; bare INSERT fails on re-run if the row exists."
+    severity: warning
+    why: "Re-running an INSERT script throws on existing unique keys."
+    fix: "Use INSERT_UPDATE unless a fresh insert is genuinely intended."
+    scope: "*.impex"
+    default_issue_type: bug
+  - id: impex-missing-macros
+    text: "Catalog-aware ImpEx needs $catalogVersion / $lang macros on the relevant columns."
+    severity: warning
+    why: "Without them rows land in the wrong catalog version or language."
+    fix: "Reference the $catalogVersion and $lang macros defined at the top of the script."
+    scope: "*.impex"
+    default_issue_type: logic
+
+checks:
+  - id: java/no-system-out
+    rule_id: no-system-out
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: warning
+    issue_type: style
+    pattern: "System\\.(out|err)\\.(print|println)"
+    match_on: added
+    message: "System.out/err detected."
+    suggestion: "Replace with LOG.info/warn/error."
+
+  - id: java/jalo-session
+    rule_id: service-no-session
+    file_pattern: "*.java"
+    # Setting the admin user through JaloSession is how the platform's own test base class
+    # bootstraps a session, so in test code it is the convention rather than the mistake.
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    pattern: "JaloSession\\.|SessionContext\\."
+    # `SessionContext.` also ends an English sentence in a Javadoc `@param` description. Prose
+    # naming a type is not a call on it.
+    exclude_line_pattern: "^\\s*(\\*|//)"
+    match_on: added
+    message: "JaloSession/SessionContext usage detected."
+    suggestion: "Use modelService, userService, or other ServiceLayer APIs."
+
+  - id: java/raw-jdbc
+    rule_id: dao-uses-flexible-search
+    file_pattern: "*.java"
+    output: finding
+    severity: warning
+    issue_type: bug
+    pattern: "(DriverManager\\.getConnection|java\\.sql\\.Statement|PreparedStatement|ResultSet\\s)"
+    match_on: added
+    message: "Raw JDBC detected."
+    suggestion: "Inject FlexibleSearchService and use FlexibleSearchQuery."
+
+  - id: impex/hardcoded-pk
+    rule_id: impex-no-hardcoded-pk
+    file_pattern: "*.impex"
+    output: finding
+    severity: critical
+    issue_type: bug
+    pattern: "(INSERT_UPDATE|INSERT|UPDATE|REMOVE).*\\b\\d{7,13}\\b"
+    match_on: added
+    message: "Possible hardcoded PK in ImpEx."
+    suggestion: "Use unique attributes or &references."
+
+  - id: java/facade-uses-dao
+    rule_id: facades-no-dao
+    file_pattern: "*Facade*.java"
+    exclude_file_pattern: "*Test*"
+    output: finding
+    severity: critical
+    issue_type: logic
+    # A DAO field, a DAO parameter, or a call on one. An import is not a use.
+    pattern: "\\b[A-Z]\\w*Dao\\s+\\w+|\\b\\w*[Dd]ao\\s*\\.\\s*\\w+\\s*\\("
+    exclude_line_pattern: "^\\s*import\\s"
+    match_on: added
+    message: "Facade holds or calls a DAO, bypassing service-layer validation and transactions."
+    suggestion: "Inject the corresponding Service and call it instead of the DAO."
+
+  - id: java/facade-exposes-model
+    rule_id: no-model-in-facade
+    file_pattern: "*Facade*.java"
+    exclude_file_pattern: "*Test*"
+    output: finding
+    severity: critical
+    issue_type: logic
+    # A Model in the facade's public surface: the return type or a parameter of a `public` method,
+    # or of an interface method (implicitly public, no body, the line ends in `;`). Everything
+    # narrower is legitimate — a facade converts models, so a private helper, a local variable and
+    # a `protected` extension hook may all name one. Only what a caller sees is the leak.
+    pattern: "^\\s*public\\s[^;=]*\\b[A-Z]\\w*Model\\b[^;=]*\\(|^\\s*public\\s[^=]*\\([^=]*\\b[A-Z]\\w*Model\\s+\\w+|^\\s*(?:[\\w.<>\\[\\],\\s]+\\s+)?\\w+\\s*\\([^=]*\\b[A-Z]\\w*Model\\s+\\w+[^=]*\\)[\\w\\s.,]*;\\s*$|^\\s*\\b[A-Z]\\w*Model\\b[\\w<>\\[\\],\\s]*\\s+\\w+\\s*\\([^=]*\\)[\\w\\s.,]*;\\s*$"
+    # Imports name a type without using it, and a collaborator that is generic over a Model —
+    # `Converter<OrderModel, OrderData>` — is the very thing this rule wants the facade to have.
+    exclude_line_pattern: "^\\s*import\\s|(?:Converter|Populator|Service|Strategy|Comparator)\\s*<"
+    match_on: added
+    message: "Facade exposes a Model in its public API, leaking the persistence layer to its callers."
+    suggestion: "Return a Data/DTO instead, and map the Model to it with a converter/populator."
+
+  - id: java/controller-uses-dao
+    rule_id: no-business-logic-in-controller
+    file_pattern: "*Controller*.java"
+    exclude_file_pattern: "*Test*"
+    output: finding
+    severity: critical
+    issue_type: logic
+    # Only the persistence layer. Calling a *Service* from a controller is what every accelerator
+    # controller does and flagging it buries the case that is never right: reaching past both the
+    # facade and the service into a DAO. Business logic in prose stays a guideline for the agent.
+    pattern: "\\b\\w*(?:Dao|Repository)\\s*\\.\\s*\\w+\\s*\\(|\\b[A-Z]\\w*(?:Dao|Repository)\\s+\\w+"
+    exclude_line_pattern: "^\\s*import\\s"
+    match_on: added
+    message: "Controller reaches a DAO/Repository directly, past both the facade and the service."
+    suggestion: "Inject the corresponding Facade and call it instead of the DAO/Repository."
+
+  - id: java/validator-db-query
+    rule_id: validator-no-db-query
+    file_pattern: "*Validator*.java"
+    output: enrichment
+    severity: warning
+    issue_type: performance
+    pattern: "(Dao|FlexibleSearchService|modelService\\.get|sessionService)\\."
+    match_on: added
+    message: "Validator queries database directly. This causes N+1 performance issues."
+    suggestion: "Move DB lookups to service/facade layer. Pass results to validator."
+
+  - id: java/format-string-no-placeholder
+    rule_id: format-string-no-placeholder
+    file_pattern: "*.java"
+    output: finding
+    severity: warning
+    issue_type: bug
+    # A literal format string carrying no `%` at all, followed by a comma. Java takes the arguments
+    # and discards them without a word, so what they carried never reaches the log — usually the
+    # exception message and stack trace behind a warning, which is the one thing the reader of that
+    # line went looking for. The test has to be `%` rather than "has no braces": one site writes
+    # MessageFormat's `{0}` inside String.format, and that is the same defect. The comma is part of
+    # the pattern because a String.format with nothing after it formats nothing and is not a bug.
+    pattern: 'String\.format\(\s*"[^"%]*"\s*,'
+    match_on: added
+    message: "String.format has no % placeholder, so every argument after the format string is discarded and never printed."
+    suggestion: "Add the %s/%d placeholders those arguments belong in, or drop String.format and pass them to the logger directly."
+
+  - id: java/log-cookie-value
+    rule_id: log-cookie-value
+    file_pattern: "*.java"
+    output: finding
+    severity: warning
+    issue_type: security
+    # A cookie's value written into a log line. When the cookie is the session cookie that is a
+    # session id anyone with log access can replay, and the sites that do it log every cookie on the
+    # request, so the id lands in the aggregator the moment debug is switched on for the class. The
+    # logging call is matched in two forms because the corpus needs both: `LOG.info(` and friends,
+    # and a project-local helper whose name ends in `log` (`writeDebugLog(`) that no level anchor
+    # would ever find. The receiver must name a cookie — `getValue()` on its own is a Map.Entry, a
+    # config holder and a hundred other harmless things.
+    pattern: '(?i:[\w$]*log(?:ger)?)\s*(?:\.\s*(?:info|debug|warn|warning|error|trace|fatal)\s*)?\(.*(?i:[\w$]*cookie[\w$]*)\s*\.\s*getValue\s*\(\s*\)'
+    match_on: added
+    message: "This logs a cookie's value. If it is the session cookie, the log now holds a session id anyone who reads the log can replay."
+    suggestion: "Log the cookie's name, and its length or a hash if you need to tell two values apart. Never the value itself."
+
+  # ── Harvested floor checks (conservative; mostly enrichment to stay near zero-FP) ──
+  - id: ts/raw-subscribe
+    rule_id: rxjs-takeuntil
+    file_pattern: "*.ts"
+    output: enrichment
+    severity: warning
+    issue_type: bug
+    pattern: "\\.subscribe\\("
+    match_on: added
+    message: "Manual .subscribe(). It leaks if it does not complete when the component is destroyed."
+    suggestion: "Add takeUntilDestroyed()/takeUntil(), or bind with | async."
+  - id: ts/console-log
+    rule_id: no-console-log
+    file_pattern: "*.ts"
+    output: finding
+    severity: nitpick
+    issue_type: style
+    pattern: "console\\.(log|debug)\\("
+    match_on: added
+    message: "console.log/debug left in code."
+    suggestion: "Remove it or use a proper logger."
+  - id: java/printstacktrace
+    rule_id: no-printstacktrace
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: warning
+    issue_type: style
+    pattern: "\\.printStackTrace\\(\\)"
+    match_on: added
+    message: "printStackTrace() bypasses platform logging."
+    suggestion: "Log via LOG.error(message, exception)."
+
+  # `flexiblesearch-in-loop` and `modelservice-save-in-loop` used to live here, as a pattern plus a
+  # `context_pattern` looking for a loop keyword within six lines. Whether a call is inside a loop
+  # is a question about blocks, and a window of lines cannot answer it: over a real corpus the two
+  # were right 4 times out of 41. They are now one rule in `domain/rules.py` that reads the
+  # enclosing block.

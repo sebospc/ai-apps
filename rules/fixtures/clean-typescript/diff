@@ -1,0 +1,15 @@
+diff --git a/src/app/order-history.component.ts b/src/app/order-history.component.ts
+--- a/src/app/order-history.component.ts
++++ b/src/app/order-history.component.ts
+@@ -10,6 +10,13 @@ export class OrderHistoryComponent {
+   readonly orders$: Observable<Order[]> = this.orderService.getOrders();
+ 
++  readonly recentOrders$: Observable<Order[]> = this.orders$.pipe(
++    map((orders) => orders.filter((order) => order.placedAt > this.cutoff)),
++  );
++
++  trackByCode(_index: number, order: Order): string {
++    return order.code;
++  }
++
+ }

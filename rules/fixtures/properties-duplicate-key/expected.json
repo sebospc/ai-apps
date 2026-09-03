@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "properties-duplicate-key",
+      "file": "config/local.properties",
+      "line": 4
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+diff --git a/core/src/PriceRowCleanupJob.java b/core/src/PriceRowCleanupJob.java
+new file mode 100644
+--- /dev/null
++++ b/core/src/PriceRowCleanupJob.java
+@@ -0,0 +1,16 @@
++package com.acme.core.jobs;
++
++import java.util.List;
++
++import de.hybris.platform.europe1.model.PriceRowModel;
++import de.hybris.platform.servicelayer.internal.service.AbstractBusinessService;
++
++public class PriceRowCleanupJob extends AbstractBusinessService {
++
++    public void purge(final List<List<PriceRowModel>> batches, final PriceRowModel marker) {
++        for (final List<PriceRowModel> batch : batches) {
++            getModelService().removeAll(batch);
++        }
++        getModelService().remove(marker);
++    }
++}

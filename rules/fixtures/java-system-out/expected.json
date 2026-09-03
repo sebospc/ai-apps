@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "no-system-out", "file": "core/src/OrderJob.java", "line": 9}
+  ]
+}

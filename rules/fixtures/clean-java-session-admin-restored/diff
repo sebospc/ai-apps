@@ -1,0 +1,20 @@
+diff --git a/integration/src/CatalogSyncJob.java b/integration/src/CatalogSyncJob.java
+--- a/integration/src/CatalogSyncJob.java
++++ b/integration/src/CatalogSyncJob.java
+@@ -12,4 +12,9 @@ public class CatalogSyncJob {
+     public void syncPrices() {
++        sessionService.executeInLocalView(new SessionExecutionBody() {
++            @Override
++            public void executeWithoutResult() {
++                userService.setCurrentUser(userService.getAdminUser());
++                importPrices();
++            }
++        });
+     }
+diff --git a/integration/testsrc/CatalogSyncJobTest.java b/integration/testsrc/CatalogSyncJobTest.java
+--- a/integration/testsrc/CatalogSyncJobTest.java
++++ b/integration/testsrc/CatalogSyncJobTest.java
+@@ -9,3 +9,4 @@ public class CatalogSyncJobTest {
+     public void setUp() {
++        userService.setCurrentUser(userService.getAdminUser());
+     }

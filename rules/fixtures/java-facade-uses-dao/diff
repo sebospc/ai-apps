@@ -1,0 +1,17 @@
+diff --git a/core/src/DefaultInvoiceFacade.java b/core/src/DefaultInvoiceFacade.java
+--- a/core/src/DefaultInvoiceFacade.java
++++ b/core/src/DefaultInvoiceFacade.java
+@@ -1,6 +1,13 @@
+ package com.acme.facades.impl;
+ 
+ public class DefaultInvoiceFacade implements InvoiceFacade
+ {
++    private InvoiceDao invoiceDao;
++
++    @Override
++    public List<InvoiceData> getInvoicesForUnit(final String unitCode)
++    {
++        final List<InvoiceModel> invoices = invoiceDao.findByUnitCode(unitCode);
++        return invoiceConverter.convertAll(invoices);
++    }
+ }

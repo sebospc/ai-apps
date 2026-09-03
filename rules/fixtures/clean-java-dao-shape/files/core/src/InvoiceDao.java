@@ -1,0 +1,26 @@
+package com.acme.core.dao;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import de.hybris.platform.servicelayer.search.FlexibleSearchQuery;
+import de.hybris.platform.servicelayer.search.FlexibleSearchService;
+import de.hybris.platform.servicelayer.search.SearchResult;
+
+public class InvoiceDao {
+
+    private static final String FIND_INVOICES = "SELECT {pk} FROM {Invoice} WHERE {unit} = ?unit";
+
+    private FlexibleSearchService flexibleSearchService;
+
+    public List<InvoiceModel> findInvoices(final String unitUid) {
+        final List<InvoiceModel> invoices = new ArrayList<>();
+        final FlexibleSearchQuery query = new FlexibleSearchQuery(FIND_INVOICES);
+        query.addQueryParameter("unit", unitUid);
+        final SearchResult<InvoiceModel> searchResult = flexibleSearchService.search(query);
+        for (final InvoiceModel invoice : searchResult.getResult()) {
+            invoices.add(invoice);
+        }
+        return invoices;
+    }
+}

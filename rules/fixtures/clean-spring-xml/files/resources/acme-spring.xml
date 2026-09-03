@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans">
+    <bean id="acmeOrderService" class="com.acme.core.services.DefaultOrderService"/>
+    <bean id="acmeCartService" class="com.acme.core.services.DefaultCartService">
+        <property name="orderService" ref="acmeOrderService"/>
+    </bean>
+    <alias name="acmeCartService" alias="cartService"/>
+</beans>

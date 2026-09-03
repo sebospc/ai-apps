@@ -1,0 +1,11 @@
+diff --git a/core/src/OrderService.java b/core/src/OrderService.java
+--- a/core/src/OrderService.java
++++ b/core/src/OrderService.java
+@@ -10,3 +10,7 @@ public class OrderService {
+     public void place(final Order order) {
++        try {
++            gateway.charge(order);
++        } catch (final PaymentException exception) {
++        }
+     }
+ }

@@ -1,0 +1,12 @@
+.git
+.venv
+node_modules
+web/node_modules
+web/.next
+__pycache__
+*.pyc
+.pytest_cache
+# Not secrets the image needs, and one of them is the whole database.
+.env
+backups
+output

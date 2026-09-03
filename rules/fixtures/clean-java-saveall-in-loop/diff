@@ -1,0 +1,21 @@
+diff --git a/core/src/ProductBatchJob.java b/core/src/ProductBatchJob.java
+new file mode 100644
+--- /dev/null
++++ b/core/src/ProductBatchJob.java
+@@ -0,0 +1,16 @@
++package com.acme.core.jobs;
++
++import java.util.List;
++
++import de.hybris.platform.core.model.product.ProductModel;
++import de.hybris.platform.servicelayer.internal.service.AbstractBusinessService;
++
++public class ProductBatchJob extends AbstractBusinessService {
++
++    public void publish(final List<List<ProductModel>> batches, final ProductModel summary) {
++        for (final List<ProductModel> batch : batches) {
++            getModelService().saveAll(batch);
++        }
++        getModelService().save(summary);
++    }
++}

@@ -1,0 +1,8 @@
+diff --git a/core/src/OrderJob.java b/core/src/OrderJob.java
+--- a/core/src/OrderJob.java
++++ b/core/src/OrderJob.java
+@@ -8,3 +8,5 @@ public class OrderJob {
+     public void run() {
++        System.out.println("starting the order job");
++        process();
+     }

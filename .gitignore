@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.DS_Store
+node_modules/
+.next/
+.data/
+*.log
+output/screens/*/
+backups/
+
+# Measurement artifacts: they name paths in a private client corpus. Local only.
+output/*.md
+tests/data/corpus-baseline.jsonl
+tests/data/analyzer-baseline.jsonl

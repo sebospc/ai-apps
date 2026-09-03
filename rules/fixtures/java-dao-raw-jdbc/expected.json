@@ -1,0 +1,14 @@
+{
+  "findings": [
+    {
+      "rule_id": "dao-uses-flexible-search",
+      "file": "core/src/com/acme/core/dao/impl/DefaultOrderReportDao.java",
+      "line": 24
+    },
+    {
+      "rule_id": "dao-uses-flexible-search",
+      "file": "core/src/com/acme/core/dao/impl/DefaultOrderReportDao.java",
+      "line": 27
+    }
+  ]
+}

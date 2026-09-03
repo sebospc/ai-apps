@@ -1,0 +1,8 @@
+diff --git a/resources/acme-spring.xml b/resources/acme-spring.xml
+--- a/resources/acme-spring.xml
++++ b/resources/acme-spring.xml
+@@ -3,4 +3,8 @@
+     <bean id="acmeOrderService" class="com.acme.core.services.DefaultOrderService"/>
++    <bean id="acmeOrderService" class="com.acme.core.services.OverridingOrderService"/>
++    <alias name="acmeCartService" alias="cartService"/>
+ </beans>

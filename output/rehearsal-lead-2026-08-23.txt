@@ -1,0 +1,35 @@
+# Smith rehearsal, developer and lead — 2026-08-23T23:09:23.911Z
+api http://localhost:8099 · project rehearse-mt6f5rnt · developer rehearsal-dev@smith.test · change in i18ndictionary/acceleratoraddon/web/src/co/smith/i18ndictionary/constants/I18ndictionaryWebConstants.java
+
+  ok   plan opens a review
+  ok   the plan carries the policy the verdict will be computed from
+  ok   every finding carries the number a developer points at and the id Smith keeps
+  ok   the three injected problems are all found in real code
+  ok   a critical finding blocks the review
+  ok   dismissing a finding recomputes the verdict rather than acknowledging it
+  ok   a dismissed finding comes back suppressed, not silently gone
+  ok   the suppression quotes who muted it and why
+  ok   a dismissed finding is never shown as open again
+  ok   a dismissed finding no longer counts toward the verdict
+  ok   a finding keeps its identity across reviews even as its number changes
+  ok   a finding reported fixed and actually fixed does not come back
+  ok   the review that met the fix records it as confirmed
+  ok   a confirmed fix settles the claim instead of leaving it standing
+  ok   a finding reported fixed that is still there comes back saying the fix did not hold
+  ok   the review that met the unfixed claim records the regression
+  ok   a new shell recovers the review from the credentials on disk alone
+  ok   the recovered review numbers its findings the same way the plan did
+  ok   the recovered review still shows what was muted and why
+  ok   the lead's project page lists the reviews under the developer who ran them
+  ok   narrowing the list to that developer names them and keeps every one of their reviews
+  ok   the finding the developer argued with reaches the lead with their words on it
+  ok   the finding the developer fixed reaches the lead as a fix that held
+  ok   a finding nobody answered carries nothing for the lead to read into
+  ok   both sentences name the developer, and the one they argued quotes what they said
+
+What the lead reads on that review, in the developer's own words:
+  rehearsal-dev@smith.test ruled this out on 2026-08-23: this rehearsal reaches Jalo on purpose
+  rehearsal-dev@smith.test fixed this, and a later review confirmed it on 2026-08-23
+
+25 passed, 0 failed
+transcript: /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/output/rehearsal-lead-2026-08-23.txt

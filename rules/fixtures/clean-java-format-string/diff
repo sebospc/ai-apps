@@ -1,0 +1,12 @@
+diff --git a/core/src/ImportSummary.java b/core/src/ImportSummary.java
+--- a/core/src/ImportSummary.java
++++ b/core/src/ImportSummary.java
+@@ -18,4 +18,9 @@ public class ImportSummary {
+     public String describe(final String catalog, final int rows) {
++        LOG.info(String.format("Imported %d rows into %s", rows, catalog));
++        return String.format("%s: %d", catalog, rows);
++    }
++
++    public String header(final String catalog) {
++        return String.format("Catalog report");
+     }

@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "validator-no-db-query",
+      "file": "core/src/com/acme/occ/validators/UnitForSiteValidator.java",
+      "line": 32
+    }
+  ]
+}

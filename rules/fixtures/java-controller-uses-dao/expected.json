@@ -1,0 +1,6 @@
+{
+  "findings": [
+    {"rule_id": "no-business-logic-in-controller", "file": "web/src/EyebrowBarComponentController.java", "line": 5},
+    {"rule_id": "no-business-logic-in-controller", "file": "web/src/EyebrowBarComponentController.java", "line": 10}
+  ]
+}

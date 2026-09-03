@@ -1,0 +1,8 @@
+$productCatalog=acmeProductCatalog
+
+INSERT_UPDATE StockLevel;productCode[unique=true];available;warehouse(code)[default='acmeWarehouse01']
+;DRILL-100;25
+;DRILL-200;40
+
+INSERT_UPDATE StockLevel;productCode[unique=true];available;warehouse(pk)[default=8796093022208]
+;SCALER-300;15

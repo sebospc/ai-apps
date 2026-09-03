@@ -1,0 +1,10 @@
+diff --git a/config/local.properties b/config/local.properties
+--- a/config/local.properties
++++ b/config/local.properties
+@@ -1,3 +1,7 @@
+ solr.host=localhost
++media.folder.name=acmemedia
++task.engine.loadonstartup=true
++cluster.node.groups=integration,backoffice
++storefrontContextRoot=
+ log.level=INFO

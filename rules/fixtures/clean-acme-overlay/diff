@@ -1,0 +1,13 @@
+diff --git a/core/src/acme/PriceSyncService.java b/core/src/acme/PriceSyncService.java
+--- a/core/src/acme/PriceSyncService.java
++++ b/core/src/acme/PriceSyncService.java
+@@ -1,4 +1,9 @@
+ package com.acme.core.sync;
+ 
++import de.hybris.platform.core.model.product.*;
++
+ public class PriceSyncService {
++    public void publish(final ProductModel product) {
++        gateway.send("price", product.getCode());
++    }
+ }

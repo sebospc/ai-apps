@@ -1,0 +1,11 @@
+diff --git a/core/src/ImportJob.java b/core/src/ImportJob.java
+--- a/core/src/ImportJob.java
++++ b/core/src/ImportJob.java
+@@ -12,4 +12,7 @@ public class ImportJob {
+     public void perform() {
++        try {
++            importer.run();
++        } catch (final ImportException exception) {
++            exception.printStackTrace();
++        }
+     }

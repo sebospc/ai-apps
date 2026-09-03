@@ -1,0 +1,14 @@
+diff --git a/web/src/RequestTraceFilter.java b/web/src/RequestTraceFilter.java
+--- a/web/src/RequestTraceFilter.java
++++ b/web/src/RequestTraceFilter.java
+@@ -40,4 +40,12 @@ public class RequestTraceFilter {
+     private void traceCookies(final HttpServletRequest request) {
++        for (final Cookie cookie : request.getCookies()) {
++            LOG.debug("cookie [" + cookie.getName() + "] path [" + cookie.getPath() + "]");
++        }
++    }
++
++    private boolean matchesExpected(final Cookie cookie, final String expected) {
++        final String value = cookie.getValue();
++        return expected.equals(value);
+     }

@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Dark only, deliberately. One palette to design against, no light variant to keep in sync. */
+@theme {
+  --color-page: #0d0f12;
+  --color-surface: #16191e;
+  --color-ink: #e6e8ec;
+  --color-muted: #8b939f;
+  --color-line: #262b33;
+  --color-block: #f87171;
+  --color-pass: #4ade80;
+}
+
+html {
+  /* Makes the browser render scrollbars, selects and inputs dark too. */
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}

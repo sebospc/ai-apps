@@ -1,0 +1,10 @@
+diff --git a/resources/categories.impex b/resources/categories.impex
+--- a/resources/categories.impex
++++ b/resources/categories.impex
+@@ -0,0 +1,6 @@
++$catalogVersion=catalogVersion(catalog(id[default=acmeProductCatalog]),version[default=Staged])[unique=true]
++$categories=source(code,$catalogVersion)[unique=true]
++$supercategories=target(code,$catalogVersion)[unique=true]
++
++INSERT_UPDATE CategoryCategoryRelation;$categories;$supercategories
++;dental-instruments;dental

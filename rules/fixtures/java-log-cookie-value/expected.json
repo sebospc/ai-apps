@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "log-cookie-value", "file": "web/src/RequestTraceFilter.java", "line": 42}
+  ]
+}

@@ -1,0 +1,8 @@
+diff --git a/config/local.properties b/config/local.properties
+--- a/config/local.properties
++++ b/config/local.properties
+@@ -1,2 +1,4 @@
+ solr.host=localhost
++db.password=Sup3rSecret!
++cache.size=200
+ log.level=INFO

@@ -1,0 +1,15 @@
+diff --git a/src/app/checkout-payment.component.ts b/src/app/checkout-payment.component.ts
+--- a/src/app/checkout-payment.component.ts
++++ b/src/app/checkout-payment.component.ts
+@@ -6,5 +6,11 @@
+ })
+ export class CheckoutPaymentComponent {
+   submit(): void {
++    console.log("payment payload", this.form.value);
++    if (!this.form.valid) {
++      console.error("payment form rejected");
++      return;
++    }
++    this.paymentFacade.pay(this.form.value);
+   }
+ }

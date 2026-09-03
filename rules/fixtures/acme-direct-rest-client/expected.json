@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "acme-outbound-via-gateway", "file": "core/src/acme/OrderSyncService.java", "line": 13}
+  ]
+}

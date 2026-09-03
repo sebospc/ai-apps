@@ -1,0 +1,18 @@
+diff --git a/config/local.properties b/config/local.properties
+new file mode 100644
+--- /dev/null
++++ b/config/local.properties
+@@ -0,0 +1,4 @@
++hop.cybersource.merchantID=your_merchant_id
++hop.cybersource.sharedSecret=your_shared_secret
++foo.password=your_password_here
++mail.smtp.host=localhost
+diff --git a/myaddon/extgen.properties b/myaddon/extgen.properties
+new file mode 100644
+--- /dev/null
++++ b/myaddon/extgen.properties
+@@ -0,0 +1,4 @@
++YEXTNAME_TOKEN=yaddon
++YPACKAGE_TOKEN=yaddonpackage
++YMANAGER_TOKEN=YAddonManager
++YCLASSPREFIX_TOKEN=YAddon

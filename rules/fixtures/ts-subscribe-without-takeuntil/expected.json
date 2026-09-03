@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "rxjs-takeuntil",
+      "file": "src/app/order-status.component.ts",
+      "line": 13
+    }
+  ]
+}

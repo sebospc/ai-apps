@@ -1,0 +1,9 @@
+{
+  "findings": [
+    {
+      "rule_id": "modelservice-save-in-loop",
+      "file": "core/src/ProductApprovalJob.java",
+      "line": 13
+    }
+  ]
+}

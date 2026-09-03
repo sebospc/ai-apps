@@ -1,0 +1,11 @@
+diff --git a/core/src/ProductLookup.java b/core/src/ProductLookup.java
+--- a/core/src/ProductLookup.java
++++ b/core/src/ProductLookup.java
+@@ -20,4 +20,8 @@ public class ProductLookup {
+     public List<ProductModel> load(final List<String> codes) {
++        final List<ProductModel> products = new ArrayList<>();
++        for (final String code : codes) {
++            products.addAll(flexibleSearchService.search(queryFor(code)).getResult());
++        }
++        return products;
+     }

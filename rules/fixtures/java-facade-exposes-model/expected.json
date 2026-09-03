@@ -1,0 +1,5 @@
+{
+  "findings": [
+    {"rule_id": "no-model-in-facade", "file": "core/src/CustomerFacade.java", "line": 9}
+  ]
+}

@@ -1,0 +1,17 @@
+diff --git a/acmecore/src/com/acme/core/converters/QuantityPopulator.java b/acmecore/src/com/acme/core/converters/QuantityPopulator.java
+new file mode 100644
+--- /dev/null
++++ b/acmecore/src/com/acme/core/converters/QuantityPopulator.java
+@@ -0,0 +1,12 @@
++package com.acme.core.converters;
++
++public class QuantityPopulator {
++
++    public void populate(final String rawQuantity, final EntryData target) {
++        int quantity = 0;
++        try {
++            quantity = Integer.parseInt(rawQuantity);
++        } catch (final NumberFormatException ignored) {}
++        target.setQuantity(quantity);
++    }
++}

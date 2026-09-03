@@ -48,9 +48,9 @@ then mark the task `[x]` with the commit sha and commit.
 
 **Testing is your job, all of it.** Nobody is going to click through a screen, drive the plugin or
 judge whether an error message is useful. You have a real browser (`scripts/cdp.mjs`), the real CLI
-(`plugin/bin/smith`), a real database and a real SAP Commerce corpus to measure against. A feature
-you have not exercised is not finished, and "I could not test this" is only acceptable when you
-write down what stopped you.
+(`plugin/bin/smith`), a real database, and a real SAP Commerce corpus to measure against when
+`SMITH_CORPUS` points at one. A feature you have not exercised is not finished, and "I could not
+test this" is only acceptable when you write down what stopped you.
 
 Two things you must never do, because both turn a red signal green while the product stays broken:
 invent a test result you did not observe, and loosen an assertion so a failing check passes. If a
@@ -69,8 +69,15 @@ that only the intended element satisfies. A task is not done because the code is
 written. It is done when the checks pass and the work is committed.
 
 **Committing is part of the task, not a favour to your future self.** One commit per task, straight
-to main, message naming the task id. Never `git push` — there is no remote and there is not meant to
-be one yet.
+to main, message naming the task id.
+
+**The remote is public.** `origin` is `github.com/sebospc/ai-apps`, and anyone can read it. Commit
+freely; push only when asked. What must never reach a commit is anything that identifies a client:
+their name, their file paths, their class names, the defects found in their code. That is not a
+style preference — the measurements this repository lives on are taken against a real client
+checkout, and the artifacts they produce (`tests/data/*-baseline.jsonl`, the audits under `output/`)
+name paths in it. They are gitignored and they stay that way. Before adding a file that came out of
+a measurement, read it and ask whose code it describes.
 
 **When you get stuck**: try twice. If it still fails, revert your working-tree changes for that task
 (`git checkout -- .`), mark it `[!]` with one sentence on what blocked you, and move to the next
@@ -86,6 +93,33 @@ iteration.
 
 Node is the one environment trap: the system default is 18 and Next 16 refuses it. Use
 `export PATH="$HOME/.nvm/versions/node/v20.18.1/bin:$PATH"`.
+
+## The two products
+
+Two tools for SAP Commerce, one plugin surface. **Reviewer checks code that is already written.
+Pergamon helps write new code from something that already works.** Only Reviewer exists; Pergamon
+is described here so that what is built for one does not quietly make the other impossible.
+
+**Reviewer** gives a company one engineering baseline across projects, without replacing what a
+team already decided. Rules come in two layers — a base shared everywhere, a per-project overlay —
+and a lead edits both. What makes it worth having over a generic analyzer is that it knows the
+framework: Spring wiring, ImpEx, `items.xml`, item types, extensions, Spartacus. That knowledge is
+what finds architectural problems, and it is also what keeps it quiet, because a rule written for a
+framework fires where the framework is and nowhere else.
+
+**Pergamon** is an implementation catalog. The same feature gets built many times, by different
+developers, in a different way each time; Pergamon keeps one generalized implementation and applies
+it to a project. It reads the project on its own — extensions, item types, existing files, where the
+new code connects — and asks only what the code cannot tell it. Client code, names and business
+logic never reach the catalog; only the engineering pattern does, and promoting one is a person's
+job, never automatic. Two decisions are already made: a delivery is **not** frozen, because the
+session continues and the developer keeps shaping the output, and git is the record of what was
+delivered rather than Pergamon. The loop the two should eventually close is Pergamon → pull request
+→ Reviewer.
+
+They share identity and a deployment. That is why they are one repository with separate bounded
+contexts rather than separate repositories: the seam that matters is a context that could get its
+own `main.py`, not a second git remote.
 
 ## The four decisions
 
@@ -143,6 +177,29 @@ developer to learn Smith's vocabulary is a design failure, not a documentation g
 Precision over recall in every deterministic rule. A rule that cries wolf costs more than the bug it
 would have caught, because it takes the credibility of every other rule with it. No rule ships
 without a fixture proving it fires and a fixture proving it stays quiet.
+
+**Deleting a noisy rule beats adding a careful one.** Five phases of this backlog deleted more rules
+than they added and every measured number improved. When a reading says a rule is right 1 time in
+14, that is the finding; write the reading down and let the rule die. A quiet case that cannot be
+named is a rule that does not ship.
+
+Four things learned by shipping, each one a defect that reached the database before it was noticed:
+
+- **A finding's identity is the rule, the file and the line's content.** Anything that hands the
+  server an empty half makes two findings one, and one disposition silently answers both. Whoever
+  produces a finding fills the content.
+- **Guards belong at the boundary, not in each rule.** Redaction lived in the one rule that looks
+  for secrets, so a credential reached storage through whichever check pointed at the line second.
+  A rule author should not have to remember; put it where every finding passes.
+- **Two refusals must be indistinguishable in the message, not only in the status code.** A test
+  comparing `403 == 403` passed for months while a non-member could tell an existing project from an
+  imaginary one by reading the sentence. Compare what the user sees.
+- **What the product records, a lead must be able to remove.** Every `quoted_line` is a line of
+  somebody's source. Storage without an exit is fine on a laptop and an obligation on a server.
+
+**Say what you have, not what you wish you had.** The reason a developer gives is written by their
+agent, so the screen says "Reason recorded", not a colon and their words in quotation shape. The
+same rule applies to every sentence with a person's name on it.
 
 ## Adding things
 
@@ -237,6 +294,40 @@ factories, no mocks of things we own; the suite runs on sqlite and needs no cont
 
 Beyond unit tests, exercise the real thing: bring up postgres, bootstrap, drive the two endpoints,
 and read the rows back. A green suite against sqlite is not proof the product works.
+
+**Prove a test fails before you trust it passing.** Every check written for a defect gets run once
+against the code from before the fix, and the failure message must name the defect rather than an
+index or a length. A test that has only ever been green is a test nobody has read.
+
+### The corpus
+
+Six tests measure precision and recall against a real SAP Commerce checkout and skip without one:
+
+```bash
+SMITH_CORPUS=/path/to/a/checkout uv run pytest      # 141 passed
+uv run pytest                                        # 135 passed, 6 skipped
+```
+
+No corpus ships here and none ever will — the one the rules were tuned against is client code. It
+is read, never written, and nothing derived from it is committed. When a measurement produces a
+document worth keeping, it goes under `output/` and stays local.
+
+The corpus is a development tool. **The server never sees it** and does not need it: production
+receives a diff from the plugin and runs the rules against that. Anyone confusing the two ends up
+trying to ship 370,000 lines of somebody else's code to a host.
+
+One corpus is one client and one team's habits, so a rule precise here may be noisy elsewhere. That
+is a known limit of every number in this repository, not a solved problem.
+
+## It is deployed
+
+There is a real server with real users, which changes what "done" means for anything touching
+storage, authorisation or what a developer's words become. It is a Lightsail box running
+`docker-compose.prod.yml` behind Caddy with a Let's Encrypt certificate; `scripts/prod_drill.sh`
+brings the same stack up locally and drives the browser suite against it.
+
+Nothing about the deployment lives in this repository yet — it was built by hand — so recreating it
+means repeating commands nobody wrote down. That is a task waiting to be written, not a decision.
 
 ## Commands
 

@@ -3139,7 +3139,206 @@ Acceptance:
 What breaks for a developer if this does not exist: the first thing anyone knows about how Pergamon
 feels to use is a complaint from the person who tried it.
 
+## Phase V — Pergamon is measured now, and the measurement named five defects
+
+U5 read the first apply walkthrough and wrote `output/first-apply-2026-09-03.md`. This phase is that
+reading's output, one task per defect it named, and nothing else.
+
+What this phase is deliberately **not** about, because the same run measured all three and found
+nothing to fix:
+
+- **Precision.** 105 findings over 370,833 lines of the corpus, **0.28 per 1000**, top rule 21% —
+  against a budget of 1.5 and 30%. The java slice is 2.21 per 1000 combined against a ceiling of
+  2.5, pmd 1.35 against 1.5, and 0 pmd criticals. Every ceiling is green with room.
+- **Findings piling up on one line.** Measured on both scans: **zero** lines carry more than one
+  finding, corpus-wide and on the slice. The six findings on one line in
+  `output/rehearsal-2026-09-03.txt` are a fixture with a deliberately broken line, not a shape the
+  product produces on real code. Hypothesis raised and killed by measurement.
+- **Recall.** Audited for java (2026-08-22) and for ImpEx and JavaScript (2026-09-02). Both readings
+  concluded the silence is precision rather than blindness, and neither proposed a rule.
+
+So no task below adds a review rule, and the fixture-fires / fixture-stays-quiet / corpus-effect bar
+does not bind here — there is nothing to measure it against. Every task changes the **apply** surface,
+where the one reading that exists names five defects with a `path:line` each.
+
+Every task in this phase touches the plugin conversation, so "done" includes
+`node scripts/walk_skill.mjs apply` **and** `node scripts/walk_skill.mjs apply cursor`, green, with
+the API up. A change to `SKILL.md` that no agent has been run against is not finished — that is the
+whole reason the walk exists.
+
+### [ ] V1. The walk where the developer says only the symptom
+
+U5's headline is "1 turn, 0 questions" and the reading says plainly that the 0 is not evidence: the
+walk's prompt pre-answers all three of the entry's `ask` items and ends with "Go ahead and write it".
+`plugin/skills/apply/SKILL.md:94-109` — step 3, one question at a time — has never run.
+
+A second apply walk, with a prompt that names the symptom and answers nothing: "buyers are placing
+the same order twice when they double-click, can you fix that". No shape, no typecode, no answer to
+any `ask` item.
+
+`runSession` is one `execFileSync` with `-p` and there is no resume, so the agent cannot be answered.
+That is fine and it is the point: an agent that cannot know what to build must stop and ask, and an
+agent that writes a schema out of its own head instead is the defect. Do not build a conversation
+driver for this. If a later task genuinely needs a second turn, it can pay for it then.
+
+The number: **questions asked on a prompt that answers none, from 0 (never measured) to at least 1**,
+in both editors.
+
+Acceptance:
+
+- A second walk in `scripts/walk_skill.mjs`, alongside the existing apply walk, with a symptom-only
+  prompt that answers no `ask` item.
+- Its checks assert the session ended by asking the developer something and **not** by guessing: the
+  final text carries a question, and no `.java` file was written to the repo.
+- The existing apply walk is untouched and still green — this adds a second reading, it does not
+  replace the one U5 measured.
+- D5's hole is closed in the same task, because otherwise this walk's evidence has the same gap:
+  `scripts/walk_skill.mjs:122-127` records shell tool calls only, so an agent that reads the project
+  with its own file tools leaves no trace. The transcript records project reads in both editors, and
+  its heading stops claiming "Commands the agent ran" for a list that is only shell.
+- Green in both editors. The transcripts go to `output/apply-ask-<date>.txt` and
+  `output/apply-ask-cursor-<date>.txt`.
+
+What breaks for a developer if this does not exist: an agent that invents the answers to the
+questions it was supposed to ask, and nobody finds out until it has written the wrong schema into
+their project.
+
+### [ ] V2. The manifest is the other half of the registration
+
+D3. In CCv2 the cloud build pulls what `manifest.json` lists. `localextensions.xml` alone is not
+enough, and step 2 reads the manifest only for `commerceSuiteVersion`
+(`plugin/skills/apply/SKILL.md:75`). Claude caught the gap by reading and led with it; Cursor opened
+the same file to check its JSON was valid and never mentioned it. So today the developer finds out
+depending on which editor they opened.
+
+**No new key in the entry format.** `catalog/duplicate-order-prevention.yaml:48-53` already names
+every extension the feature needs, in `localextensions` and `platform_extensions`. What is missing is
+step 2 checking them against a second file, not a third list to keep in sync. `INTEGRATION` in
+`tests/test_pergamon.py:28` stays exactly as it is.
+
+The defect that disappears: a project that builds on a laptop and fails in the cloud, reported by one
+editor out of two.
+
+Acceptance:
+
+- Step 2 of `plugin/skills/apply/SKILL.md` reads `manifest.json`'s `extensions` array alongside
+  `localextensions.xml` and reports what is missing from **each**, naming the file it is missing from.
+- The fixture already carries the gap — `scripts/walk_skill.mjs:284` lists only `commerceservices`
+  and `commercewebservices`, and the entry needs `commercefacades` and `processing` — so no fixture
+  change is needed to make it fire.
+- `applyChecks` asserts the agent named the manifest, by that name, as somewhere an extension is
+  missing. Green in **both** editors, which is the half that fails today.
+
+What breaks for a developer if this does not exist: their build goes red in CCv2 for a reason the
+tool had in front of it and only mentioned half the time.
+
+### [ ] V3. Say which files you wrote
+
+D1. `plugin/skills/apply/SKILL.md:124` says "say what you wrote, as a short list of paths". Claude
+listed 16. Cursor listed six capability bullets and not one path, so a developer in Cursor runs
+`git status` to find out what landed in their checkout. `applyChecks` reads the files off the disk to
+prove code was written and never asserts the text names any of them, so `scripts/walk_skill.mjs:400`
+is green on the session that broke the rule.
+
+The number: **paths reported to the developer, from 0 in Cursor to at least 3**, and staying at 16 or
+whatever Claude reads, in both editors.
+
+Acceptance:
+
+- `applyChecks` asserts the agent's own text names at least three paths that are actually on disk in
+  the repo after the session, and among them the `items.xml` it declared the type in and the file it
+  registered the extension in. Comparing the text against the real file list is the point: a plausible
+  path the agent did not write must not satisfy it.
+- Whatever change to `SKILL.md` makes Cursor comply. The rule is already written there, so if prose
+  alone does not move it, the finding is that prose does not move it — record the number and say so.
+- Green in both editors.
+
+What breaks for a developer if this does not exist: they are told a feature was built and have to
+diff their own checkout to find out what it touched.
+
+### [ ] V4. The registration check that cannot fail
+
+D4. `scripts/walk_skill.mjs:433` proves the extension was registered with `/duplicateorder/i` over the
+whole of `localextensions.xml`. Claude registered `acmeduplicateorderfacades`, Cursor registered
+`duplicateordercore` and `duplicateorderfacades`, and the check passed for both without being able to
+name either. An XML comment holding the word satisfies it too. Both layouts are legitimate — the skill
+invites the agent to use the project's own naming — so the fix is an assertion that can tell, not a
+narrower expected name.
+
+The defect that disappears: a check that has only ever been green because it cannot go red.
+
+Acceptance:
+
+- The check reads the `<extension>` elements of `localextensions.xml` and asserts that **every**
+  extension directory created on disk during the session (every new `extensioninfo.xml`) is registered
+  by one of them, by name or by `dir`.
+- Comments do not count. Proven, not asserted: run the check once against a `localextensions.xml`
+  whose only mention of the extension is inside an XML comment, and it must fail. Per CLAUDE.md, a
+  check written for a defect is run against the code from before the fix, and the failure message
+  names the defect.
+- Both walk layouts from U5's reading still pass — this task must not force one naming on the agent.
+
+What breaks for a developer if this does not exist: nothing directly. It is the walk that breaks, and
+the walk is the only evidence anyone has that the apply skill works.
+
+### [ ] V5. The trap the agent has nothing to check against
+
+D2. `catalog/duplicate-order-prevention.yaml:40` says "If the platform already declares
+`sourceCartCode` on `Order`, do not declare it again". A CCv2 checkout carries no platform sources, so
+the condition can never be evaluated by reading. Claude asserted the answer from its own knowledge and
+added the attribute to `Order`. Cursor refused to assert and redesigned around it, never touching
+`Order`. Same request, same entry, same project, two different data models — one adds a column and one
+does not, and which one a developer gets depends on their editor.
+
+An entry line that turns on a fact the checkout cannot answer is the bug. Rewrite it so it tells the
+agent what to do when the platform sources are absent, which in CCv2 is always. Take the simplest
+option that gives both editors the same instruction, and write in the notes log which way it went and
+why.
+
+The number: **the two editors converge on the same decision about `Order.sourceCartCode`, from 2
+different schemas to 1.**
+
+Acceptance:
+
+- The `good` line no longer states a condition the agent cannot evaluate from a CCv2 checkout.
+- Every other `good` line in all three entries is read for the same shape, and any other line that
+  asks the agent to check something absent from a checkout is fixed in the same task. Say in the
+  notes log how many there were, including zero.
+- `applyChecks` asserts the same schema decision in both editors: either `Order` gains
+  `sourceCartCode` in both, or in neither.
+- `uv run pytest -k pergamon` green, and green in both editors.
+
+What breaks for a developer if this does not exist: two developers on one project get two different
+database schemas from the same catalog entry, and neither is told there was a choice.
+
 ## Notes and decisions log
+
+- 2026-09-03 — The backlog emptied with U5, so this run measured instead of building and wrote
+  phase V. Three measurements said "nothing to do here" and one named five defects. Precision:
+  105 findings over 370,833 corpus lines, 0.28 per 1000, top rule 21% of the output, against
+  budgets of 1.5 and 30%; the java slice is 2.21 per 1000 combined against a 2.5 ceiling, pmd 1.35
+  against 1.5, 0 pmd criticals. Recall: audited for java and for ImpEx/JavaScript in earlier
+  phases, both concluded precision rather than blindness. So phase V changes no rule and adds none,
+  and every task in it is an apply-surface defect from `output/first-apply-2026-09-03.md`.
+- 2026-09-03 — Measured and rejected before it became a task: findings piling up on one line. The
+  rehearsal transcript shows three findings on line 28 of one file and it reads like noise a
+  developer would resent. It is a fixture with a deliberately broken line. Over the whole corpus
+  **zero** of 105 findings share a `(file, line)` with another, and zero of 41 do on the java slice
+  where the rules and pmd run together. The worst real concentration is one file with 7 findings,
+  4 of them `pmd:CloseResource` on 4 different leaked resources, which is 4 fixes and correctly 4
+  findings. Written down so the next reading does not raise it again from the same transcript.
+- 2026-09-03 — V2 checks `manifest.json` from the skill rather than adding a `manifest` key to the
+  entry format. The extensions the feature needs are already written down twice in
+  `integration` (`localextensions` and `platform_extensions`); the gap is that step 2 reads one file
+  and the cloud build reads another. A third list would have to be kept in sync with the first two
+  by hand, for no fact they do not already carry, and it would break `INTEGRATION` in
+  `tests/test_pergamon.py:28` and all three entries for nothing.
+- 2026-09-03 — V1 asserts the agent *stops to ask* rather than driving a real two-turn conversation.
+  `runSession` is a single `execFileSync` with `-p` and neither editor is resumed, so answering a
+  question means building a conversation driver. The defect worth catching is an agent that invents
+  the answers to the `ask` items, and a session that ends on a question with no `.java` written
+  catches exactly that, for one more `execFileSync`. If a later task needs the second turn it can
+  pay for it then.
 
 - 2026-09-03 — U5's reading is `output/first-apply-2026-09-03.md`, gitignored like every other
   measurement document. The headline is **1 turn** in both editors: one prompt in, code out, no

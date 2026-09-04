@@ -3120,7 +3120,7 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing for them. A lead cannot see what the
 catalog holds without running a command, which is the same gap the review screens exist to close.
 
-### [x] U5. What the walkthrough measured, written down — `PENDING_SHA`
+### [x] U5. What the walkthrough measured, written down — `832a3aa`
 
 Not code. U3 puts a real agent through a real session; this reads the transcript and says what
 happened, the way `output/first-review-cursor-*.txt` did for the first review.

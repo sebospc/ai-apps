@@ -778,7 +778,13 @@ _CALLS_IN_LOOP: tuple[_CallInLoop, ...] = (
         re.compile(r"(?:modelService|getModelService\(\))\.save\("),
         "warning",
         "modelService.save() inside a loop multiplies DB round-trips.",
-        "Collect the models and call modelService.saveAll(models) once.",
+        # Both outcomes, because a regex cannot tell them apart without loop-invariance analysis.
+        # At 1 of the 21 corpus sites the loop re-reads one session cart, so the collection the
+        # first sentence asks for would hold that one cart N times: naming only `saveAll` there is
+        # an instruction that makes the code worse than the finding it answers.
+        "Collect the models and call modelService.saveAll(models) once. If the loop saves the "
+        "same model every time, move the save out of the loop instead: a collection built there "
+        "would hold that one model N times.",
     ),
     _CallInLoop(
         "modelservice-remove-in-loop",

@@ -7,6 +7,10 @@ A fixture is a directory under `rules/fixtures/`:
     <case>/ruleset         optional, the ruleset name; `sap-commerce-base` when absent
     <case>/expected.json   {"findings": [{"rule_id", "file", "line"}]}, an exact set
 
+An expected finding may also carry a `suggestion`, and then the fixture pins that sentence too.
+Identity is the rule, the file and the line, so the set comparison cannot see a fix being rewritten
+into a wrong one; a fixture that names the sentence is the only thing that can.
+
 An empty expected set is a **precision fixture**: ordinary code that must produce nothing at all.
 A rule that fires on it costs more than the bug it would have caught, because it takes the
 credibility of every other rule with it.
@@ -80,6 +84,17 @@ def test_rule_fixtures_report_exactly_what_they_say(case: Path) -> None:
         if want
         else f"{case.name} is a precision fixture: nothing may fire, but {got} did"
     )
+
+    reported = {(f.rule_id, f.file, f.line): f.suggestion for f in findings}
+    for finding in expected:
+        pinned = finding.get("suggestion")
+        if pinned is None:
+            continue
+        key = (finding["rule_id"], finding["file"], finding["line"])
+        assert reported[key] == pinned, (
+            f"{case.name}: {key[0]} at {key[1]}:{key[2]} now suggests {reported[key]!r}, "
+            f"the fixture pins {pinned!r}"
+        )
 
 
 def test_there_are_precision_fixtures_to_keep_the_rules_honest() -> None:

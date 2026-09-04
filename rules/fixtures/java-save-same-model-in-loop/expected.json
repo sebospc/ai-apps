@@ -1,0 +1,10 @@
+{
+  "findings": [
+    {
+      "rule_id": "modelservice-save-in-loop",
+      "file": "core/src/CartAddressUpdater.java",
+      "line": 18,
+      "suggestion": "Collect the models and call modelService.saveAll(models) once. If the loop saves the same model every time, move the save out of the loop instead: a collection built there would hold that one model N times."
+    }
+  ]
+}

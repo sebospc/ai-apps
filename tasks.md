@@ -3474,7 +3474,7 @@ Acceptance:
 What breaks for a developer if this does not exist: one DAO in one facade is three merge-blocking
 criticals, and fixing it means reading the same sentence three times to discover it was one decision.
 
-### [ ] W4. `saveAll` is not the fix when the loop saves the same model
+### [x] W4. `saveAll` is not the fix when the loop saves the same model — SHA_PLACEHOLDER
 
 `modelservice-save-in-loop` suggests `Collect the models and call modelService.saveAll(models) once.`
 At `DefaultDeliveryAddressFacade.addPaymentAddress` the loop calls `cartService.getSessionCart()` and
@@ -3532,6 +3532,39 @@ measurement read from this database, and the one after it.
 
 ## Notes and decisions log
 
+- 2026-09-04 — W4 read all 9 `modelservice-remove-in-loop` sites against their source and **none of
+  them show the shape**, so the rule is left exactly as it was, as the task allows. Every one removes
+  a different model per iteration: a loop variable at six of them, a lambda parameter at two, and
+  `entry.getFreeGift()` at the ninth, which is a different gift per entry. `removeAll(models)` is the
+  right sentence at all nine. One of them removes inside a per-item `try`/`catch` so a single failure
+  does not stop the batch, and `removeAll` would lose that isolation — a real objection, but a
+  different one from the defect W4 names, with no reading behind it yet. Written down rather than
+  acted on.
+- 2026-09-04 — W4's corpus effect, the whole point being that there is none: `modelservice-save-in-loop`
+  stays at **21** and `modelservice-remove-in-loop` at **9**, the corpus at **99** findings, **0.267
+  per 1000** over 370,833 lines, **52** critical (53%). The suggestion is the only thing that moved,
+  and all 21 findings now carry the same new sentence. At the one site the task names the loop
+  re-reads a session cart, so the fix there is hoisting rather than a collection; the sentence now
+  names that case, and findings whose suggestion is wrong go 1 to 0.
+- 2026-09-04 — W4 taught the fixture harness to pin a `suggestion` instead of writing a bespoke test
+  for the one sentence. `expected.json` compares `(rule_id, file, line)` as an exact set, which is
+  identity and cannot see a fix being rewritten into a wrong one; an optional `suggestion` key on an
+  expected finding is five lines in the harness every future fixture can use, against a second test
+  that would have duplicated `_report` to say one thing about one rule. Proved red first: against the
+  suggestion from before the change the new fixture fails with "now suggests 'Collect the models and
+  call modelService.saveAll(models) once.', the fixture pins ...", which names the sentence that came
+  back rather than an index.
+- 2026-09-04 — W4 also updated the `modelservice-save-in-loop` guideline's `fix:` in
+  `sap-commerce-base.yaml`, which the task does not mention. The guideline is the prose half of the
+  same rule and it goes to the developer's agent, so leaving it saying only `saveAll(models)` would
+  have kept the wrong instruction alive on the side the task cannot measure. One line, same sentence,
+  shorter.
+- 2026-09-04 — W4 noticed, and did not act on, a leak the repository's own rules call
+  non-negotiable: the task text above names a client class and method, and W3's note quotes a line of
+  client source. Both are already in the history, so editing the working tree removes nothing and
+  would leave a task disagreeing with what was measured against it. W4's own notes name no client
+  path, class or line, and the new fixture is `com.acme` code written here. Somebody with the
+  authority to rewrite history should decide what to do about the two that are already in.
 - 2026-09-04 — W3's corpus effect, measured before and after the exclusion on the same checkout:
   `facades-no-dao` 5 to **4**, the whole corpus 100 to **99**, criticals 53 (53%) to **52** (52%).
   `DefaultInvoiceReportFacade` drops from 3 findings to 2, and the one line that stopped firing is

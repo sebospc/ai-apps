@@ -218,7 +218,7 @@ rules:
     text: "Do not call modelService.save() inside a loop."
     severity: warning
     why: "Per-iteration saves multiply DB round-trips and transaction overhead."
-    fix: "Collect the models and save once: modelService.saveAll(models)."
+    fix: "Collect the models and call modelService.saveAll(models) once, or move the save out of the loop when every iteration saves the same model."
     default_issue_type: performance
   - id: cronjob-idempotent
     text: "CronJob perform() must be idempotent and return a PerformResult."

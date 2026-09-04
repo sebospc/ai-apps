@@ -1,5 +1,34 @@
 {
   "findings": [
-    {"rule_id": "service-no-session", "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java", "line": 10}
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 12
+    },
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 17
+    },
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 22
+    },
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 28
+    },
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 31
+    },
+    {
+      "rule_id": "service-no-session",
+      "file": "acmecore/src/com/acme/core/security/AcmeAuthenticationProvider.java",
+      "line": 35
+    }
   ]
 }

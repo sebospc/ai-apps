@@ -274,27 +274,95 @@ checks:
     message: "System.out/err detected."
     suggestion: "Replace with LOG.info/warn/error."
 
+  # `service-no-session` is one rule_id over five checks. The Jalo session is reached for several
+  # different reasons and each one has a single named ServiceLayer replacement, so one message for
+  # all of them would be a category and a menu: the cheapest thing a developer can do with "use
+  # modelService, userService, or other ServiceLayer APIs" is dismiss it. The four specific checks
+  # name the one API that does the job; the catch-all below says only what it can know.
+  #
+  # Setting the admin user through JaloSession is how the platform's own test base class bootstraps
+  # a session, so in test code it is the convention rather than the mistake — every check here
+  # excludes test paths for that reason.
+
+  - id: java/jalo-session-set-user
+    rule_id: service-no-session
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    pattern: "getCurrentSession\\(\\)\\.setUser\\("
+    exclude_line_pattern: "^\\s*(\\*|//)"
+    match_on: added
+    message: "The current user is switched on the Jalo session."
+    suggestion: "Use userService.setCurrentUser(user)."
+
+  - id: java/jalo-session-get-user
+    rule_id: service-no-session
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    pattern: "getCurrentSession\\(\\)\\.getUser\\(\\)"
+    exclude_line_pattern: "^\\s*(\\*|//)"
+    match_on: added
+    message: "The current user is read from the Jalo session."
+    suggestion: "Use userService.getCurrentUser()."
+
+  - id: java/jalo-session-language
+    rule_id: service-no-session
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    # `getSessionContext()` returns the Jalo `SessionContext` wherever it is called from; there is
+    # no ServiceLayer method of that name, so the local the context came from does not matter.
+    pattern: "getSessionContext\\(\\)\\.getLanguage\\(\\)"
+    exclude_line_pattern: "^\\s*(\\*|//)"
+    match_on: added
+    message: "The session language is read from the Jalo session context."
+    suggestion: "Use commonI18NService.getCurrentLanguage()."
+
+  - id: java/jalo-session-local-context
+    rule_id: service-no-session
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: bug
+    # Anchored on `getCurrentSession()` because the replacement this finding asks for —
+    # `sessionService.createLocalSessionContext()` — carries the same method name. A rule that
+    # fires on its own suggestion teaches a developer to ignore it.
+    pattern: "getCurrentSession\\(\\)\\.(create|remove)LocalSessionContext\\("
+    exclude_line_pattern: "^\\s*(\\*|//)"
+    match_on: added
+    message: "A local session context is opened or closed on the Jalo session."
+    suggestion: "Use sessionService.createLocalSessionContext() and sessionService.removeLocalSessionContext()."
+
   - id: java/jalo-session
     rule_id: service-no-session
     file_pattern: "*.java"
-    # Setting the admin user through JaloSession is how the platform's own test base class
-    # bootstraps a session, so in test code it is the convention rather than the mistake.
     exclude_file_pattern: "*[Tt]est*"
     output: finding
     severity: critical
     issue_type: bug
     pattern: "JaloSession\\.|SessionContext\\."
-    # Three exclusions, in order:
+    # Four kinds of exclusion, in order:
     # `SessionContext.` also ends an English sentence in a Javadoc `@param` description. Prose
     # naming a type is not a call on it.
     # `TenantAwareThreadFactory(Tenant, JaloSession)` is the platform's own constructor for handing
     # the caller's session to a worker thread. There is no ServiceLayer thread factory to move to.
     # `getCurrentSession().activate()` and `JaloSession.deactivate()` are how a plain Java thread
     # attaches to and detaches from the platform. ServiceLayer needs the session these lines create.
-    exclude_line_pattern: "^\\s*(\\*|//)|TenantAwareThreadFactory|JaloSession\\.(getCurrentSession\\(\\)\\.activate|deactivate)\\(\\)"
+    # The last four are the shapes the checks above answer by name. Without them a
+    # `getSessionContext().getLanguage()` call is two `service-no-session` findings on one line, and
+    # a disposition on one of them silently answers the other.
+    exclude_line_pattern: "^\\s*(\\*|//)|TenantAwareThreadFactory|JaloSession\\.(getCurrentSession\\(\\)\\.activate|deactivate)\\(\\)|getCurrentSession\\(\\)\\.(setUser\\(|getUser\\(\\)|(create|remove)LocalSessionContext\\()|getSessionContext\\(\\)\\.getLanguage\\(\\)"
     match_on: added
-    message: "JaloSession/SessionContext usage detected."
-    suggestion: "Use modelService, userService, or other ServiceLayer APIs."
+    message: "This call reaches the Jalo layer through JaloSession or SessionContext."
+    suggestion: "Replace it with the ServiceLayer API for what this call does; which one that is depends on the call."
 
   - id: java/raw-jdbc
     rule_id: dao-uses-flexible-search

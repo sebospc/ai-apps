@@ -129,3 +129,26 @@ def test_the_ruleset_stays_under_its_precision_budget() -> None:
         f"the share moved because a non-critical rule was deleted and this bound is what needs "
         f"re-deriving.\n\n{report}"
     )
+
+
+@pytest.mark.skipif(corpus_root() is None, reason="no corpus: set SMITH_CORPUS to a real checkout")
+def test_no_line_is_reported_twice_by_the_same_rule() -> None:
+    """One line, one rule, one finding — because that is exactly what one disposition answers.
+
+    A finding's identity is the rule, the file and the line's content, so two checks sharing a
+    `rule_id` and matching the same line produce two findings the developer sees and one
+    fingerprint the server stores. Dismissing either of them silently dismisses both, and the
+    review says the same thing twice in the meantime.
+
+    `service-no-session` is five checks over one `rule_id` and is what this guards: a
+    `getSessionContext().getLanguage()` call is also a Jalo call, so the catch-all has to exclude
+    what the specific checks already answer by name.
+    """
+    findings = scan().findings
+    per_site = Counter((f.file, f.line, f.rule_id) for f in findings if not f.suppressed)
+    twice = [site for site, count in per_site.items() if count > 1]
+
+    assert not twice, (
+        f"{len(twice)} lines carry more than one finding from the same rule, so one disposition "
+        f"would answer both: " + ", ".join(f"{file}:{line} ({rule_id})" for file, line, rule_id in twice[:5])
+    )

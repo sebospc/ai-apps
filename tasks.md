@@ -3399,7 +3399,7 @@ What breaks for a developer if this does not exist: a merge is blocked five time
 follows the platform's own documented pattern, and the tool tells them to fix it with an API that
 cannot.
 
-### [ ] W2. Sixteen findings, seven fixes, one sentence
+### [x] W2. Sixteen findings, seven fixes, one sentence — SHA_PLACEHOLDER
 
 After W1, `service-no-session` still answers five distinct shapes with
 `JaloSession/SessionContext usage detected.` and `Use modelService, userService, or other ServiceLayer
@@ -5170,3 +5170,24 @@ Append here when a task forces a decision. One line each: what was decided and w
   checkout it is, but the rule as written is absolute. This is a repository-wide cleanup with a
   measurable end state (zero corpus paths and class names in tracked files), which makes it a task
   somebody should write rather than a thing to fix inside a rule change.
+- 2026-09-04 — W2 split `service-no-session` into five checks over one rule_id. Measured: the corpus
+  count is exactly the 17 W1 left it at, split 3 `setUser` / 2 `getUser` / 2 `getSessionContext()
+  .getLanguage()` / 2 local-session-context / 8 catch-all, and the total stays 100 findings at 0.27
+  per 1000 with 53 criticals. Five distinct messages where there was one, none of them containing
+  "or other".
+- 2026-09-04 — W2 chose the invariant it asserts. The task asks for "no line produces two
+  `service-no-session` findings"; the test written is the general form, `(file, line, rule_id)`
+  unique over the whole corpus, because that tuple is what one disposition answers. Not the stronger
+  "one finding per line whatever the rule": two different rules saying two different true things
+  about one line is legitimate, and pinning it would turn a future honest finding into a build
+  failure.
+- 2026-09-04 — W2 proved the new test red before green, against the ruleset from before the change:
+  removing the four catch-all exclusions makes `test_no_line_is_reported_twice_by_the_same_rule` fail
+  naming 9 doubled lines and where they are, not a count.
+- 2026-09-04 — W2 added a precision fixture the task did not ask for,
+  `clean-java-servicelayer-session-replacements`: a class that calls `userService.setCurrentUser`,
+  `userService.getCurrentUser`, `commonI18NService.getCurrentLanguage` and
+  `sessionService.create/removeLocalSessionContext`. Naming a replacement API creates a failure mode
+  the old menu message did not have — the suggested fix carries the same method name as the defect,
+  so `(create|remove)LocalSessionContext` on its own would fire on the fix. The check is anchored on
+  `getCurrentSession()` for that reason and this fixture is what holds it there.

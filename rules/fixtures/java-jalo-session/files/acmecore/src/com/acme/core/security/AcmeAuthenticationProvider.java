@@ -1,6 +1,8 @@
 package com.acme.core.security;
 
 import de.hybris.platform.jalo.JaloSession;
+import de.hybris.platform.jalo.SessionContext;
+import de.hybris.platform.jalo.c2l.Language;
 import de.hybris.platform.jalo.user.User;
 
 public class AcmeAuthenticationProvider
@@ -8,5 +10,33 @@ public class AcmeAuthenticationProvider
     public void authenticate(final User user)
     {
         JaloSession.getCurrentSession().setUser(user);
+    }
+
+    public User caller()
+    {
+        return JaloSession.getCurrentSession().getUser();
+    }
+
+    public String callerLanguage()
+    {
+        final Language language = JaloSession.getCurrentSession().getSessionContext().getLanguage();
+        return language.getIsoCode();
+    }
+
+    public void withLocalContext()
+    {
+        JaloSession.getCurrentSession().createLocalSessionContext();
+        try
+        {
+            audit(JaloSession.getCurrentSession().getSessionContext());
+        }
+        finally
+        {
+            JaloSession.getCurrentSession().removeLocalSessionContext();
+        }
+    }
+
+    private void audit(final SessionContext context)
+    {
     }
 }

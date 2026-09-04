@@ -1,0 +1,37 @@
+# Smith skill walk — 2026-09-04T02:36:43.518Z
+# project walk-mtmcdz98 · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-W79XJD
+# claude --plugin-dir /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin -p "/smith:apply buyers are placing the same order twice when they double-click, can you fix that" --allowedTools Bash,Read,Glob,Grep,Write,Edit --output-format stream-json --verbose
+
+## What the agent ran and read
+
+$ smith catalog 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog 2>&1
+$ smith catalog duplicate-order-prevention 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog duplicate-order-prevention 2>&1
+$ find . -name extensioninfo.xml -not -path "*/node_modules/*" && echo "--- ITEMS ---" && find . -name items.xml -not -path "*/node_modules/*" && echo "--- MANIFEST ---" && find . -name manifest.json -not -path "*/node_modules/*" && echo "--- LOCALEXT ---" && find . -name localextensions.xml -not -path "*/node_modules/*" && echo "--- TREE ---" && ls -la
+Glob **/extensioninfo.xml
+Glob **/items.xml
+Glob **/{manifest.json,localextensions.xml}
+$ ls -R . | head -60
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-W79XJD/core-customize/manifest.json
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-W79XJD/core-customize/hybris/config/localextensions.xml
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-W79XJD/core-customize/hybris/bin/custom/acmecore/extensioninfo.xml
+$ find core-customize -type f | head -40
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-W79XJD/core-customize/hybris/bin/custom/acmecore/resources/acmecore-items.xml
+
+## What the developer saw
+I'll start by checking the catalog.
+
+Duplicate order guard. Reading full entry now.
+
+Now reading the project.
+
+Read your project. What I found:
+
+- One custom extension, `acmecore` at `core-customize/hybris/bin/custom/acmecore`. Names `duplicateordercore` and `duplicateorderfacades` are free — no directory collision.
+- `acmecore-items.xml` declares one type, `AcmeOpeningHours`, typecode 12100. `OrderUniqueIndex` is not declared anywhere, so no collision. I'll take **12101**.
+- `localextensions.xml` registers `commerceservices`, `commercewebservices`, `acmecore`. Both new extensions need adding there.
+- `manifest.json` lists `commerceservices` and `commercewebservices`. The feature also needs **`commercefacades`** and **`processing`** (the cleanup cronjob lives on `processing`). Those two are missing — yours to add to the manifest, I'll note it at the end.
+- `commerceSuiteVersion` is 2211, same release the implementation was written against. Nothing to adjust for version.
+- No storefront in this checkout, only `core-customize`. The Spartacus request-cancel part has nowhere to go here, so I'll write the backend and tell you exactly what the storefront needs.
+- Your project does not declare `sourceCartCode` on `Order`. I'll declare it in the new extension, but check your platform's `Order` first at build — if 2211 already ships it, drop my declaration rather than duplicating.
+
+First question: your checkout — is it the B2B accelerator facade (`b2bacceleratorfacades`, extendable via a base class), or B2C / custom, where I place the three hooks into your own checkout service by hand?

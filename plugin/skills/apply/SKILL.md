@@ -97,13 +97,18 @@ The `ask` list is what the code cannot tell you. Anything the code *can* tell yo
 in step 2 and you do not ask — asking a developer which extensions exist, after reading their
 project, is how a tool teaches them to stop answering.
 
-One question at a time. Wait for the answer before the next one. A wall of five questions gets one
-answer and four blanks.
+**Ask out loud, and stop there.** One question, in your own words, in the text the developer reads —
+then end your turn and wait for them. Not a picker, not a form, and not three questions in a row with
+your own preferred option marked on each: measured 2026-09-03, an editor that asked that way took its
+own three recommendations as the answers and wrote sixteen files for a checkout nobody had said it
+had. A question the developer never saw is not a question they were asked, and silence is not an
+answer.
 
 - Their answer decides the shape of what you write. When they say "block checkout when there is no
   cost center", that goes in the specs as a condition and into the code as a branch.
-- **"I don't know" is an answer.** Take the option the entry's `good` section points at, say in one
-  line which way you went, and move on. Never stall the work on a decision they cannot make yet.
+- **"I don't know" is an answer** — one *they* give. When they say it, take the option the entry's
+  `good` section points at, say in one line which way you went, and move on. Never stall the work on
+  a decision they cannot make yet. Nobody replying is not them saying it.
 - Acceptance criteria are yours to write. If they have them, use theirs. If they do not — and they
   usually do not — write them yourself from what the feature does and what you read of the project.
   Never stop to demand a document nobody has.
@@ -151,6 +156,8 @@ starting with `smith:`. Say it in your own words, in one line, and stop.
 - Never print raw JSON, an entry id, or a command for them to run.
 - Never write code before step 2. An entry applied to a project nobody read is a guess with a
   paragraph of confidence on top.
+- Never answer a question of yours on the developer's behalf. If you asked and nothing came back,
+  you are waiting, not deciding.
 - Never overwrite an extension or an item type the project already has.
 - Never send the project's code, or their answers, anywhere. Nothing about this session is recorded,
   and that is a promise the product makes.

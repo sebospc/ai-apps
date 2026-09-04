@@ -10,10 +10,12 @@
  *   scripts/ensure_db.sh
  *   uv run uvicorn smith.main:app --port 8099 &
  *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
- *   node scripts/walk_skill.mjs [claude|cursor] [review|apply]
+ *   node scripts/walk_skill.mjs [claude|cursor] [review|apply|apply-ask]
  *
- * Two walks, one per skill. `review` reasons over real code and argues about it; `apply` starts
- * from a developer asking for a feature and ends with code in a project it had to read first.
+ * `review` reasons over real code and argues about it. `apply` starts from a developer asking for a
+ * feature and ends with code in a project it had to read first. `apply-ask` is the same feature
+ * asked for as a bare symptom, and it reads for the opposite ending: a question, and an untouched
+ * checkout, because nothing in the prompt says what to build.
  *
  * Both editors are walked by the same assertions on purpose. A skill that reads well in one and
  * leaks a review id in the other is a skill that is only half written, and the two sessions differ
@@ -73,13 +75,35 @@ function check(name, condition, detail = "") {
 // the two editors
 // --------------------------------------------------------------------------------------------
 
+const SHELL_TOOL = "Bash";
+
 /**
- * How to open a review in each editor, and how to read the commands back out of its stream.
+ * The one argument of a tool call worth reading back — the command, or whatever it pointed at.
  *
- * `--output-format stream-json` is the only way to see the commands the agent ran; printing the
- * last message alone loses them, and the commands are half of what this script asserts. The two
- * streams agree on assistant messages and disagree on everything else, so only the shell call has
- * to be read per editor.
+ * A named argument is kept whole. A shell command is read by the checks, and one clipped at some
+ * length could hide the `| head` that a check exists to find; only the unrecognised shapes, which
+ * are whole JSON blobs, are cut down to keep the transcript readable.
+ */
+function toolDetail(args) {
+  if (!args || typeof args !== "object") return "";
+  const named =
+    args.command ?? args.path ?? args.file_path ?? args.filePath ?? args.pattern ?? args.query;
+  return named === undefined ? JSON.stringify(args).slice(0, 400) : String(named);
+}
+
+/** The shell half of a session, which is the only part the checks read. */
+function shellCommandsOf(toolCalls) {
+  return toolCalls.filter((call) => call.name === SHELL_TOOL).map((call) => call.detail).filter(Boolean);
+}
+
+/**
+ * How to open a review in each editor, and how to read the tool calls back out of its stream.
+ *
+ * `--output-format stream-json` is the only way to see what the agent did; printing the last
+ * message alone loses it, and half of what this script asserts is about the commands. Every tool
+ * call is read, not only the shell ones: Cursor reads a checkout with its own file tools, so a
+ * shell-only transcript cannot tell an agent that skipped step 2 from one that did it with
+ * `read_file`. The two streams agree on assistant messages and disagree on everything else.
  */
 const EDITORS = {
   claude: {
@@ -96,12 +120,12 @@ const EDITORS = {
       "--verbose",
     ],
     suffix: "",
-    shellCommands: (messages) =>
+    toolCalls: (messages) =>
       messages
         .filter((m) => m.type === "assistant")
         .flatMap((m) => m.message?.content ?? [])
-        .filter((block) => block.type === "tool_use" && block.name === "Bash")
-        .map((block) => String(block.input?.command ?? "")),
+        .filter((block) => block.type === "tool_use")
+        .map((block) => ({ name: String(block.name ?? "tool"), detail: toolDetail(block.input) })),
   },
   cursor: {
     binary: "cursor-agent",
@@ -120,10 +144,19 @@ const EDITORS = {
     // the first command instead of failing, and there is nobody here to approve one.
     args: (prompt) => ["--plugin-dir", PLUGIN_DIR, "-p", prompt, "--output-format", "stream-json", "--force"],
     suffix: "-cursor",
-    shellCommands: (messages) =>
+    // One `tool_call` message carries one `<name>ToolCall` key — `shellToolCall`, `readToolCall`,
+    // `globToolCall`. Reading the key rather than a list of names keeps a tool this CLI adds later
+    // in the transcript instead of silently dropping it.
+    toolCalls: (messages) =>
       messages
         .filter((m) => m.type === "tool_call" && m.subtype === "started")
-        .map((m) => String(m.tool_call?.shellToolCall?.args?.command ?? ""))
+        .map((m) => {
+          const found = Object.entries(m.tool_call ?? {}).find(([key]) => key.endsWith("ToolCall"));
+          if (!found) return null;
+          const [key, call] = found;
+          const name = key.replace(/ToolCall$/, "");
+          return { name: name === "shell" ? SHELL_TOOL : name, detail: toolDetail(call?.args) };
+        })
         .filter(Boolean),
   },
 };
@@ -469,6 +502,40 @@ function applyChecks({ repo, text, commands }) {
 }
 
 /**
+ * The walk where the developer says only the symptom.
+ *
+ * `runSession` is one non-interactive call, so there is nobody here to answer a question. That is
+ * the point rather than a limitation: an agent that cannot know what to build must stop and ask,
+ * and one that writes a schema out of its own head instead is the defect this reads for.
+ */
+function applyAskChecks({ repo, text, commands }) {
+  check(
+    "the agent read the catalog before choosing",
+    commands.some((c) => /\bcatalog\b/.test(c)),
+    commands.join(" ; ").slice(0, 300)
+  );
+  // The end of the conversation, not any part of it. A question in the middle, followed by an
+  // implementation, is an agent answering itself.
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const ending = paragraphs.slice(-2).join("\n\n");
+  check("the session ended by asking the developer something", /\?/.test(ending), ending.slice(-300));
+  const guessed = filesWritten(repo).filter((path) => /\.java$/i.test(path));
+  check("no code was written from a guess", guessed.length === 0, guessed.join(" ; ").slice(0, 300));
+}
+
+/** The apply walks read the catalog off the server, so an unseeded one has to fail by name. */
+async function catalogIsLoaded(key) {
+  const listed = await fetch(`${API}/v1/catalog`, { headers: { authorization: `Bearer ${key}` } });
+  const entries = listed.ok ? (await listed.json()).entries : [];
+  if (!entries.some((entry) => entry.id === "duplicate-order-prevention")) {
+    throw new Error(
+      "the catalog does not hold duplicate-order-prevention — load it with:\n" +
+        "  uv run python scripts/seed_catalog.py"
+    );
+  }
+}
+
+/**
  * One walk per skill: what the developer says, what the agent may do, the project it lands in, and
  * what the transcript has to prove.
  *
@@ -485,6 +552,16 @@ const APPLY_REQUEST =
   "buyers keep placing the same order twice when they double-click Place Order. It is the B2B " +
   "accelerator checkout. When the second submit loses, show the first order's confirmation. " +
   "Clear abandoned locks after a day. Go ahead and write it.";
+
+/**
+ * The same feature, asked for the way a developer actually asks: the symptom and nothing else.
+ *
+ * Not one of the entry's three `ask` items is answered here — not which checkout, not what the
+ * losing submit shows, not how long a lock lives — and there is no "go ahead" either. So the only
+ * correct end to this session is a question, and step 3 of the skill finally runs.
+ */
+const APPLY_SYMPTOM =
+  "buyers are placing the same order twice when they double-click, can you fix that";
 
 const WALKS = {
   review: {
@@ -515,18 +592,24 @@ const WALKS = {
     tools: "Bash,Read,Glob,Grep,Write,Edit",
     transcript: "apply-walk",
     setup: buildCommerceProject,
-    before: async (key) => {
-      const listed = await fetch(`${API}/v1/catalog`, { headers: { authorization: `Bearer ${key}` } });
-      const entries = listed.ok ? (await listed.json()).entries : [];
-      if (!entries.some((entry) => entry.id === "duplicate-order-prevention")) {
-        throw new Error(
-          "the catalog does not hold duplicate-order-prevention — load it with:\n" +
-            "  uv run python scripts/seed_catalog.py"
-        );
-      }
-    },
+    before: catalogIsLoaded,
     forbidden: [...FORBIDDEN, ...APPLY_FORBIDDEN],
     checks: applyChecks,
+  },
+  "apply-ask": {
+    // Nothing is answered and nothing invites the agent to start, so the same tools that let the
+    // `apply` walk reach code are handed over here on purpose: an agent that writes anyway had
+    // every chance not to, and the empty checkout afterwards is the measurement.
+    prompts: {
+      claude: `/smith:apply ${APPLY_SYMPTOM}`,
+      cursor: `with Smith, ${APPLY_SYMPTOM}`,
+    },
+    tools: "Bash,Read,Glob,Grep,Write,Edit",
+    transcript: "apply-ask",
+    setup: buildCommerceProject,
+    before: catalogIsLoaded,
+    forbidden: [...FORBIDDEN, ...APPLY_FORBIDDEN],
+    checks: applyAskChecks,
   },
 };
 
@@ -534,7 +617,7 @@ const WALKS = {
 // the walk
 // --------------------------------------------------------------------------------------------
 
-function writeTranscript(path, { editor, args, repo, slug, about, commands, text }) {
+function writeTranscript(path, { editor, args, repo, slug, about, toolCalls, text }) {
   const invocation = [editor.binary, ...args]
     .map((arg) => (/\s/.test(arg) ? `"${arg}"` : arg))
     .join(" ");
@@ -543,9 +626,11 @@ function writeTranscript(path, { editor, args, repo, slug, about, commands, text
     `# project ${slug} · ${about} · repository ${repo}`,
     `# ${invocation}`,
     "",
-    "## Commands the agent ran",
+    "## What the agent ran and read",
     "",
-    ...(commands.length ? commands.map((c) => `$ ${c}`) : ["(none)"]),
+    ...(toolCalls.length
+      ? toolCalls.map(({ name, detail }) => (name === SHELL_TOOL ? `$ ${detail}` : `${name} ${detail}`))
+      : ["(none)"]),
     "",
     "## What the developer saw",
     "",
@@ -599,11 +684,12 @@ async function main() {
   }
 
   const text = developerText(messages);
-  const commands = editor.shellCommands(messages);
+  const toolCalls = editor.toolCalls(messages);
+  const commands = shellCommandsOf(toolCalls);
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const date = new Date().toISOString().slice(0, 10);
   const transcript = join(OUTPUT_DIR, `${walk.transcript}${editor.suffix}-${date}.txt`);
-  writeTranscript(transcript, { editor, args, repo, slug, about, commands, text });
+  writeTranscript(transcript, { editor, args, repo, slug, about, toolCalls, text });
   console.log(`transcript: ${transcript}\n`);
 
   check("the agent said something to the developer", text.length > 0);

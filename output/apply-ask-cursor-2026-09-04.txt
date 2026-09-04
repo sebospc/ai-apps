@@ -1,0 +1,30 @@
+# Smith skill walk — 2026-09-04T02:46:44.045Z
+# project walk-mtmcr1lc · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN
+# cursor-agent --plugin-dir /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin -p "with Smith, buyers are placing the same order twice when they double-click, can you fix that" --output-format stream-json --force
+
+## What the agent ran and read
+
+read /Users/sebastiancabarcas/.cursor/plugins/local/smith/skills/apply/SKILL.md
+$ node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith catalog
+$ node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith catalog duplicate-order-prevention
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/extensioninfo.xml"}
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/*items.xml"}
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/localextensions.xml"}
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/manifest.json"}
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/package.json"}
+read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN/core-customize/hybris/bin/custom/acmecore/extensioninfo.xml
+read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN/core-customize/hybris/bin/custom/acmecore/resources/acmecore-items.xml
+read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN/core-customize/hybris/config/localextensions.xml
+read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN/core-customize/manifest.json
+glob {"targetDirectory":"/private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-RxhPPN","globPattern":"**/*.{java,ts,xml,impex,properties}"}
+
+## What the developer saw
+I’ll use Smith’s implementation catalog to add the duplicate-order guard.
+
+Smith has a duplicate-order guard that stops a double-clicked Place Order request from turning one cart into two orders.
+
+The project fits SAP Commerce 2211. `acmecore` is the only custom extension; its `acmecore-items.xml` declares only `AcmeOpeningHours` at typecode `12100`, so neither `OrderUniqueIndex` nor `Order.sourceCartCode` collides.
+
+`localextensions.xml` includes `commerceservices` and `commercewebservices`; `commercefacades`, `processing`, and the two new extensions must be added. No storefront code is present.
+
+Is checkout implemented with the B2B accelerator facade, or is it a B2C/custom checkout?

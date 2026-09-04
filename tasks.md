@@ -3166,7 +3166,7 @@ Every task in this phase touches the plugin conversation, so "done" includes
 the API up. A change to `SKILL.md` that no agent has been run against is not finished — that is the
 whole reason the walk exists.
 
-### [ ] V1. The walk where the developer says only the symptom
+### [x] V1. The walk where the developer says only the symptom
 
 U5's headline is "1 turn, 0 questions" and the reading says plainly that the 0 is not evidence: the
 walk's prompt pre-answers all three of the entry's `ask` items and ends with "Go ahead and write it".
@@ -3313,6 +3313,48 @@ database schemas from the same catalog entry, and neither is told there was a ch
 
 ## Notes and decisions log
 
+- 2026-09-03 — V1 ran and the number moved from 0 to 1 in both editors, but only after a change to
+  the skill. On the symptom-only prompt Claude asked one question in prose and stopped with nothing
+  written, first try. Cursor asked all three of the entry's `ask` items at once through its
+  `askQuestion` picker, with its own preferred option labelled "Recommended" on each — and a
+  `--force` session has nobody to click, so the tool returned its own recommendations, the agent
+  read them as answers and wrote **16 files**, including a B2B accelerator facade override for a
+  checkout nobody had said was B2B. That is D-nothing in the old reading and the exact defect V1
+  was written to find: not an agent that forgot to ask, an agent that asked itself.
+- 2026-09-03 — The fix is prose, and prose moved it. Step 3 of `plugin/skills/apply/SKILL.md` now
+  says to ask out loud, in the text the developer reads, and end the turn there — not a picker, not
+  a form, not three at once — and the "I don't know is an answer" clause is narrowed to an answer
+  *they* give, with "nobody replying is not them saying it". One `Never` bullet backs it. On the
+  re-run Cursor asked one question in prose, made zero `askQuestion` calls and wrote zero files.
+  Both `apply` walks were re-run afterwards and still reach code in both editors: the change stops
+  an agent answering itself, it does not make a fully-answered request stop and ask.
+- 2026-09-03 — `applyAskChecks` asserts only what V1 named: the catalog was read, the last thing the
+  developer saw carries a question, and no `.java` was written. It deliberately does not assert that
+  step 2 ran, even though the skill orders the project read before the first question. The `apply`
+  walk already proves step 2 in both editors, and an assertion V1 did not ask for is a way for this
+  walk to go red for something it was not measuring. The D5 fix makes the reads visible in the
+  transcript, which is where a reader checks it.
+- 2026-09-03 — D5 is closed by reading every tool call rather than only the shell ones, per editor:
+  Claude's `tool_use` blocks by name, Cursor's `tool_call` messages by whichever `<name>ToolCall`
+  key they carry, so a tool that CLI adds later still lands in the transcript. The heading is now
+  "What the agent ran and read". Cursor's step 2 is 5 `glob` and 4 `read` calls that were invisible
+  before. Named arguments are never truncated — a shell command clipped at some length could hide
+  the `| head` that the review walk's truncation check exists to find — and only unrecognised
+  argument shapes are cut, because Cursor's `askQuestion` and `updateTodos` blobs are hundreds of
+  characters of JSON.
+- 2026-09-03 — All six transcripts this run produced are committed, not only V1's two: the four
+  re-runs are the evidence for "the existing walks are still green", and untracked files in
+  `output/` read to the next run as a run that died half way. Read first, as CLAUDE.md requires —
+  the apply ones name fixture code only, and the two rehearsals name one class,
+  `I18ndictionaryWebConstants`, which ships with the platform and is already in the committed
+  2026-09-03 transcript.
+- 2026-09-03 — Observed while re-running the review walk as a regression check on that refactor, and
+  not acted on: `cursor review` failed "the System.out finding is shown with the fix the server
+  named" once, because the agent wrote "replace with platform logging" where the check wants `LOG.`.
+  The review skill is untouched by this task and the same walk passed on 2026-09-03 and on the
+  immediate re-run, so it is agent phrasing variance rather than a regression. Worth a number some
+  day — a fix the developer cannot copy is half a finding — but phase V changes nothing on the
+  review side.
 - 2026-09-03 — The backlog emptied with U5, so this run measured instead of building and wrote
   phase V. Three measurements said "nothing to do here" and one named five defects. Precision:
   105 findings over 370,833 corpus lines, 0.28 per 1000, top rule 21% of the output, against

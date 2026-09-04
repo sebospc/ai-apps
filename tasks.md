@@ -3443,7 +3443,7 @@ What breaks for a developer if this does not exist: they are told a layer is dep
 menu of three APIs, so the cheapest thing they can do is dismiss the finding — and a rule that is
 cheaper to dismiss than to act on is the one that takes the credibility of the other fifteen with it.
 
-### [x] W3. A Spring setter is not a second defect — SHA_PLACEHOLDER
+### [x] W3. A Spring setter is not a second defect — 3a4dc8d
 
 `facades-no-dao`, check `java/facade-uses-dao`. Its first alternative,
 `\b[A-Z]\w*Dao\s+\w+`, matches both the field declaration and the setter's parameter, so

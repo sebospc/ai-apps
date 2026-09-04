@@ -3474,7 +3474,7 @@ Acceptance:
 What breaks for a developer if this does not exist: one DAO in one facade is three merge-blocking
 criticals, and fixing it means reading the same sentence three times to discover it was one decision.
 
-### [x] W4. `saveAll` is not the fix when the loop saves the same model — SHA_PLACEHOLDER
+### [x] W4. `saveAll` is not the fix when the loop saves the same model — ed85946
 
 `modelservice-save-in-loop` suggests `Collect the models and call modelService.saveAll(models) once.`
 At `DefaultDeliveryAddressFacade.addPaymentAddress` the loop calls `cartService.getSessionCart()` and

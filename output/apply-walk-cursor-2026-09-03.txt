@@ -1,0 +1,30 @@
+# Smith skill walk — 2026-09-03T21:39:24.981Z
+# project walk-mtm1lmz4 · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-ajvKTj
+# cursor-agent --plugin-dir /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin -p "with Smith, buyers keep placing the same order twice when they double-click Place Order. It is the B2B accelerator checkout. When the second submit loses, show the first order's confirmation. Clear abandoned locks after a day. Go ahead and write it." --output-format stream-json --force
+
+## Commands the agent ran
+
+$ node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith catalog
+$ node /Users/sebastiancabarcas/.cursor/plugins/local/smith/bin/smith catalog duplicate-order-prevention
+$ git diff --check && xmllint --noout core-customize/hybris/config/localextensions.xml core-customize/hybris/bin/custom/acmecore/extensioninfo.xml core-customize/hybris/bin/custom/acmecore/resources/acmecore-items.xml core-customize/hybris/bin/custom/duplicateordercore/extensioninfo.xml core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-items.xml core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-spring.xml core-customize/hybris/bin/custom/duplicateorderfacades/extensioninfo.xml core-customize/hybris/bin/custom/duplicateorderfacades/resources/duplicateorderfacades-spring.xml && python3 -m json.tool core-customize/manifest.json >/dev/null
+$ git status --short && git diff --stat
+
+## What the developer saw
+I’m using Smith’s implementation catalog to add the duplicate-order guard with the requested replay and one-day lock cleanup behavior.
+
+Smith matches this to a database-backed duplicate-order guard: one cart can produce one order, retries return the winning order’s confirmation, and stale in-progress locks are cleaned daily.
+
+The project fits SAP Commerce 2211 and currently has only `acmecore`; its `AcmeOpeningHours` uses typecode `12100`, so `OrderUniqueIndex` can use `12101`. Neither `duplicateordercore`/`duplicateorderfacades` nor `OrderUniqueIndex` exists, and `localextensions.xml` currently registers only `commerceservices`, `commercewebservices`, and `acmecore`.
+
+The required `commercefacades`, `processing`, and B2B-specific `b2bacceleratorfacades` registrations are missing, so I’ll add them. This checkout does not include platform sources to verify whether its exact 2211 patch already defines `Order.sourceCartCode`; I’ll avoid extending `Order` and resolve the winning order through the lock’s stored order reference instead, eliminating that collision risk. There is also no Spartacus storefront here, so the server-side atomic guarantee and replay can be completed, but the cancel-previous UI binding cannot be written in this repository.
+
+Implemented Smith’s duplicate-order prevention:
+
+- Atomic cart lock via `OrderUniqueIndex` typecode `12101`
+- B2B checkout replay of the winning order confirmation
+- Lock release on every exit path
+- Batched 24-hour cleanup with daily CronJob
+- Extension/Spring/ImpEx wiring and unit test
+- Acceptance criteria in `docs/duplicate-order-prevention.md`
+
+Validation passed for XML, JSON, typecodes, and diff formatting. Full Commerce tests require the missing platform build environment. No Spartacus repository was present, so the cancel-previous UI binding remains to be added there.

@@ -1,0 +1,59 @@
+# Smith skill walk — 2026-09-03T21:43:41.850Z
+# project walk-mtm1slnj · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-v9SI3i
+# claude --plugin-dir /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin -p "/smith:apply buyers keep placing the same order twice when they double-click Place Order. It is the B2B accelerator checkout. When the second submit loses, show the first order's confirmation. Clear abandoned locks after a day. Go ahead and write it." --allowedTools Bash,Read,Glob,Grep,Write,Edit --output-format stream-json --verbose
+
+## Commands the agent ran
+
+$ smith catalog 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog 2>&1
+$ smith catalog duplicate-order-prevention 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog duplicate-order-prevention 2>&1
+$ find . -name extensioninfo.xml -not -path "*/node_modules/*" | head -50 && echo "---MANIFEST---" && find . -name manifest.json -not -path "*/node_modules/*" | head -5 && echo "---LOCALEXT---" && find . -name localextensions.xml -not -path "*/node_modules/*" && echo "---ITEMS---" && find . -name items.xml -not -path "*/node_modules/*"
+$ ls -la && echo "===TREE===" && git ls-files | head -100
+
+## What the developer saw
+I'll start by checking the catalog.
+
+Duplicate order guard. Reading the entry.
+
+Now reading your project.
+
+Read your project. Here is what is there.
+
+`core-customize/hybris/bin/custom/acmecore` is the only custom extension: classprefix `Acme`, packageroot `com.acme.core`, requires `commerceservices`. Its `acmecore-items.xml` declares one type, `AcmeOpeningHours` at typecode 12100, so 12101 is free and I took it. Nothing in the project declares `OrderUniqueIndex` or `sourceCartCode` on `Order`, and platform 2211 does not declare `sourceCartCode` either, so both are new here. No collisions.
+
+`manifest.json` says `commerceSuiteVersion` 2211, same release this was written against.
+
+Three things do not fit, and two are yours to decide:
+
+- `localextensions.xml` registers `commerceservices`, `commercewebservices`, `acmecore`. It does not register `b2bacceleratorfacades`, `commercefacades` or `processing`. Those are SAP extensions, yours to enable. I added the new extension and the required ones to `localextensions.xml`, but `manifest.json` still lists only `commerceservices` and `commercewebservices` — add them there too or the cloud build will not pull them.
+- The repo has no storefront. There is no Spartacus workspace, no `js-storefront`, nothing. So the sixth item of this feature, the place-order command rebinding, is not written. Say the word when the storefront lands.
+- The entry wants a new core extension. Your project already has one, `acmecore`, and it is where a lock type belongs. I put the core half there instead of creating `duplicateordercore`, and made a single new extension for the facade half, because that one needs `b2bacceleratorfacades` and `acmecore` should not.
+
+Your three answers were in the request already — B2B accelerator, first order's confirmation, one day — so nothing to ask. Writing.
+
+Now the specs.
+
+Written.
+
+**Core, in `acmecore`:**
+- `resources/acmecore-items.xml` — `AcmeOrderUniqueIndex` at typecode 12101 with the unique index on `sourceCartCode`, plus `sourceCartCode` on `Order` with a non-unique index for the lookup
+- `src/com/acme/core/duplicateorder/dao/AcmeOrderLockDao.java` + `impl/DefaultAcmeOrderLockDao.java`
+- `src/com/acme/core/duplicateorder/service/AcmeOrderLockService.java` + `impl/DefaultAcmeOrderLockService.java`
+- `src/com/acme/core/duplicateorder/job/AcmeOrderLockCleanupJob.java`
+- `resources/acmecore-spring.xml`, `project.properties`, `resources/impex/essentialdata-duplicateorder.impex`
+- `extensioninfo.xml` now also requires `processing`
+
+**Facade, new extension `acmeduplicateorderfacades`:**
+- `src/com/acme/duplicateorder/facades/checkout/AcmeDuplicateGuardCheckoutFacade.java`
+- `extensioninfo.xml`, `build.xml`, `resources/acmeduplicateorderfacades-spring.xml`
+
+**Wiring:** `localextensions.xml` gained `commercefacades`, `processing`, `b2bacceleratorfacades`, `acmecore`'s new neighbour `acmeduplicateorderfacades`.
+
+**Specs:** `docs/duplicate-order-prevention.md`, as given/when/then plus six acceptance criteria.
+
+Left for you:
+
+- `manifest.json` lists only `commerceservices` and `commercewebservices`. Add `commercefacades`, `processing` and `b2bacceleratorfacades` there or the cloud build will not have them.
+- `ant clean all`, then import `essentialdata-duplicateorder.impex` to create the job, cronjob and daily 03:00 trigger.
+- The facade extends `de.hybris.platform.b2bacceleratorfacades.order.impl.DefaultB2BCheckoutFlowFacade` and the Spring bean parents on `defaultB2BCheckoutFlowFacade`. That extension is not in this checkout so I could not read the exact class and bean id. If your 2211 names them differently the compile fails on the `@Override` — loudly, not silently — and it is a two-line fix in the class and the spring file.
+- Retention is `P1D` in `project.properties`. If your payment provider redirect can outlive a day, raise it.
+- No storefront in the repo, so the place-order command rebinding is not written. That is the part that makes the second click feel instant; the guard itself does not depend on it.

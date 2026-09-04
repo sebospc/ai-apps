@@ -3120,7 +3120,7 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing for them. A lead cannot see what the
 catalog holds without running a command, which is the same gap the review screens exist to close.
 
-### [ ] U5. What the walkthrough measured, written down
+### [x] U5. What the walkthrough measured, written down — `PENDING_SHA`
 
 Not code. U3 puts a real agent through a real session; this reads the transcript and says what
 happened, the way `output/first-review-cursor-*.txt` did for the first review.
@@ -3141,6 +3141,45 @@ feels to use is a complaint from the person who tried it.
 
 ## Notes and decisions log
 
+- 2026-09-03 — U5's reading is `output/first-apply-2026-09-03.md`, gitignored like every other
+  measurement document. The headline is **1 turn** in both editors: one prompt in, code out, no
+  question asked. It is also the easiest possible input — the walk's prompt pre-answers all three of
+  the entry's `ask` items and ends with "Go ahead and write it", so **0 questions** is correct
+  behaviour and not evidence, and `plugin/skills/apply/SKILL.md:94-109` (step 3, one question at a
+  time) has never run. The fixed integration layer earned its keep once: `platform_extensions` is
+  what turned "this project registers three extensions" into "and three the feature needs are
+  missing", in both editors. The five defects below are that reading's output and the input for the
+  next phase.
+- 2026-09-03 — D1: in Cursor the developer is never told what was written.
+  `plugin/skills/apply/SKILL.md:124` says "say what you wrote, as a short list of paths"; Claude
+  listed 16, Cursor listed 0 and gave six capability bullets instead. `applyChecks` reads the files
+  off the disk and never asserts the text names one, so `scripts/walk_skill.mjs:400` is green on the
+  session that broke the rule.
+- 2026-09-03 — D2: `catalog/duplicate-order-prevention.yaml:40` warns not to redeclare
+  `sourceCartCode` if the platform already has it, and a CCv2 checkout carries no platform sources
+  to check against. Claude asserted from its own knowledge that 2211 does not declare it and added
+  the attribute to `Order`; Cursor refused to assert and redesigned around it, never touching
+  `Order`. Same request, same entry, same project, two different schemas depending on the editor.
+- 2026-09-03 — D3: `manifest.json` is not in the integration layer.
+  `catalog/duplicate-order-prevention.yaml:48-53` carries `localextensions` and
+  `platform_extensions` and no manifest key, and `plugin/skills/apply/SKILL.md:75` reads
+  `manifest.json` only for `commerceSuiteVersion`. In CCv2 the build pulls what the manifest lists.
+  Claude caught it by reading and put it first in what it left for the developer; Cursor opened the
+  same file to validate its JSON and never mentioned the missing extensions.
+- 2026-09-03 — D4: `scripts/walk_skill.mjs:433` proves the registration landed with
+  `/duplicateorder/i` over the whole of `localextensions.xml`. Claude registered
+  `acmeduplicateorderfacades` and never created `duplicateordercore`; Cursor created both extensions
+  as the entry names them. The check is green for both layouts and could not name either — an XML
+  comment holding the word would satisfy it too.
+- 2026-09-03 — D5: `scripts/walk_skill.mjs:122-127` captures shell tool calls only, so Cursor's step
+  2 leaves no trace in the transcript — it read the checkout with its own file tools, and its four
+  recorded commands are two `smith catalog` calls and two post-write validations. A reader cannot
+  tell an agent that skipped step 2 from one that did it with `read_file`. A defect in the artifact,
+  not in the product.
+- 2026-09-03 — The five defects went in this log rather than into a new phase, which U5's acceptance
+  offers as the alternative. There is no next phase yet and U5 is the last `[ ]` task, so the run
+  after this one is the measuring run that writes one — these lines are what it reads, and inventing
+  a phase here would decide its shape before the measurements are taken.
 - 2026-09-03 — The four `output/*-2026-09-03.txt` transcripts left untracked are U3's walk output,
   not a run that died half way. They are the input U5 reads, they name only fixture code
   (`acmecore`), and they are the same class as the `output/rehearsal-*.txt` already committed. U4

@@ -11,6 +11,7 @@
  *   uv run uvicorn smith.main:app --port 8099 &
  *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
  *   node scripts/walk_skill.mjs [claude|cursor] [review|apply|apply-ask]
+ *   node scripts/walk_skill.mjs --self-check      # the assertions that have to be able to fail
  *
  * `review` reasons over real code and argues about it. `apply` starts from a developer asking for a
  * feature and ends with code in a project it had to read first. `apply-ask` is the same feature
@@ -29,6 +30,7 @@
  * Env: SMITH_API_URL, SMITH_CORPUS.
  */
 
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
   accessSync,
@@ -409,6 +411,58 @@ function itemtypes(xml) {
   return xml.split(/<itemtype\b/).slice(1);
 }
 
+/**
+ * The extensions `localextensions.xml` actually registers, by the name the build resolves.
+ *
+ * Comments are stripped first, because telling registration from the word being somewhere in the
+ * file is the whole point: the check this feeds used to be a substring search, which an
+ * `<!-- <extension name="..."/> -->` satisfies. Both spellings count — `name` and the last segment
+ * of a `dir` — since the fixture project registers its own extension by `dir` and the skill invites
+ * the agent to follow the project's layout.
+ */
+function registeredExtensions(xml) {
+  const tags = xml.replace(/<!--[\s\S]*?-->/g, "").match(/<extension\b[^>]*>/g) ?? [];
+  return tags.flatMap((tag) => {
+    const name = /\bname\s*=\s*"([^"]*)"/.exec(tag)?.[1];
+    const dir = /\bdir\s*=\s*"([^"]*)"/.exec(tag)?.[1];
+    return [name, dir?.replace(/\/+$/, "").split("/").pop()].filter(Boolean);
+  });
+}
+
+/**
+ * The extensions the session's files landed in, as the directory holding each `extensioninfo.xml`.
+ *
+ * Read off the disk rather than expected by name, because both layouts the walks have produced are
+ * legitimate: one agent created `duplicateordercore` and `duplicateorderfacades` as the entry names
+ * them, another put the core half in the project's own `acmecore` and created a single
+ * `acmeduplicateorderfacades` next to it. Either way, the extension the code ended up in is the
+ * thing the build has to load.
+ */
+function extensionsWrittenInto(repo, written) {
+  const roots = execFileSync("git", ["ls-files", "-co", "--exclude-standard"], {
+    cwd: repo,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter((path) => /(^|\/)extensioninfo\.xml$/i.test(path))
+    .map(dirname);
+  const owner = (path) => roots.find((root) => path.startsWith(`${root}/`));
+  return [...new Set(written.map(owner).filter(Boolean))];
+}
+
+/**
+ * Which extensions the session's code landed in, and which of those the build would not load.
+ *
+ * One function rather than two copies, so the check in the walk and the self-check that proves it
+ * can fail are reading the same logic.
+ */
+function registration(repo, written) {
+  const registered = registeredExtensions(contentsOf(repo, LOCALEXTENSIONS));
+  const landedIn = extensionsWrittenInto(repo, written);
+  const unregistered = landedIn.filter((root) => !registered.includes(root.split("/").pop()));
+  return { registered, landedIn, unregistered };
+}
+
 function contentsOf(repo, path) {
   try {
     return readFileSync(join(repo, path), "utf8");
@@ -497,10 +551,18 @@ function applyChecks({ repo, text, commands }) {
     declared.some((xml) => /OrderUniqueIndex/.test(xml)),
     written.join(" ; ").slice(0, 300)
   );
+  // Registration is what makes written code a thing the build compiles, and this is the one check
+  // that reads it. It asks the question against the agent's own layout — every extension the
+  // session wrote into has to be in `localextensions.xml` — rather than against a name this walk
+  // expects, because the two layouts measured on 2026-09-03 were both correct and a check narrow
+  // enough to name one would have failed the other.
+  const { registered, landedIn, unregistered } = registration(repo, written);
   check(
-    "the code came with its registration, so the extension would load",
-    /duplicateorder/i.test(contentsOf(repo, LOCALEXTENSIONS)),
-    contentsOf(repo, LOCALEXTENSIONS).slice(0, 300)
+    "every extension the code landed in is registered, so the build would load it",
+    landedIn.length > 0 && unregistered.length === 0,
+    landedIn.length === 0
+      ? "not one written file is inside an extension"
+      : `not registered: ${unregistered.join(", ") || "none"} — registered: ${registered.join(", ") || "none"}`
   );
   check(
     "the developer got code, not only a plan",
@@ -701,7 +763,90 @@ function writeTranscript(path, { editor, args, repo, slug, about, toolCalls, tex
   writeFileSync(path, `${header.join("\n")}${text}\n`);
 }
 
+const extensionInfo = (extension) =>
+  `core-customize/hybris/bin/custom/${extension}/extensioninfo.xml`;
+
+/**
+ * That the registration check can go red, proven before a session that costs fifteen minutes.
+ *
+ * A walk is expensive and runs twice a phase, so an assertion in it is read as evidence far more
+ * often than it is exercised on a case it should reject. The one it replaced never was: it passed
+ * on both layouts real agents produced without being able to name either, and on a commented-out
+ * registration too. This is what says the new one is not the same thing.
+ */
+function selfCheck() {
+  const wrap = (body) => `<hybrisconfig><extensions>${body}</extensions></hybrisconfig>`;
+  const registers = (body, extension) => registeredExtensions(wrap(body)).includes(extension);
+  // The layout Cursor produced: the entry's own names, registered by name.
+  assert.ok(
+    registers('<extension name="duplicateorderfacades"/>', "duplicateorderfacades"),
+    "an extension registered by name does not count as registered"
+  );
+  // The layout Claude produced: one new extension beside the project's, registered the way the
+  // project registers its own.
+  assert.ok(
+    registers('<extension dir="${HYBRIS_BIN_DIR}/custom/acmeduplicateorderfacades"/>', "acmeduplicateorderfacades"),
+    "an extension registered by dir does not count as registered"
+  );
+  assert.ok(
+    !registers('<!-- <extension name="duplicateorderfacades"/> -->', "duplicateorderfacades"),
+    "an extension mentioned only inside an XML comment counts as registered"
+  );
+
+  // Both layouts the two editors produced on 2026-09-03, on disk, plus the one the walk exists to
+  // catch. The skill invites the agent to use the project's own naming, so a check that only passes
+  // the layout whose names happen to be in the entry is a check that fails a correct session.
+  const cursorLayout = ["duplicateordercore", "duplicateorderfacades"];
+  const claudeLayout = ["acmeduplicateorderfacades"];
+  const byDir = (extension) => `<extension dir="\${HYBRIS_BIN_DIR}/custom/${extension}"/>`;
+  const acme = byDir(PROJECT_EXTENSION);
+  assert.deepEqual(
+    unregisteredIn(cursorLayout, acme + cursorLayout.map((e) => `<extension name="${e}"/>`).join("")),
+    [],
+    "the layout that creates the entry's own two extensions reads as unregistered"
+  );
+  assert.deepEqual(
+    unregisteredIn(claudeLayout, acme + claudeLayout.map(byDir).join(""), [
+      `core-customize/hybris/bin/custom/${PROJECT_EXTENSION}/src/Lock.java`,
+    ]),
+    [],
+    "the layout that adds code to the project's own extension reads as unregistered"
+  );
+  assert.deepEqual(
+    unregisteredIn(cursorLayout, acme + `<extension name="${cursorLayout[0]}"/>`),
+    [`core-customize/hybris/bin/custom/${cursorLayout[1]}`],
+    "an extension whose code was written and never registered reads as registered"
+  );
+}
+
+/**
+ * A throwaway project holding these extensions, registering `body`, with every file under the new
+ * extensions written by the session — and what the walk's check would say about it.
+ */
+function unregisteredIn(created, body, alsoWritten = []) {
+  const repo = mkdtempSync(join(tmpdir(), "smith-selfcheck-"));
+  const write = (path, contents) => {
+    mkdirSync(join(repo, dirname(path)), { recursive: true });
+    writeFileSync(join(repo, path), contents);
+  };
+  write(LOCALEXTENSIONS, `<hybrisconfig><extensions>${body}</extensions></hybrisconfig>\n`);
+  write(extensionInfo(PROJECT_EXTENSION), "<extensioninfo/>\n");
+  for (const extension of created) write(extensionInfo(extension), "<extensioninfo/>\n");
+  for (const path of alsoWritten) write(path, "\n");
+  execFileSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+  try {
+    return registration(repo, [...created.map(extensionInfo), ...alsoWritten]).unregistered;
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+}
+
 async function main() {
+  selfCheck();
+  if (process.argv[2] === "--self-check") {
+    console.log("the registration check rejects a commented-out registration");
+    return;
+  }
   const name = process.argv[2] ?? "claude";
   const editor = EDITORS[name];
   if (!editor) {

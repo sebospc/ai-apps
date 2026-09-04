@@ -3256,7 +3256,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they are told a feature was built and have to
 diff their own checkout to find out what it touched.
 
-### [ ] V4. The registration check that cannot fail
+### [x] V4. The registration check that cannot fail
 
 D4. `scripts/walk_skill.mjs:433` proves the extension was registered with `/duplicateorder/i` over the
 whole of `localextensions.xml`. Claude registered `acmeduplicateorderfacades`, Cursor registered
@@ -3313,6 +3313,19 @@ database schemas from the same catalog entry, and neither is told there was a ch
 
 ## Notes and decisions log
 
+- 2026-09-04 — V4's proof that the new registration check can go red, run against the code from
+  before the fix, as CLAUDE.md requires. Reverting the comment stripping alone fails with "an
+  extension mentioned only inside an XML comment counts as registered"; reverting only the
+  per-extension comparison back to the old `/duplicateorder/i` substring test fails with "an
+  extension whose code was written and never registered reads as registered", naming
+  `duplicateorderfacades` as the extension it let through. Both messages name the defect rather than
+  an index. The self-check runs on every walk (`node scripts/walk_skill.mjs --self-check` runs it
+  alone), because a check that only executes inside a fifteen-minute session is one nobody reads.
+- 2026-09-04 — V4's two layouts, measured this run rather than replayed: Claude created
+  `acmeduplicateordercore` and `acmeduplicateorderfacades`, Cursor created `duplicateordercore` and
+  `duplicateorderfacades`. Both are green under the new check and neither name is written into the
+  walk. Claude's layout also moved since U5's reading — one extension then, two now — which is the
+  argument for reading the layout off disk instead of expecting a name.
 - 2026-09-04 — V3's before-number, replayed over the only two committed transcripts that record file
   tool calls: Claude named **1 of the 15 paths it wrote**, Cursor **1 of 18**, and neither named the
   `items.xml` it declared the type in nor the `localextensions.xml` it registered the extension in.

@@ -70,6 +70,11 @@ forgets. Do it yourself, from the checkout, before you ask a single question:
   nothing says so at build time.
 - **`platform_extensions`.** The SAP extensions the feature assumes — `b2bcommerce`,
   `commercewebservices` and so on. One that is missing is a build failure later, not a warning.
+  **Two files decide whether one is there, and they drift apart:** `localextensions.xml` is what a
+  local build loads, and the `extensions` array of `manifest.json` is what the CCv2 cloud build
+  pulls. Read both, and for each extension that is missing say which of the two files it is missing
+  from, by name. An extension registered in one and absent from the other builds on the developer's
+  laptop and fails in the cloud, which is the failure they pay the most for.
 - **Item types.** Every `items.xml` in the project. An entry's `item_types` that is already
   declared is a collision: a second declaration of the same type breaks the build.
 - **Version.** The project's `commerceSuiteVersion` in `manifest.json` against the entry's

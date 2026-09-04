@@ -3313,6 +3313,24 @@ database schemas from the same catalog entry, and neither is told there was a ch
 
 ## Notes and decisions log
 
+- 2026-09-03 — V2 measured before it changed anything, by replaying the new check over the four
+  committed apply transcripts: red on both Cursor runs, green on both Claude runs. That is D3's
+  "depending on which editor they opened" as a number rather than a reading. After the change to
+  step 2, a fresh walk in each editor is green — 16 of 16 in both — and Cursor now reports per file:
+  "`commercefacades`, `processing` and the B2B checkout dependency `b2bacceleratorfacades` are
+  absent from both files", where before it read the manifest only to check the JSON parsed. Prose
+  moved it, with no change to the entry format and none to the fixture.
+- 2026-09-03 — The check does not accept a bare mention of `manifest.json`, because step 2 already
+  sends the agent to that file for `commerceSuiteVersion`, so a version line would satisfy one and
+  the defect would pass. It asks for the file and an extension missing from it on the same line.
+  A line rather than a paragraph: both green transcripts put them in one sentence, and a paragraph
+  would let the version line and a separate "commercefacades is missing" line satisfy each other.
+  The risk taken is an agent that reports the same gap as a markdown table with the file names in
+  the header row — that reads correct and would go red. If a future walk fails that way, the finding
+  is the check, not the agent.
+- 2026-09-03 — No new key in the entry format and no fixture change, as V2 asked. The skeleton's
+  `manifest.json` already lists only `commerceservices` and `commercewebservices` while the entry
+  needs `commercefacades` and `processing`, so the gap fires on the fixture that was already there.
 - 2026-09-03 — V1 ran and the number moved from 0 to 1 in both editors, but only after a change to
   the skill. On the symptom-only prompt Claude asked one question in prose and stopped with nothing
   written, first try. Cursor asked all three of the entry's `ask` items at once through its

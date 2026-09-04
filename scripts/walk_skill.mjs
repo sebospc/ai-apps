@@ -451,6 +451,21 @@ function applyChecks({ repo, text, commands }) {
     new RegExp(UNENABLED_PLATFORM_EXTENSION, "i").test(text),
     text.slice(0, 400)
   );
+  // The cloud build pulls what `manifest.json` lists, so an extension registered only in
+  // `localextensions.xml` builds here and fails in CCv2. Naming the file is not enough on its own:
+  // step 2 sends the agent there for `commerceSuiteVersion` as well, so a version line would
+  // satisfy a bare mention. The gap is reported only when the file and the extension missing from
+  // it are named in the same breath.
+  const manifestGap = text
+    .split("\n")
+    .some(
+      (line) => /manifest/i.test(line) && new RegExp(UNENABLED_PLATFORM_EXTENSION, "i").test(line)
+    );
+  check(
+    "the agent named manifest.json as a file an extension is missing from",
+    manifestGap,
+    firstMatch(text, /^.*manifest.*$/im) || "manifest.json is never mentioned"
+  );
 
   const written = filesWritten(repo);
   const declared = written

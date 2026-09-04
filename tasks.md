@@ -3281,7 +3281,7 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing directly. It is the walk that breaks, and
 the walk is the only evidence anyone has that the apply skill works.
 
-### [x] V5. The trap the agent has nothing to check against
+### [x] V5. The trap the agent has nothing to check against — 3fb30e6
 
 D2. `catalog/duplicate-order-prevention.yaml:40` says "If the platform already declares
 `sourceCartCode` on `Order`, do not declare it again". A CCv2 checkout carries no platform sources, so

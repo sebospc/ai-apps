@@ -3313,6 +3313,23 @@ database schemas from the same catalog entry, and neither is told there was a ch
 
 ## Notes and decisions log
 
+- 2026-09-04 — V3's before-number, replayed over the only two committed transcripts that record file
+  tool calls: Claude named **1 of the 15 paths it wrote**, Cursor **1 of 18**, and neither named the
+  `items.xml` it declared the type in nor the `localextensions.xml` it registered the extension in.
+  The 2026-09-03 pair cannot be replayed — D5's hole was closed in V1, so those transcripts hold
+  shell commands and nothing else — which means the task's "0 in Cursor, 16 in Claude" is a reading
+  of the older pair, and on the pair that can be measured both editors were equally bad. After the
+  change to step 4: **Claude 16 of 16, Cursor 18 of 18**, both naming the `items.xml` and the
+  `localextensions.xml`. Prose moved it, and the answer to V3's open question is that no code change
+  was needed.
+- 2026-09-04 — a path is a directory and a name. `pathsNamedIn` matches any segment-boundary suffix
+  of a file that is really on disk, so `resources/acmecore-items.xml` under a heading naming the
+  extension counts and a bare `items.xml` does not: a developer handed a file name still has to go
+  looking, which is the friction the task removes. A bare name would also make the check unfailable,
+  since `localextensions.xml` and `manifest.json` are named in every transcript we have, including
+  the two this check exists to fail. Driving the match from the disk rather than parsing paths out of
+  the prose is what makes an invented path count for nothing.
+
 - 2026-09-03 — V2 measured before it changed anything, by replaying the new check over the four
   committed apply transcripts: red on both Cursor runs, green on both Claude runs. That is D3's
   "depending on which editor they opened" as a number rather than a reading. After the change to

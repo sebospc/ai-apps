@@ -380,6 +380,27 @@ function filesWritten(repo) {
 }
 
 /**
+ * Which of the files on disk the agent's own text actually names.
+ *
+ * The real file list drives the match, never the prose: a plausible path the session never wrote
+ * has nothing to match against and counts for nothing. A name on its own is not a path — a
+ * developer told "`items.xml`" still has to go looking — so the shortest thing that counts is a
+ * directory and a name, which is how both editors write it when they write it at all. The
+ * character before the match has to end the previous word, otherwise an invented
+ * `otherext/resources/acmecore-items.xml` would pass as the real `resources/acmecore-items.xml`.
+ */
+function pathsNamedIn(text, written) {
+  return written.filter((path) => {
+    const segments = path.split("/");
+    return segments.some((_, at) => {
+      if (at > segments.length - 2) return false;
+      const suffix = segments.slice(at).join("/").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^\\w./-])${suffix}`).test(text);
+    });
+  });
+}
+
+/**
  * One string per `<itemtype>` declaration, so a check reads a single type rather than the whole
  * file. Matching across a file would let one type's code and another's typecode satisfy the same
  * pattern, which is how an assertion about collisions comes out green on a collision.
@@ -513,6 +534,33 @@ function applyChecks({ repo, text, commands }) {
     "the specs were written as conditions, with acceptance criteria",
     specs.some((doc) => /\bgiven\b/i.test(doc) && /accept|criteri/i.test(doc)),
     written.filter((path) => /\.md$/i.test(path)).join(" ; ") || "no document was written"
+  );
+
+  // Step 4 ends with the list of what was written, and it is the only place a developer learns
+  // what landed in their checkout. Measured on the 2026-09-04 transcripts, both editors named one
+  // path out of fifteen and eighteen written: everything else was a sentence about the feature or
+  // a bare file name. A developer who has to run `git status` after the session was not told.
+  const named = pathsNamedIn(text, written);
+  check(
+    "the agent's own text names the files it wrote, as paths",
+    named.length >= 3,
+    `${named.length} of ${written.length} written paths are named — ${named.join(" ; ") || "none"}`
+  );
+  // The two the developer needs first: where the data model changed, and where the build was told
+  // the new extension exists. Both are named against the disk, so the check follows the agent's own
+  // layout rather than a naming this walk expects.
+  const typeDeclaredIn = written.filter(
+    (path) => /items\.xml$/i.test(path) && /OrderUniqueIndex/.test(contentsOf(repo, path))
+  );
+  check(
+    "the text names the items.xml the type was declared in",
+    typeDeclaredIn.some((path) => named.includes(path)),
+    typeDeclaredIn.join(" ; ") || "no items.xml on disk declares the type"
+  );
+  check(
+    "the text names the file the extension was registered in",
+    named.includes(LOCALEXTENSIONS),
+    named.join(" ; ") || "no written path is named at all"
   );
 }
 

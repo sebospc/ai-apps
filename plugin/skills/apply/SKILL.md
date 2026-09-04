@@ -131,9 +131,17 @@ every line of its `good` section — that is where the traps are, and they are t
 Include the `localextensions.xml` registration and the `items.xml` declarations, since a feature
 that is written and not wired in is not built.
 
-Then say what you wrote, as a short list of paths, and what is left for them — the platform
-extension they have to enable, the CMS component that has to exist in the content catalog, the
-build they have to run.
+Then say what you wrote, **as the paths themselves** — one line per file, each carrying its
+directory and its name, `duplicateordercore/resources/duplicateordercore-items.xml` and not a bare
+`items.xml`, not "the core extension", not a sentence about what the file does. Group the lines
+under the extension if that reads better; the path still goes on every line. The `items.xml` you
+declared the type in and the `localextensions.xml` you registered the extension in are files you
+wrote, so they are lines in the list like any other. Measured 2026-09-04: both editors described
+the feature in prose and named one path out of the fifteen and eighteen they had written, which
+left the developer running `git status` to find out what had landed in their own checkout.
+
+Then what is left for them — the platform extension they have to enable, the CMS component that has
+to exist in the content catalog, the build they have to run.
 
 **Nothing here is frozen.** The session continues. They will change an answer they gave in step 3,
 rename something, ask for a different approach in one file. Do that; from here the code is theirs.

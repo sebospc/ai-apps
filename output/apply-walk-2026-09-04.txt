@@ -1,76 +1,89 @@
-# Smith skill walk — 2026-09-04T11:21:21.032Z
-# project walk-mtmv0p0w · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ
+# Smith skill walk — 2026-09-04T11:55:11.266Z
+# project walk-mtmw7r4m · a project holding acmecore · repository /var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB
 # claude --plugin-dir /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin -p "/smith:apply buyers keep placing the same order twice when they double-click Place Order. It is the B2B accelerator checkout. When the second submit loses, show the first order's confirmation. Clear abandoned locks after a day. Go ahead and write it." --allowedTools Bash,Read,Glob,Grep,Write,Edit --output-format stream-json --verbose
 
 ## What the agent ran and read
 
-$ smith catalog 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog 2>&1
-$ ls -la /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ
+$ smith catalog 2>&1 || node "$(cd /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin && pwd)/bin/smith" catalog 2>&1
+$ find . -name extensioninfo.xml -o -name localextensions.xml -o -name manifest.json -o -name "*items.xml" | grep -v node_modules
 $ smith catalog duplicate-order-prevention 2>&1 || node /Users/sebastiancabarcas/Documents/commerce/projects-ai-plugin/plugin/bin/smith catalog duplicate-order-prevention 2>&1
-$ find . -path ./.git -prune -o -type f -print | head -100
-Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/acmecore/resources/acmecore-items.xml
-Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/config/localextensions.xml
-Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/manifest.json
-Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/acmecore/extensioninfo.xml
-$ mkdir -p core-customize/hybris/bin/custom/duplicateordercore/resources/impex core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/{dao,service,job} core-customize/hybris/bin/custom/duplicateorderfacades/resources core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/order docs && echo ok
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/extensioninfo.xml
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-items.xml
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/project.properties
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/dao/OrderUniqueIndexDao.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/dao/impl/DefaultOrderUniqueIndexDao.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/service/OrderUniqueIndexService.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/service/impl/DefaultOrderUniqueIndexService.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/job/OrderUniqueIndexCleanupJob.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-spring.xml
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/resources/impex/essentialdata-orderuniqueindex-cleanup.impex
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateorderfacades/extensioninfo.xml
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/order/DuplicateGuardB2BCheckoutFlowFacade.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/order/DuplicateGuardB2BCheckoutFlowFacade.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/order/DuplicateGuardB2BCheckoutFlowFacade.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/dao/OrderUniqueIndexDao.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/dao/impl/DefaultOrderUniqueIndexDao.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/dao/impl/DefaultOrderUniqueIndexDao.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/service/OrderUniqueIndexService.java
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/core/service/impl/DefaultOrderUniqueIndexService.java
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/bin/custom/duplicateorderfacades/resources/duplicateorderfacades-spring.xml
-Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/core-customize/hybris/config/localextensions.xml
-Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-1rX5jJ/docs/duplicate-order-prevention.md
-$ find core-customize/hybris/bin/custom/duplicateorder* docs -type f | sort
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/config/localextensions.xml
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/manifest.json
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/acmecore/resources/acmecore-items.xml
+Read /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/acmecore/extensioninfo.xml
+$ ls -a /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB; echo ---; ls -R /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize | head -50
+$ cd /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom && mkdir -p duplicateordercore/resources/impex duplicateordercore/src/com/acme/duplicateorder/service duplicateordercore/src/com/acme/duplicateorder/job duplicateorderfacades/resources duplicateorderfacades/src/com/acme/duplicateorder/facades duplicateorderfacades/testsrc/com/acme/duplicateorder/facades && echo ok
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/extensioninfo.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/build.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-items.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/job/OrderLockCleanupJob.java
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-spring.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/project.properties
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/resources/impex/essentialdata-orderlockcleanup.impex
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/extensioninfo.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/build.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacade.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacade.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/resources/duplicateorderfacades-spring.xml
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/testsrc/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacadeTest.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/testsrc/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacadeTest.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateorderfacades/testsrc/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacadeTest.java
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/config/localextensions.xml
+Edit /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/manifest.json
+Write /private/var/folders/5q/11rjj2gs4b58q38zx4gmqdtr0000gn/T/smith-apply-repo-I6TPmB/core-customize/hybris/bin/custom/duplicateordercore/duplicate-order-prevention.md
 
 ## What the developer saw
-I'll start by reading the catalog and this project.
+I'll start by looking at the catalog and your project.
 
-Duplicate order prevention is the match — a lock so one cart cannot become two orders.
+Read your project. Here's what's there:
 
-Read the project. What I found:
+- `core-customize/hybris/bin/custom/acmecore` is the only custom extension. It declares one type, `AcmeOpeningHours`, at typecode **12100**. No `OrderUniqueIndex`, no `sourceCartCode` anywhere, so nothing collides. New type takes **12101**.
+- `commerceSuiteVersion` is **2211**, same release this feature was written against.
+- `localextensions.xml` and `manifest.json` both register only `commerceservices` and `commercewebservices`. Consistent, no drift — but three extensions this feature needs are missing from **both** files: `commercefacades`, `processing` (cronjob and trigger types), and `b2bacceleratorfacades` (the checkout facade base class). Those are yours to enable, I'll list them at the end.
+- No storefront directory in the repo, only `core-customize`. The Spartacus part can't be written here.
 
-- One custom extension, `acmecore` (`com.acme.core`), declaring `AcmeOpeningHours` at typecode **12100**. Nothing named `duplicateordercore` or `duplicateorderfacades` exists, no collision — new type takes **12101**.
-- `OrderUniqueIndex` not declared anywhere in the project.
-- `localextensions.xml` registers `commerceservices`, `commercewebservices`, `acmecore`. `manifest.json` lists `commerceservices`, `commercewebservices`. `commerceSuiteVersion` is **2211**, same release the feature was written against.
-- Missing platform extensions, from **both** files: `commercefacades`, `processing`, and `b2bacceleratorfacades` (the B2B checkout facade I extend). Those are yours to enable in both places, otherwise it builds locally and fails in CCv2.
-- No `js-storefront` / Spartacus directory in this checkout, so the request-cancel part has no place to go here.
+Your three answers came with the request (B2B accelerator facade, show the first order's confirmation, one day retention), so nothing to ask. Writing it.
 
-Your three answers were in the request: B2B accelerator facade, show the first order's confirmation, one day retention. Writing it.
+Now the cleanup job, spring wiring and the ImpEx.
 
-Now the DAO and service.
+Now the facades extension with the three checkout hooks.
 
-Now the ImpEx, the facade, and the wiring.
+Now the test, the registration in both build files, and the specs.
 
-Adding `findOrderByCode` through the DAO and service.
+Written.
 
-Now the facades spring wiring, the registrations, and the specs.
+**duplicateordercore**
+- `core-customize/hybris/bin/custom/duplicateordercore/extensioninfo.xml`
+- `core-customize/hybris/bin/custom/duplicateordercore/build.xml`
+- `core-customize/hybris/bin/custom/duplicateordercore/project.properties`
+- `core-customize/hybris/bin/custom/duplicateordercore/duplicate-order-prevention.md`
+- `core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-items.xml`
+- `core-customize/hybris/bin/custom/duplicateordercore/resources/duplicateordercore-spring.xml`
+- `core-customize/hybris/bin/custom/duplicateordercore/resources/impex/essentialdata-orderlockcleanup.impex`
+- `core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/service/OrderLockService.java`
+- `core-customize/hybris/bin/custom/duplicateordercore/src/com/acme/duplicateorder/job/OrderLockCleanupJob.java`
 
-Written:
+**duplicateorderfacades**
+- `core-customize/hybris/bin/custom/duplicateorderfacades/extensioninfo.xml`
+- `core-customize/hybris/bin/custom/duplicateorderfacades/build.xml`
+- `core-customize/hybris/bin/custom/duplicateorderfacades/resources/duplicateorderfacades-spring.xml`
+- `core-customize/hybris/bin/custom/duplicateorderfacades/src/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacade.java`
+- `core-customize/hybris/bin/custom/duplicateorderfacades/testsrc/com/acme/duplicateorder/facades/DuplicateOrderPreventionCheckoutFacadeTest.java`
 
-**Core** (`core-customize/hybris/bin/custom/duplicateordercore/`) — `OrderUniqueIndex` at typecode 12101 with the unique index on `sourceCartCode`, `sourceCartCode` added to `Order`, cleanup cronjob type at 12102, DAO, service, cleanup job, spring wiring, `project.properties` with the 24h window, and the ImpEx creating the job, cronjob and a daily 03:00 trigger.
+**Wiring**
+- `core-customize/hybris/config/localextensions.xml` — added both custom extensions plus `commercefacades`, `processing`, `b2bacceleratorfacades`
+- `core-customize/manifest.json` — same three platform extensions, so the cloud build matches the local one
 
-**Facades** (`core-customize/hybris/bin/custom/duplicateorderfacades/`) — `DuplicateGuardB2BCheckoutFlowFacade` extending `DefaultB2BCheckoutFlowFacade`. Lock before placing, release in a `finally` so every path clears it, and on a lost race it polls for the winner's order and returns that confirmation. Aliased over `b2bCheckoutFlowFacade`.
-
-**Wiring** — both extensions added to `localextensions.xml`. Specs in `docs/duplicate-order-prevention.md`.
+Type went in at typecode **12101**, next free after your `AcmeOpeningHours` at 12100.
 
 Left for you:
-
-- Enable `commercefacades`, `processing` and `b2bacceleratorfacades`. Missing from both `localextensions.xml` and the `extensions` array in `manifest.json` — add to both, or it builds locally and fails in CCv2.
-- Run the ImpEx as essential data, then a type system update so the unique index is created.
-- I could not check the platform sources from this checkout, so if 2211 already declares `sourceCartCode` on `Order`, delete that block from `duplicateordercore-items.xml`; a duplicate declaration fails the build.
-- No Spartacus app in this repo, so the cancel-previous-request rebinding has nowhere to go. Point me at the storefront if it lives elsewhere.
+- `ant clean all` then update running system with the essential data of `duplicateordercore`, to create the cronjob and its daily trigger (3:30am).
+- The retention window is `duplicateorder.lock.retention.hours=24` in `project.properties`. Raise it if any payment provider redirect can keep a buyer away longer than a day.
+- `Order.sourceCartCode` is declared here. If your platform build reports it as already declared, delete that `<itemtype code="Order">` block and keep the rest.
+- No storefront in this repo, so the Spartacus part is not written. When you add it, the module that rebinds place-order with the cancel-previous strategy has to be imported **after** the Spartacus order module, otherwise the rebinding silently does nothing.

@@ -3502,7 +3502,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they follow the instruction, build a list holding
 the same cart twenty times, and the review that told them to do it passes.
 
-### [ ] W5. Fifty-two of the sixty-seven projects in the database are ours
+### [x] W5. Fifty-two of the sixty-seven projects in the database are ours — 68d60fe
 
 Observed on 2026-09-03 and recorded out of scope then; measured now. `scripts/walk_skill.mjs`
 bootstraps a project per run and never removes it: **52 `walk-*` projects of 67 total**, 78% of the
@@ -5250,3 +5250,22 @@ Append here when a task forces a decision. One line each: what was decided and w
   the old menu message did not have — the suggested fix carries the same method name as the defect,
   so `(create|remove)LocalSessionContext` on its own would fire on the fix. The check is anchored on
   `getCurrentSession()` for that reason and this fixture is what holds it there.
+- 2026-09-04 — W5 measured before and after. The working database held 67 projects, 52 of them
+  `walk-%`, all led by `rehearsal@smith.test`; after the cleanup it holds 15 and 0. A walk then ran
+  end to end (`claude review`, 15 checks passed), printed `removed the project it created
+  (walk-mtnkl24q)`, and left the count at 0 and the total at 15 — the count before and after is the
+  same, and it is 0.
+- 2026-09-04 — W5 proved the failure half rather than assuming it. `SMITH_CORPUS=/nonexistent-corpus
+  node scripts/walk_skill.mjs claude review` bootstraps a project, throws in `walk.setup()`, and
+  still prints `removed the project it created (walk-mtnkmbbh)`; the count stays 0. The one thing
+  that would break this is a `process.exit` inside the try, because it skips a `finally`, so the
+  failure report and its exit were moved out of the try rather than left where they were.
+- 2026-09-04 — W5 read the 52 slugs from the database and deleted each through `DELETE
+  /projects/{slug}`. There is no `GET /projects`, and adding one to tidy up a test script is an
+  endpoint nothing else asks for. Reading a slug is not what the task ruled out — writing to the
+  tables and touching the volume is, and neither happened.
+- 2026-09-04 — W5 did not commit the regenerated `output/rehearsal-2026-09-04.txt`. `output/*.txt`
+  is gitignored precisely because those transcripts name paths in a private client corpus, but a
+  handful of them are tracked from before that rule and so still show up as modified after any walk.
+  Restored rather than committed. Untracking the ones already in history is a separate task, not
+  W5's.

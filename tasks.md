@@ -3311,6 +3311,225 @@ Acceptance:
 What breaks for a developer if this does not exist: two developers on one project get two different
 database schemas from the same catalog entry, and neither is told there was a choice.
 
+## Phase W — the biggest rule says one sentence about seven problems, and is wrong about two
+
+Measured 2026-09-04 with the backlog empty. Whole corpus: **105 findings over 370,833 lines, 0.28 per
+1000, 58 critical (55%)**, worst rule `service-no-session` at 21%. Java slice: pmd 1.35 against 1.5,
+rules 0.86, combined 2.21 against 2.5, 0 pmd criticals. `uv run pytest` 158 passed with the corpus
+attached, `node --test plugin/test` 33 passed, `node scripts/rehearse.mjs` 25 passed.
+
+Three of the four measurements name nothing, and this phase does not pretend otherwise:
+
+- **The rate is green with room.** 0.28 against the 0.34 budget is 21 findings of headroom. The
+  *critical* bound is the one that is nearly full: 55% against 58%, so **two** more criticals fit.
+  That is the constant worth watching, and no constant moves in this phase.
+- **Rule health is dead for the fifth phase running.** 11 dispositions in the working database, over
+  57 reviews and 275 findings. Q5, R5, S and T said the same thing. It stays dead until a team uses
+  the product.
+- **Coverage names nothing.** S5 read the third of the corpus no rule speaks about and found 0.39
+  real defects per 1000 against java's 8.4, with all five candidates rejected. The recall audits for
+  java, ImpEx and JavaScript are consumed. There is no unread sample left to write a rule from, and
+  no task below invents one.
+
+What the measurement does name is inside the budget rather than against it. Reading all 22 sites of
+the largest rule, one at a time:
+
+**`service-no-session` is one regex — `JaloSession\.|SessionContext\.` — over seven different code
+shapes, carrying one message and one suggestion for all of them.** The shapes, counted:
+`setUser` on the session (3), `getUser` (2), `getSessionContext()` handed to a Jalo API or a
+FlexibleSearch call (8), `getSessionContext().getLanguage()` (2), the local-session-context pair (2),
+a `TenantAwareThreadFactory` constructor argument (3), and the `activate()`/`deactivate()` thread
+bootstrap (2). Each has a different fix, and the finding says
+`Use modelService, userService, or other ServiceLayer APIs` to all seven.
+
+**Five of the 22 are wrong**, and wrong in the way that costs most, because the rule is `critical` and
+a critical blocks a merge:
+
+- `new TenantAwareThreadFactory(Registry.getMasterTenant(), JaloSession.getCurrentSession())`, 3
+  sites. `de.hybris.platform.core.TenantAwareThreadFactory` declares a `(Tenant, JaloSession)`
+  constructor for exactly this: handing the caller's session to a worker thread. There is no
+  ServiceLayer thread factory to move to, so the suggestion names an API that cannot do the job.
+- `JaloSession.getCurrentSession().activate()` guarded by
+  `Registry.getCurrentTenant().getActiveSession() == null`, paired with `JaloSession.deactivate()` in
+  a teardown, 2 sites. This is how a plain Java thread attaches to the platform. The suggestion is
+  circular here: `modelService` needs the session this line creates.
+
+Two smaller readings, both from the same run:
+
+- **`facades-no-dao` reports one decision up to three times.** 5 findings over 2 files, the worst
+  ratio in the set at 2.5 per file. On one facade the DAO field, its Spring setter and one call all
+  fire; the setter exists only because the field does, so it is never an independent defect.
+- **`modelservice-save-in-loop`'s suggestion is wrong on one shape.** 21 findings, and at one site the
+  loop re-fetches and saves the *same* session cart every iteration. `saveAll` collects one model N
+  times there; the fix is to hoist the save out of the loop.
+
+Ordered by what moves: W1 takes five criticals out, W2 makes the sixteen that remain say what to
+change, W3 and W4 are one finding each and a sentence each, W5 is hygiene that every future
+measurement is read through.
+
+### [ ] W1. Five criticals for two idioms the platform has no replacement for
+
+`rules/sap-commerce-base.yaml`, check `java/jalo-session`. The two shapes above are the platform's own
+API used as designed, and the rule calls each of them a merge-blocking critical.
+
+The number: **`service-no-session` from 22 findings to 17**, its share from 21% to 17%; the corpus
+from 105 to **100**, 0.28 to **0.27 per 1000**; criticals from 58 (55%) to **53 (53%)**, which gives
+the critical bound back three findings of room instead of two. The top rule becomes
+`modelservice-save-in-loop` at 21%, still under the 30% ceiling.
+
+The lazy change is one more alternative in `exclude_line_pattern` — no code, no new check. Both
+idioms sit on a single line at all five sites, so a line-level exclusion reaches them.
+
+Acceptance:
+
+- Zero `service-no-session` findings on a line carrying `TenantAwareThreadFactory`, and zero on the
+  `activate()`/`deactivate()` pair.
+- Fires fixture: a `JaloSession.getCurrentSession().setUser(user)` case still produces the finding —
+  `rules/fixtures/java-jalo-session/` already is that fixture and must stay green unchanged.
+- Stays quiet fixture: a new `rules/fixtures/clean-java-jalo-thread-bootstrap/` with both idioms —
+  a `TenantAwareThreadFactory(Registry.getMasterTenant(), JaloSession.getCurrentSession())` line and
+  a `setUpThread`/`tearDownThread` pair — and an empty `expected.json`.
+- Corpus effect measured and written into the notes log as the four numbers above. If any of them
+  comes out different, the reading is the finding: record what it actually was.
+- `tests/data/corpus-baseline.jsonl` re-pinned with `SMITH_REFRESH_BASELINE=1 uv run pytest -k baseline -s`,
+  and it stays gitignored.
+- `uv run pytest` green, `SMITH_CORPUS` attached.
+
+What breaks for a developer if this does not exist: a merge is blocked five times over code that
+follows the platform's own documented pattern, and the tool tells them to fix it with an API that
+cannot.
+
+### [ ] W2. Sixteen findings, seven fixes, one sentence
+
+After W1, `service-no-session` still answers five distinct shapes with
+`JaloSession/SessionContext usage detected.` and `Use modelService, userService, or other ServiceLayer
+APIs.` — a category and a menu. Every one of them has a single named replacement.
+
+The number: **from 1 message covering 17 findings to no two distinct shapes sharing a message**, and
+every message naming one concrete API rather than a list. The finding count does not move: this is
+the clarity half, and if the corpus count changes at all, a shape was lost — that is a failure, not a
+bonus.
+
+The YAML already separates `id` from `rule_id`, so several `checks:` entries emit the same
+`service-no-session`, the way `properties-hygiene` emits two ids. No code, no new rule.
+
+The shapes and the replacement each one has:
+
+| shape | replacement to name |
+| --- | --- |
+| `getCurrentSession().setUser(u)` | `userService.setCurrentUser(u)` |
+| `getCurrentSession().getUser()` | `userService.getCurrentUser()` |
+| `getSessionContext().getLanguage()` | `commonI18NService.getCurrentLanguage()` |
+| `create`/`removeLocalSessionContext()` | `sessionService.create`/`removeLocalSessionContext()` |
+| anything else reaching the Jalo layer | the catch-all keeps a message that says the call goes through Jalo, without naming an API it cannot know |
+
+Acceptance:
+
+- **No line produces two `service-no-session` findings**, asserted over the corpus. Several checks
+  sharing one `rule_id` can both match one line — a `getSessionContext().getLanguage()` call is also
+  a Jalo call — so the catch-all excludes what the specific checks already answer. Phase V measured
+  zero lines carrying more than one finding corpus-wide; that invariant holds after this task.
+- The corpus count for `service-no-session` is exactly what W1 left it at. A shape that stops firing
+  is a regression.
+- Every message names what to write instead, or says plainly that it cannot. No message contains
+  "or other".
+- Fires fixture: `rules/fixtures/java-jalo-session/` gains one case per named shape, each
+  `expected.json` pinning the rule id.
+- Stays quiet fixture: the existing `clean-java-session-in-javadoc/` and
+  `clean-java-session-admin-restored/` stay green, plus W1's new clean fixture.
+- `uv run pytest` green with `SMITH_CORPUS` attached, baseline re-pinned.
+
+What breaks for a developer if this does not exist: they are told a layer is deprecated and handed a
+menu of three APIs, so the cheapest thing they can do is dismiss the finding — and a rule that is
+cheaper to dismiss than to act on is the one that takes the credibility of the other fifteen with it.
+
+### [ ] W3. A Spring setter is not a second defect
+
+`facades-no-dao`, check `java/facade-uses-dao`. Its first alternative,
+`\b[A-Z]\w*Dao\s+\w+`, matches both the field declaration and the setter's parameter, so
+`public void setSapB2BDocumentDao(final SapB2BDocumentDao sapB2BDocumentDao)` is reported as its own
+critical alongside the field it sets.
+
+The number: **`facades-no-dao` from 5 findings to 4** over the same 2 real defects; corpus from 100
+to **99** after W1, criticals from 53 to **52**. One site, measured: `DefaultInvoiceReportFacade`
+drops from 3 findings to 2.
+
+Deliberately **not** in scope, and the reason belongs in the notes log rather than a later hunch:
+naming the DAO in the message. `run_rules` passes `message=check.message` straight through, so a YAML
+check's message is a static string with no capture interpolation. Naming the DAO would mean porting
+this to a code rule for four findings, and the finding already carries `quoted_line`, so the
+developer is reading the declaration while they read the sentence.
+
+Acceptance:
+
+- A setter whose only job is to set a DAO field produces no finding; the field declaration and the
+  call sites still do.
+- Fires fixture: `rules/fixtures/java-facade-uses-dao/` stays green unchanged.
+- Stays quiet fixture: `rules/fixtures/clean-java-dao-shape/` gains a facade with a DAO setter and
+  nothing else, expecting nothing. If that fixture cannot hold it without contradicting the fires
+  case, a new `clean-java-facade-dao-setter/` instead.
+- Corpus effect written into the notes log as the three numbers above.
+- `uv run pytest` green with the corpus, baseline re-pinned.
+
+What breaks for a developer if this does not exist: one DAO in one facade is three merge-blocking
+criticals, and fixing it means reading the same sentence three times to discover it was one decision.
+
+### [ ] W4. `saveAll` is not the fix when the loop saves the same model
+
+`modelservice-save-in-loop` suggests `Collect the models and call modelService.saveAll(models) once.`
+At `DefaultDeliveryAddressFacade.addPaymentAddress` the loop calls `cartService.getSessionCart()` and
+saves it on every iteration, so the collection would hold one cart N times. The fix there is to hoist
+the save out of the loop.
+
+Measured: 1 of 21 sites. The rule is right at all 21 — the *suggestion* is wrong at one, and a
+regex cannot tell which without loop-invariance analysis. That analysis is not worth building for one
+finding, so the sentence covers both cases instead.
+
+The number: **findings whose suggestion is wrong, from 1 to 0**, with the rule's corpus count
+unchanged at 21. `modelservice-remove-in-loop` gets the same reading and the same treatment if its 9
+sites show the shape; if they do not, say so in the notes log and leave it alone.
+
+Acceptance:
+
+- The suggestion names both outcomes: `saveAll` when the loop saves a different model each time,
+  hoisting the call out when it is the same one.
+- Fires fixture: the existing save-in-loop fixture stays green.
+- A fixture whose loop saves one model repeatedly still fires, and the assertion reads the suggestion
+  text — otherwise nothing in the suite would notice the sentence going back.
+- `modelservice-save-in-loop` is still 21 on the corpus and `modelservice-remove-in-loop` still 9.
+- `uv run pytest` green with the corpus.
+
+What breaks for a developer if this does not exist: they follow the instruction, build a list holding
+the same cart twenty times, and the review that told them to do it passes.
+
+### [ ] W5. Fifty-two of the sixty-seven projects in the database are ours
+
+Observed on 2026-09-03 and recorded out of scope then; measured now. `scripts/walk_skill.mjs`
+bootstraps a project per run and never removes it: **52 `walk-*` projects of 67 total**, 78% of the
+database. `scripts/rehearse.mjs` and `scripts/e2e_browser.mjs` both delete what they create, so this
+is one script out of step with two, not a missing capability.
+
+This is hygiene rather than product, which is why it is last. It matters because every measurement
+this loop takes from the working database — rule health above, and anything about retention — is read
+across that garbage.
+
+The number: **`walk-*` projects remaining after a walk, from 52 to 0**, and 0 after each subsequent
+walk.
+
+Acceptance:
+
+- A walk removes the project it created, on the way out and on failure, the way `rehearse.mjs`
+  already does. Copy that pattern rather than inventing a second one.
+- The 52 already there are deleted through `DELETE /projects/{slug}`, not by touching the volume or
+  the tables.
+- Proved by running `node scripts/walk_skill.mjs` and counting `walk-%` projects before and after:
+  the count is the same, and it is 0.
+- No test asserts a project count against the shared database — that is a check that goes red for
+  reasons that have nothing to do with the code.
+
+What breaks for a developer if this does not exist: nothing, today. What breaks is the next
+measurement read from this database, and the one after it.
+
 ## Notes and decisions log
 
 - 2026-09-04 — V4's proof that the new registration check can go red, run against the code from

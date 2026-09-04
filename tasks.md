@@ -3367,7 +3367,7 @@ Ordered by what moves: W1 takes five criticals out, W2 makes the sixteen that re
 change, W3 and W4 are one finding each and a sentence each, W5 is hygiene that every future
 measurement is read through.
 
-### [ ] W1. Five criticals for two idioms the platform has no replacement for
+### [x] W1. Five criticals for two idioms the platform has no replacement for — f452a49
 
 `rules/sap-commerce-base.yaml`, check `java/jalo-session`. The two shapes above are the platform's own
 API used as designed, and the rule calls each of them a merge-blocking critical.
@@ -5144,3 +5144,29 @@ Append here when a task forces a decision. One line each: what was decided and w
   if the build complains about a duplicate attribute, drop that block"; neither transcript after it
   contains "could not verify", "platform sources" or "patch level". An entry that answers the
   question spends none of the developer's attention on it.
+- 2026-09-04 — W1 came out at the four numbers the task predicted, so there is no surprise to record
+  beyond the fact that there is none: **100 findings over 370,833 lines, 0.27 per 1000, 53 critical
+  (53%)**, `service-no-session` down from 22 to **17** and from 21% to **17%**. The top rule is now
+  `modelservice-save-in-loop` at 21%, under the 30% ceiling. The baseline re-pin reads **5 left, 0
+  arrived**, all five `service-no-session`, which is the other half of the claim: nothing else moved.
+- 2026-09-04 — W1 chose one more alternative in `exclude_line_pattern` over a `context_pattern` or a
+  second check. Both idioms are complete on a single line at all five sites — the factory takes the
+  session as a constructor argument, and `activate()`/`deactivate()` are one statement each — so a
+  line-level filter reaches every one of them and no code moves. A `context_pattern` would have had
+  to guess a window size to find the `getActiveSession() == null` guard two lines up.
+- 2026-09-04 — W1's risk, checked rather than assumed: excluding every line that names
+  `TenantAwareThreadFactory` could in principle hide a genuine Jalo misuse that happens to share the
+  line. Corpus-wide there are six sites of that type and only two constructor shapes — the
+  `(Tenant, JaloSession)` one the exclusion is written for, and a one-argument `(Tenant)` call that
+  never carried a `JaloSession.` and so never fired. There is no third shape to hide.
+- 2026-09-04 — W1 proved the new precision fixture red before green, against the rule from before the
+  change: `clean-java-jalo-thread-bootstrap` fired three `service-no-session` findings, at the factory
+  line, the `activate()` line and the `deactivate()` line. The failure names the three lines, not a
+  count.
+- 2026-09-04 — observed while running W1, out of its scope and not acted on: `tasks.md` carries
+  corpus file paths and class names in several phases — four path fragments around lines 1114-2070
+  and three class names inside phase W itself. CLAUDE.md says a client's file paths and class names
+  must never reach a commit. The client's own name appears nowhere, so nothing identifies whose
+  checkout it is, but the rule as written is absolute. This is a repository-wide cleanup with a
+  measurable end state (zero corpus paths and class names in tracked files), which makes it a task
+  somebody should write rather than a thing to fix inside a rule change.

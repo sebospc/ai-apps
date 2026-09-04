@@ -3166,7 +3166,7 @@ Every task in this phase touches the plugin conversation, so "done" includes
 the API up. A change to `SKILL.md` that no agent has been run against is not finished — that is the
 whole reason the walk exists.
 
-### [x] V1. The walk where the developer says only the symptom
+### [x] V1. The walk where the developer says only the symptom — 7e4f798
 
 U5's headline is "1 turn, 0 questions" and the reading says plainly that the 0 is not evidence: the
 walk's prompt pre-answers all three of the entry's `ask` items and ends with "Go ahead and write it".

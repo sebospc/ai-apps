@@ -412,6 +412,21 @@ function itemtypes(xml) {
 }
 
 /**
+ * Whether the session declared `sourceCartCode` on `Order`, in whichever `items.xml` it chose.
+ *
+ * The entry used to make this conditional on platform sources a CCv2 checkout does not carry, and
+ * measured 2026-09-03 the two editors resolved it opposite ways: one added the attribute, the other
+ * redesigned around it and hung the cart code off the lock type instead. Two schemas out of one
+ * entry. The attribute has to be read on `Order` itself and not anywhere in the file, because the
+ * redesign puts that same qualifier one type away.
+ */
+function declaresOrderSourceCartCode(itemsXml) {
+  return itemsXml
+    .flatMap(itemtypes)
+    .some((block) => /\bcode="Order"/.test(block) && /sourceCartCode/.test(block));
+}
+
+/**
  * The extensions `localextensions.xml` actually registers, by the name the build resolves.
  *
  * Comments are stripped first, because telling registration from the word being somewhere in the
@@ -550,6 +565,14 @@ function applyChecks({ repo, text, commands }) {
     "the feature's item type was declared where it belongs",
     declared.some((xml) => /OrderUniqueIndex/.test(xml)),
     written.join(" ; ").slice(0, 300)
+  );
+  // The one schema decision the entry now makes for the agent instead of asking it to check a file
+  // a CCv2 checkout does not have. Both editors have to land on the same data model here, and the
+  // entry says which: `Order` carries the attribute.
+  check(
+    "Order gained sourceCartCode, the decision the entry makes for both editors",
+    declaresOrderSourceCartCode(declared),
+    written.filter((path) => /items\.xml$/i.test(path)).join(" ; ") || "no items.xml was written"
   );
   // Registration is what makes written code a thing the build compiles, and this is the one check
   // that reads it. It asks the question against the agent's own layout — every extension the
@@ -767,7 +790,8 @@ const extensionInfo = (extension) =>
   `core-customize/hybris/bin/custom/${extension}/extensioninfo.xml`;
 
 /**
- * That the registration check can go red, proven before a session that costs fifteen minutes.
+ * That the checks read off the checkout can go red, proven before a session that costs fifteen
+ * minutes.
  *
  * A walk is expensive and runs twice a phase, so an assertion in it is read as evidence far more
  * often than it is exercised on a case it should reject. The one it replaced never was: it passed
@@ -817,6 +841,22 @@ function selfCheck() {
     [`core-customize/hybris/bin/custom/${cursorLayout[1]}`],
     "an extension whose code was written and never registered reads as registered"
   );
+
+  // The schema decision, on the two shapes real sessions produced. The redesign is the one that has
+  // to read as red: it writes the same qualifier, one type away from where the entry puts it, so a
+  // check looking for the word anywhere in the file would call the two data models one.
+  const declaring = `<items><itemtype code="Order" autocreate="false" generate="false"><attributes>
+    <attribute qualifier="sourceCartCode" type="java.lang.String"/></attributes></itemtype></items>`;
+  const redesigned = `<items><itemtype code="OrderUniqueIndex"><attributes>
+    <attribute qualifier="sourceCartCode" type="java.lang.String"/></attributes></itemtype></items>`;
+  assert.ok(
+    declaresOrderSourceCartCode([declaring]),
+    "Order declaring the attribute does not read as declaring it"
+  );
+  assert.ok(
+    !declaresOrderSourceCartCode([redesigned]),
+    "the attribute on the lock type reads as Order carrying it, so the two data models are one"
+  );
 }
 
 /**
@@ -844,7 +884,10 @@ function unregisteredIn(created, body, alsoWritten = []) {
 async function main() {
   selfCheck();
   if (process.argv[2] === "--self-check") {
-    console.log("the registration check rejects a commented-out registration");
+    console.log(
+      "the registration check rejects a commented-out registration, and the schema check rejects " +
+        "the attribute declared on the lock type instead of on Order"
+    );
     return;
   }
   const name = process.argv[2] ?? "claude";

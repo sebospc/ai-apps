@@ -3281,7 +3281,7 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing directly. It is the walk that breaks, and
 the walk is the only evidence anyone has that the apply skill works.
 
-### [ ] V5. The trap the agent has nothing to check against
+### [x] V5. The trap the agent has nothing to check against
 
 D2. `catalog/duplicate-order-prevention.yaml:40` says "If the platform already declares
 `sourceCartCode` on `Order`, do not declare it again". A CCv2 checkout carries no platform sources, so
@@ -4903,3 +4903,25 @@ Append here when a task forces a decision. One line each: what was decided and w
 - 2026-09-03 — observed while running U3, out of its scope: `scripts/walk_skill.mjs` bootstraps a
   project per run and never removes it, so four walks left four `walk-*` projects in postgres.
   `scripts/rehearse.mjs` and `scripts/e2e_browser.mjs` both delete what they create.
+- 2026-09-04 — V5 went the way the entry's `build` list already pointed: `Order` carries
+  `sourceCartCode`, declared in the project's own extension, without checking first. The other
+  direction — never extend `Order`, hang the cart code off the lock type, which is what Cursor
+  invented on 2026-09-03 — is a redesign of the implementation the catalog holds, and it would have
+  meant rewriting `build`, `good` and `integration` to answer a question about one line. The entry
+  now carries the fact it was asking the agent to go and find: 2211 does not declare the attribute,
+  and a release that does fails the build on a duplicate attribute rather than passing silently, so
+  an agent that cannot read platform sources still has one instruction and not a choice.
+- 2026-09-04 — V5's audit of the other `good` lines, all three entries, 16 lines: **one** other line
+  carried the same conditional, and it was not in a `good` list — `build` said "a sourceCartCode
+  attribute on Order if the platform does not already declare one", the same unevaluable condition
+  in a second place, fixed in the same task. The two that read close and were left alone: "pick a
+  typecode that is free in this project" is scoped to the project's own extensions, which a checkout
+  does carry; "on a base store without the B2B extensions the facades resolve to nothing" turns on
+  `localextensions.xml` and `manifest.json`, which step 2 already reads.
+- 2026-09-04 — measured after V5, both editors, apply walk, 20 checks green each: both declared
+  `Order.sourceCartCode`, so the two schemas are one. A second effect nobody asked for — the caveat
+  paragraph is gone. On 2026-09-04 before the change Claude ended with "the platform sources are not
+  here, so I could not confirm whether `Order` already declares `sourceCartCode` — I declared it, and
+  if the build complains about a duplicate attribute, drop that block"; neither transcript after it
+  contains "could not verify", "platform sources" or "patch level". An entry that answers the
+  question spends none of the developer's attention on it.

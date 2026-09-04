@@ -16,7 +16,7 @@ ask:
 
 build:
   - A core extension declaring OrderUniqueIndex in items.xml with a unique index on the source cart
-    code, plus a sourceCartCode attribute on Order if the platform does not already declare one.
+    code, plus a sourceCartCode attribute on Order.
   - A service and DAO over that type - create the lock for a cart code, find it, remove it.
   - "Three hooks in the checkout flow: create the lock before placing the order, catch the save
     failure while placing and decide whether an order already exists, and remove the lock after
@@ -37,7 +37,10 @@ good:
   - Delete the stale locks in batches. One transaction over a day of rows is a lock escalation
     waiting for a busy night.
   - A typecode is project-wide. Pick one that is free in this project rather than copying one.
-  - If the platform already declares sourceCartCode on Order, do not declare it again.
+  - "Declare sourceCartCode on Order in the project's own extension, without checking first: a CCv2
+    checkout carries no platform sources, so there is nothing to read it off. 2211 does not declare
+    it, and a release that does fails the build on a duplicate attribute rather than passing
+    silently."
   - The storefront module is imported after the Spartacus order module, or the rebinding never
     takes effect and nothing says so.
 

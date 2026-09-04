@@ -3203,7 +3203,7 @@ What breaks for a developer if this does not exist: an agent that invents the an
 questions it was supposed to ask, and nobody finds out until it has written the wrong schema into
 their project.
 
-### [ ] V2. The manifest is the other half of the registration
+### [x] V2. The manifest is the other half of the registration — 35582d1
 
 D3. In CCv2 the cloud build pulls what `manifest.json` lists. `localextensions.xml` alone is not
 enough, and step 2 reads the manifest only for `commerceSuiteVersion`

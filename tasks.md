@@ -3232,7 +3232,7 @@ Acceptance:
 What breaks for a developer if this does not exist: their build goes red in CCv2 for a reason the
 tool had in front of it and only mentioned half the time.
 
-### [ ] V3. Say which files you wrote
+### [x] V3. Say which files you wrote — 997e680
 
 D1. `plugin/skills/apply/SKILL.md:124` says "say what you wrote, as a short list of paths". Claude
 listed 16. Cursor listed six capability bullets and not one path, so a developer in Cursor runs

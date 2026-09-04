@@ -3443,7 +3443,7 @@ What breaks for a developer if this does not exist: they are told a layer is dep
 menu of three APIs, so the cheapest thing they can do is dismiss the finding — and a rule that is
 cheaper to dismiss than to act on is the one that takes the credibility of the other fifteen with it.
 
-### [ ] W3. A Spring setter is not a second defect
+### [x] W3. A Spring setter is not a second defect — SHA_PLACEHOLDER
 
 `facades-no-dao`, check `java/facade-uses-dao`. Its first alternative,
 `\b[A-Z]\w*Dao\s+\w+`, matches both the field declaration and the setter's parameter, so
@@ -3532,6 +3532,32 @@ measurement read from this database, and the one after it.
 
 ## Notes and decisions log
 
+- 2026-09-04 — W3's corpus effect, measured before and after the exclusion on the same checkout:
+  `facades-no-dao` 5 to **4**, the whole corpus 100 to **99**, criticals 53 (53%) to **52** (52%).
+  `DefaultInvoiceReportFacade` drops from 3 findings to 2, and the one line that stopped firing is
+  `public void setSapB2BDocumentDao(final SapB2BDocumentDao sapB2BDocumentDao)` — the only setter of
+  the five sites. All three numbers came out exactly as the task named them. The rate reads
+  **0.265 per 1000** over 373,499 lines, not the 370,833 in the phase W header: the corpus is a live
+  checkout and it grew between the two readings, so the header's line count is stale while its
+  finding counts are not. `service-no-session` stays at 17 and `modelservice-save-in-loop` is still
+  the top rule at 21%, under the 30% ceiling.
+- 2026-09-04 — W3's proof that the new fixture can go red, run against the ruleset from before the
+  exclusion: `clean-java-dao-shape` fails with "is a precision fixture: nothing may fire, but
+  [('facades-no-dao', 'core/src/DefaultInvoiceReportFacade.java', 15)] did", and line 15 is the
+  setter. The message names the defect, not an index.
+- 2026-09-04 — W3 put the clean case in the existing `clean-java-dao-shape/` rather than a new
+  `clean-java-facade-dao-setter/`. The fixture is already "shapes around a DAO that are not defects"
+  and it holds a second file for three lines of diff; a fourth fixture directory to say one more
+  thing about the same rule is a directory nobody needs. The setter is added by the diff while the
+  field it sets is context, which is what a real change to an existing facade looks like — and the
+  field still firing when *it* is the added line is what `java-facade-uses-dao/` pins.
+- 2026-09-04 — W3 also added `output/*.txt` to `.gitignore`, which is not in the task. `rehearse.mjs`
+  writes its transcript there and that transcript names a file path inside the client corpus; only
+  `output/*.md` was ignored, so the previous run left it sitting untracked and committable. One line
+  against a leak that the repository's own rules call non-negotiable was worth the scope.
+- 2026-09-04 — W3 left `controllers-no-dao` alone deliberately: it carries the same
+  `\b[A-Z]\w*Dao\s+\w+` alternative and would have the same setter problem, but it fires zero
+  times on this corpus, so changing it would be a guess with no reading behind it.
 - 2026-09-04 — V4's proof that the new registration check can go red, run against the code from
   before the fix, as CLAUDE.md requires. Reverting the comment stripping alone fails with "an
   extension mentioned only inside an XML comment counts as registered"; reverting only the

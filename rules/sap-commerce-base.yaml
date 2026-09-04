@@ -395,7 +395,9 @@ checks:
     issue_type: logic
     # A DAO field, a DAO parameter, or a call on one. An import is not a use.
     pattern: "\\b[A-Z]\\w*Dao\\s+\\w+|\\b\\w*[Dd]ao\\s*\\.\\s*\\w+\\s*\\("
-    exclude_line_pattern: "^\\s*import\\s"
+    # A Spring setter exists only because the field it sets does, so it is the same decision
+    # reported twice. The field declaration and the call sites carry the finding.
+    exclude_line_pattern: "^\\s*import\\s|^\\s*(?:public\\s+)?void\\s+set\\w*[Dd]ao\\s*\\("
     match_on: added
     message: "Facade holds or calls a DAO, bypassing service-layer validation and transactions."
     suggestion: "Inject the corresponding Service and call it instead of the DAO."

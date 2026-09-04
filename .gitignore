@@ -13,5 +13,6 @@ backups/
 
 # Measurement artifacts: they name paths in a private client corpus. Local only.
 output/*.md
+output/*.txt
 tests/data/corpus-baseline.jsonl
 tests/data/analyzer-baseline.jsonl

@@ -29,3 +29,16 @@ new file mode 100644
 +        return invoices;
 +    }
 +}
+diff --git a/core/src/DefaultInvoiceReportFacade.java b/core/src/DefaultInvoiceReportFacade.java
+--- a/core/src/DefaultInvoiceReportFacade.java
++++ b/core/src/DefaultInvoiceReportFacade.java
+@@ -11,4 +11,9 @@ public class DefaultInvoiceReportFacade implements InvoiceReportFacade
+     {
+         return invoiceConverter.convertAll(invoiceDao.findInvoices(unitUid));
+     }
++
++    public void setInvoiceDao(final InvoiceDao invoiceDao)
++    {
++        this.invoiceDao = invoiceDao;
++    }
+ }

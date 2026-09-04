@@ -3256,7 +3256,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they are told a feature was built and have to
 diff their own checkout to find out what it touched.
 
-### [x] V4. The registration check that cannot fail
+### [x] V4. The registration check that cannot fail — aa5e2c0
 
 D4. `scripts/walk_skill.mjs:433` proves the extension was registered with `/duplicateorder/i` over the
 whole of `localextensions.xml`. Claude registered `acmeduplicateorderfacades`, Cursor registered

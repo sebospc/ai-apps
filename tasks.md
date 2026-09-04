@@ -3540,7 +3540,7 @@ The bound on the whole phase, stated once so no task pretends otherwise. **There
 SAP Commerce platform on this machine.** `bin/platform` is not in the corpus checkout and `ant` is
 not installed; `javac` (17) and `xmllint` are. So a real `ant clean all` is out, and with it the only
 check that proves the code compiles against the framework it targets. Nothing below may claim
-otherwise, and W1 writes the limit into the repository rather than leaving it in this paragraph.
+otherwise, and X1 writes the limit into the repository rather than leaving it in this paragraph.
 
 What that leaves is three layers, and they are worth having in this order:
 

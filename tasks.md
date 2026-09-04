@@ -3530,6 +3530,114 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing, today. What breaks is the next
 measurement read from this database, and the one after it.
 
+## Phase X — is the generated code usable, and what "usable" can mean here
+
+Phase V fixed what the first apply reading named about the conversation, and phase W went back to
+Reviewer's rules. This phase asks the question neither of them did: **the code an apply session
+leaves behind, does it work.**
+
+The bound on the whole phase, stated once so no task pretends otherwise. **There is no buildable
+SAP Commerce platform on this machine.** `bin/platform` is not in the corpus checkout and `ant` is
+not installed; `javac` (17) and `xmllint` are. So a real `ant clean all` is out, and with it the only
+check that proves the code compiles against the framework it targets. Nothing below may claim
+otherwise, and W1 writes the limit into the repository rather than leaving it in this paragraph.
+
+What that leaves is three layers, and they are worth having in this order:
+
+1. **It parses.** The floor. XML that does not parse is not a build failure, it is a platform that
+   refuses to start, and today nothing checks it at all.
+2. **Reviewer does not block it.** The strongest available answer to "is it good", and it costs
+   almost nothing because both products are in one repository. It is also Pergamon's first real
+   calibration — until now the two products have never met.
+3. **It does not collide on a name.** The apply walk already checks the typecode and the project's
+   own item type. Extension names and bean ids are the same class of mistake and nothing reads them.
+
+The apply walk is where all three land — it already builds a real project, runs a real agent and
+reads the files off the disk. No new harness. Every task here means
+`node scripts/walk_skill.mjs apply` **and** `node scripts/walk_skill.mjs apply cursor` green, with
+the API up, and `node scripts/walk_skill.mjs apply-ask` still green because it must stay untouched.
+
+### [ ] X1. The generated code parses, and the one check that cannot run says so
+
+Nothing today reads the generated files as anything but text. A `<bean>` missing its closing tag,
+an `items.xml` with a stray `&`, a Java file with an unbalanced brace — every one of those passes
+every assertion in `applyChecks` and none of them would start a platform.
+
+Acceptance:
+
+- `applyChecks` grows a structural pass over the files the session wrote:
+  - every `.xml` written parses (`xmllint --noout`, already on PATH), and the failure message names
+    the file and the parser's own line, not "xml is invalid".
+  - every `.java` written parses (`javac -proc:none -d <tmp>`), and the check counts **only**
+    syntax errors. `javac` cannot resolve a single SAP symbol without the platform on the classpath,
+    so `cannot find symbol` and `package does not exist` are expected and are filtered out by
+    diagnostic code, not by matching on the message text.
+  - every `.impex` written is read by the ImpEx parser this repository already has in
+    `reviewer/domain/rules.py` rather than a second one written here — header lines start with a
+    mode keyword, a header's column count matches its value lines.
+- A check that the structural pass is not vacuous: it runs against a deliberately broken copy of
+  each of the three file kinds and fails on all three, and that run is recorded in the notes log.
+  A pass that has only ever been green is a pass nobody has read.
+- The limit is written where somebody will meet it: one paragraph in `docs/pergamon.md` saying
+  `javac` here checks syntax and never linking, that no platform build exists in this repository,
+  and that a compile against a real platform is the one thing the walk cannot answer.
+- If any generated file fails to parse on the first run, **that is the finding** — record the file
+  and the error in the notes log and fix the skill, not the assertion.
+
+What breaks for a developer if this does not exist: they take code that reads well, drop it into a
+project, and find out from the platform's startup log that it was never valid.
+
+### [ ] X2. Reviewer reviews what Pergamon wrote
+
+`docs/pergamon.md` names this as the first honest calibration Pergamon can have, and the two
+products have still never met. The apply walk ends with a git repository holding a real change.
+That is exactly the input the review endpoints take.
+
+Acceptance:
+
+- At the end of the apply walk, the diff of what the session wrote is sent through the same path a
+  developer's would take — `POST /v1/reviews`, then the verdict — using the walk's existing key and
+  API. No new endpoint, no new script: the walk already has both.
+- Two assertions, and they are the whole point: the verdict does **not** block, and no finding is
+  `critical`.
+- Whatever it reads is written to `output/pergamon-reviewed-<date>.md`: the verdict, every finding
+  with its rule id and file, and one line per finding saying whether it is Pergamon's fault, a rule
+  being noisy on generated code, or correct and worth fixing in the entry.
+- **A blocking verdict is a result, not a failure of the task.** If it blocks, the task is done when
+  the reading is written and each finding is either fixed at its source or written into the notes
+  log with a reason for leaving it. Do not loosen the assertion to get a green run — that is the one
+  thing this repository does not do.
+- The review runs against the deterministic rules only. The agent-reasoning half needs a second
+  session and buys nothing here; say so in the reading rather than leaving it implied.
+
+What breaks for a developer if this does not exist: Pergamon ships code that Smith's own reviewer
+would reject, and the first person to notice is a developer running both.
+
+### [ ] X3. The collisions the walk does not read yet
+
+`applyChecks` reads two collisions — the project's item type survives, and its typecode is not
+handed to the feature's type. Those were written because a walk got them wrong. Two more are the
+same mistake and nothing looks for them.
+
+Acceptance:
+
+- The walk's skeleton project grows two things the entry would otherwise create: an extension
+  directory whose name an entry's `extensions` list also names, and a Spring bean whose id an
+  entry's `build` step also declares.
+- Two assertions: the existing extension directory still holds what it held, and the existing bean
+  id still points at the class it pointed at. Reading the id alone is not enough — a bean rewritten
+  to a new class keeps its id and is the failure this is for.
+- One assertion on the conversation, not the disk: the agent **said** it found the conflict. Writing
+  around a collision silently is a smaller defect than overwriting it and a defect all the same,
+  because the developer has to decide which one wins.
+- The collision is planted in the skeleton, not in the prompt. An agent told there is a conflict is
+  not being read for whether it looks.
+- `plugin/skills/apply/SKILL.md` step 2 names both, if it does not already.
+
+What breaks for a developer if this does not exist: the session overwrites a bean somebody's feature
+depends on, the build stays green, and it surfaces as behaviour changing in a part of the project
+nobody touched.
+
 ## Notes and decisions log
 
 - 2026-09-04 — W4 read all 9 `modelservice-remove-in-loop` sites against their source and **none of

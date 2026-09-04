@@ -60,6 +60,10 @@ const LEAD_PASSWORD = "rehearsal-password";
 // A session that reasons over six real Java files is minutes of work, not seconds.
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 
+// The walk leaves a connection idle for minutes while the editor works, and a pooled socket the
+// server has since closed surfaces as ECONNRESET on the next read. Never reuse one.
+const NO_KEEPALIVE = { connection: "close" };
+
 let passed = 0;
 const failures = [];
 
@@ -672,6 +676,35 @@ function applyAskChecks({ repo, text, commands }) {
 }
 
 /** The apply walks read the catalog off the server, so an unseeded one has to fail by name. */
+/**
+ * Remove the throwaway project this walk created. Never fails the walk: a walk that passed and
+ * could not tidy up is still a walk that passed, and the message says what was left behind.
+ *
+ * The lead signs in here rather than at the top because this is the only thing in a walk that needs
+ * a session — everything else the walk does, it does through the plugin's key.
+ */
+async function discardProject(slug) {
+  try {
+    const signIn = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { ...NO_KEEPALIVE, "content-type": "application/json" },
+      body: JSON.stringify({ email: LEAD_EMAIL, password: LEAD_PASSWORD }),
+    });
+    if (!signIn.ok) throw new Error(`signing in answered ${signIn.status}`);
+    const cookies = signIn.headers.getSetCookie?.() ?? [signIn.headers.get("set-cookie") ?? ""];
+    const cookie = cookies.filter(Boolean).map((one) => one.split(";")[0]).join("; ");
+
+    const removed = await fetch(`${API}/projects/${slug}`, {
+      method: "DELETE",
+      headers: { ...NO_KEEPALIVE, cookie },
+    });
+    if (!removed.ok) throw new Error(`deleting answered ${removed.status}`);
+    return `removed the project it created (${slug})`;
+  } catch (err) {
+    return `left ${slug} behind: ${err.message}`;
+  }
+}
+
 async function catalogIsLoaded(key) {
   const listed = await fetch(`${API}/v1/catalog`, { headers: { authorization: `Bearer ${key}` } });
   const entries = listed.ok ? (await listed.json()).entries : [];
@@ -913,45 +946,51 @@ async function main() {
 
   const slug = `walk-${Date.now().toString(36)}`;
   const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
-  await walk.before?.(key);
-  const { repo, about } = walk.setup();
-  const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
-  execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
-    env: { ...process.env, SMITH_HOME: home },
-    stdio: "ignore",
-  });
-
-  editor.beforeSession?.();
-  const prompt = walk.prompts[name];
-  const args = editor.args(prompt, walk.tools);
-  console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
-  console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
-
-  let messages;
   try {
-    messages = runSession(editor, args, repo, home);
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
+    await walk.before?.(key);
+    const { repo, about } = walk.setup();
+    const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
+    execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
+      env: { ...process.env, SMITH_HOME: home },
+      stdio: "ignore",
+    });
 
-  const text = developerText(messages);
-  const toolCalls = editor.toolCalls(messages);
-  const commands = shellCommandsOf(toolCalls);
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  const date = new Date().toISOString().slice(0, 10);
-  const transcript = join(OUTPUT_DIR, `${walk.transcript}${editor.suffix}-${date}.txt`);
-  writeTranscript(transcript, { editor, args, repo, slug, about, toolCalls, text });
-  console.log(`transcript: ${transcript}\n`);
+    editor.beforeSession?.();
+    const prompt = walk.prompts[name];
+    const args = editor.args(prompt, walk.tools);
+    console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
+    console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
 
-  check("the agent said something to the developer", text.length > 0);
-  // The repository is read by the checks, so it outlives the session and is removed after them.
-  try {
-    walk.checks({ repo, text, commands });
+    let messages;
+    try {
+      messages = runSession(editor, args, repo, home);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+
+    const text = developerText(messages);
+    const toolCalls = editor.toolCalls(messages);
+    const commands = shellCommandsOf(toolCalls);
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+    const date = new Date().toISOString().slice(0, 10);
+    const transcript = join(OUTPUT_DIR, `${walk.transcript}${editor.suffix}-${date}.txt`);
+    writeTranscript(transcript, { editor, args, repo, slug, about, toolCalls, text });
+    console.log(`transcript: ${transcript}\n`);
+
+    check("the agent said something to the developer", text.length > 0);
+    // The repository is read by the checks, so it outlives the session and is removed after them.
+    try {
+      walk.checks({ repo, text, commands });
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+    for (const { what, pattern } of walk.forbidden) {
+      check(`the developer is never shown ${what}`, !pattern.test(text), firstMatch(text, pattern));
+    }
   } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
-  for (const { what, pattern } of walk.forbidden) {
-    check(`the developer is never shown ${what}`, !pattern.test(text), firstMatch(text, pattern));
+    // A failed walk tidies up too: 52 projects nobody will open again is what not doing this
+    // looks like after a few weeks of running this script.
+    console.log(`\n${await discardProject(slug)}`);
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

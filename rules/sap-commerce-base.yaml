@@ -284,9 +284,14 @@ checks:
     severity: critical
     issue_type: bug
     pattern: "JaloSession\\.|SessionContext\\."
+    # Three exclusions, in order:
     # `SessionContext.` also ends an English sentence in a Javadoc `@param` description. Prose
     # naming a type is not a call on it.
-    exclude_line_pattern: "^\\s*(\\*|//)"
+    # `TenantAwareThreadFactory(Tenant, JaloSession)` is the platform's own constructor for handing
+    # the caller's session to a worker thread. There is no ServiceLayer thread factory to move to.
+    # `getCurrentSession().activate()` and `JaloSession.deactivate()` are how a plain Java thread
+    # attaches to and detaches from the platform. ServiceLayer needs the session these lines create.
+    exclude_line_pattern: "^\\s*(\\*|//)|TenantAwareThreadFactory|JaloSession\\.(getCurrentSession\\(\\)\\.activate|deactivate)\\(\\)"
     match_on: added
     message: "JaloSession/SessionContext usage detected."
     suggestion: "Use modelService, userService, or other ServiceLayer APIs."

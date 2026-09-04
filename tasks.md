@@ -3399,7 +3399,7 @@ What breaks for a developer if this does not exist: a merge is blocked five time
 follows the platform's own documented pattern, and the tool tells them to fix it with an API that
 cannot.
 
-### [x] W2. Sixteen findings, seven fixes, one sentence — SHA_PLACEHOLDER
+### [x] W2. Sixteen findings, seven fixes, one sentence — 6950366
 
 After W1, `service-no-session` still answers five distinct shapes with
 `JaloSession/SessionContext usage detected.` and `Use modelService, userService, or other ServiceLayer

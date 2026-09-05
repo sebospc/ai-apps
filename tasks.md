@@ -3587,7 +3587,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they take code that reads well, drop it into a
 project, and find out from the platform's startup log that it was never valid.
 
-### [ ] X2. Reviewer reviews what Pergamon wrote
+### [x] X2. Reviewer reviews what Pergamon wrote — done, commit PENDING
 
 `docs/pergamon.md` names this as the first honest calibration Pergamon can have, and the two
 products have still never met. The apply walk ends with a git repository holding a real change.
@@ -5417,3 +5417,42 @@ Append here when a task forces a decision. One line each: what was decided and w
   `shutil.which("depcruise") is None`, which asks whether the binary exists and not whether it can
   see a module graph, so the documented limit in `adapters/depcruise.py` surfaces as a failure
   instead of a skip. Worth its own task; not X1's.
+- 2026-09-05 — X2 found the tree dirty and the work in it was X2's own, half written by the run
+  before. It ran, so it was finished rather than reverted: the same call as W5's rule, an unfinished
+  change that is coherent costs less to complete than to write again.
+- 2026-09-05 — X2's reading, the two products meeting for the first time. The apply walk's claude
+  session wrote **15 files, 607 added lines**, the server detected platform **2211**, the rules
+  returned **0 findings** and the verdict **does not block**. 24 checks passed. The reading is at
+  `output/pergamon-reviewed-2026-09-05.md` and stays local, like everything under `output/`.
+- 2026-09-05 — X2's honest limit on that 0, written down because the number reads better than it is.
+  The corpus rate is 0.267 findings per 1000 lines, so 607 lines predicts **0.16** findings. Zero is
+  what a quiet ruleset returns on any diff this size, which means today the walk cannot tell "the
+  rules are quiet on generated code" apart from "the sample is too small to say anything". It is
+  evidence that Pergamon's output is not obviously bad, not evidence that it is good. Reading the
+  same number after a few more walks is what would make it mean something.
+- 2026-09-05 — X2 proved both assertions can fail before trusting them green, because "does not
+  block" on an empty finding list is the same sentence as a review that never ran. A temporary git
+  repository with one Java file holding a hardcoded password, sent down the exact path
+  `reviewWhatWasWritten` uses, returns `hardcoded-secret critical acmecore/src/com/acme/Bad.java:4`
+  plus `pmd:UnusedPrivateField` and `blocking: true — 1 finding(s) at or above critical must be
+  resolved before merge`. The path is live; the walk's zero is a reading.
+- 2026-09-05 — X2 sent the diff through `plugin/bin/smith` rather than through `fetch` in the walk.
+  A second collector written for the walk could be generous where the real one is not, and "the same
+  path a developer's change takes" is the whole claim. It costs one thing: the plugin diffs the
+  working tree against `HEAD`, so the walk stages with `git add -A` first — a file the session
+  created is invisible to `git diff` until it is, and an unstaged walk would have sent an empty diff
+  and called the silence a pass. That is also why the size sent is counted here and printed in the
+  reading instead of being taken from the answer.
+- 2026-09-05 — X2 left the per-finding judgment as a question rather than an answer. Whether a
+  finding is Pergamon's fault, a noisy rule or a real defect in the entry is not something the script
+  that found it can decide, so the line prints the three options for whoever opens the reading. The
+  self-check asserts the line renders, so a renamed field cannot silently drop it.
+- 2026-09-05 — X2 committed the `NO_KEEPALIVE` fix the previous run left in the tree, and it is worth
+  a line because the symptom pointed at the wrong request. The rule was already written for the slow
+  fetches; the health check at the top of the walk and the catalog check did not carry it, and the
+  request that paid for the closed socket was the cleanup four minutes later, which left the walk's
+  project behind. Every fetch in the file carries it now.
+- 2026-09-05 — X2 observed, and did not fix: the database held **9** `walk-%` projects again, four
+  days after W5 emptied it. `discardProject` runs in a `finally`, so the walks that leak are the ones
+  killed outright — a night run stopped on a quota limit skips it. Worth a task; not X2's, and the
+  one project X2 created was removed by the walk itself.

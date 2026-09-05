@@ -62,7 +62,9 @@ const LEAD_PASSWORD = "rehearsal-password";
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 
 // The walk leaves a connection idle for minutes while the editor works, and a pooled socket the
-// server has since closed surfaces as ECONNRESET on the next read. Never reuse one.
+// server has since closed surfaces as ECONNRESET on the next read. Never reuse one — every fetch
+// in this file, not only the slow ones: the health check at the top forgot it, and the request that
+// paid for it was the cleanup four minutes later, which left the walk's project behind.
 const NO_KEEPALIVE = { connection: "close" };
 
 let passed = 0;
@@ -613,7 +615,109 @@ function reviewChecks({ repo, text, commands }) {
   }
 }
 
-function applyChecks({ repo, text, commands }) {
+/**
+ * The two products meeting: what an apply session wrote, read by Smith's own reviewer.
+ *
+ * It goes through the plugin binary rather than through `fetch` here, because "the same path a
+ * developer's change takes" is the whole claim — the diff, the changed files and the platform
+ * version are collected by the code a developer runs, not by a second collector written for the
+ * walk that could be generous where the real one is not.
+ *
+ * `git add -A` first: the plugin diffs the working tree against `HEAD`, and a file the session
+ * created is invisible there until it is staged. A developer stages before asking for a review;
+ * a walk that skipped this would send an empty diff and call the silence a pass.
+ *
+ * No agent findings are submitted. The reasoning half needs a second session and would measure the
+ * model rather than what Pergamon wrote, so the verdict here is the deterministic rules alone.
+ */
+async function reviewWhatWasWritten(repo, key) {
+  execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "ignore" });
+  const home = mkdtempSync(join(tmpdir(), "smith-review-home-"));
+  const plugin = join(PLUGIN_DIR, "bin", "smith");
+  const run = (args, input) => {
+    try {
+      return execFileSync("node", [plugin, ...args], {
+        cwd: repo,
+        encoding: "utf8",
+        input,
+        env: { ...process.env, SMITH_HOME: home },
+      });
+    } catch (err) {
+      // A blocking verdict leaves the CLI with exit 1 and the JSON still on stdout. That is the
+      // case this whole check exists to read, so it must not surface as the walk failing to run.
+      if (err.stdout) return err.stdout;
+      throw new Error(`smith ${args.join(" ")} failed: ${err.stderr || err.message}`);
+    }
+  };
+  try {
+    run(["auth", "--url", API, "--key", key]);
+    // What was sent, counted here rather than taken from the answer: a reading that says "0
+    // findings" without saying what they were looked for in cannot be told apart from an empty
+    // diff, and an empty diff is the way this check fails quietly.
+    const sent = execFileSync("git", ["diff", "--cached", "--numstat"], { cwd: repo, encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean);
+    const size = {
+      files: sent.length,
+      lines: sent.reduce((total, line) => total + (Number(line.split("\t")[0]) || 0), 0),
+    };
+    // A session that wrote nothing has no diff, and the CLI refuses to send one rather than
+    // asking for a review of it. Measured 2026-09-05 on a cursor run that returned an empty
+    // transcript: that is the assertion below failing, and it has to read as one failed check
+    // among the others rather than as the walk itself falling over.
+    let plan;
+    try {
+      plan = JSON.parse(run(["plan", "--title", "what an apply session wrote"]));
+    } catch (err) {
+      if (!/no changes to review/.test(err.message)) throw err;
+      plan = { skipped: true, reason: "the session wrote nothing, so there was no diff to review" };
+    }
+    if (plan.skipped) return { plan, verdict: null, size };
+    const verdict = JSON.parse(run(["submit", String(plan.review_id)], '{"findings": []}'));
+    return { plan, verdict, size };
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** The reading, written whether the verdict blocks or not — a blocking one is the interesting case. */
+function writeReviewReading(path, { plan, verdict, size }) {
+  const findings = plan.deterministic_findings ?? [];
+  const lines = [
+    `# Smith reviews what Pergamon wrote — ${new Date().toISOString().slice(0, 10)}`,
+    "",
+    "The apply walk's own output, sent through `smith plan` and `smith submit` with the walk's key.",
+    "Deterministic rules only: no agent findings were submitted, because a second reasoning session",
+    "would measure the model rather than the catalog entry.",
+    "",
+    verdict
+      ? `Verdict: **${verdict.blocking ? "blocks" : "does not block"}** — ${verdict.reason || "no reason given"}`
+      : `No review: the server skipped it — ${plan.reason || "no reason given"}`,
+    "",
+    `Reviewed: ${size.files} files, ${size.lines} added lines`,
+    `Platform version detected: ${plan.platform_version || "(none)"}`,
+    `Findings: ${findings.length}`,
+    "",
+  ];
+  for (const finding of findings) {
+    lines.push(
+      `## ${finding.index ?? "?"}. ${finding.rule_id} — ${finding.severity}`,
+      "",
+      `- file: \`${finding.file}\`${finding.line ? `:${finding.line}` : ""}`,
+      `- line: \`${finding.quoted_line ?? ""}\``,
+      `- says: ${finding.message}`,
+      ...(finding.suggestion ? [`- fix: ${finding.suggestion}`] : []),
+      // Which of the three a finding is cannot be decided by the script that found it, so the line
+      // is left as the question rather than printed as an answer nobody computed.
+      "- reading, pick one: _Pergamon's fault_ / _a rule noisy on generated code_ / _correct and worth fixing in the entry_",
+      ""
+    );
+  }
+  if (!findings.length) lines.push("Nothing fired.", "");
+  writeFileSync(path, lines.join("\n"));
+}
+
+async function applyChecks({ repo, text, commands, key }) {
   const catalogCalls = commands.filter((c) => /\bcatalog\b/.test(c));
   check("the agent read the catalog before choosing", catalogCalls.length > 0, commands.join(" ; ").slice(0, 300));
   check(
@@ -749,6 +853,29 @@ function applyChecks({ repo, text, commands }) {
     named.includes(LOCALEXTENSIONS),
     named.join(" ; ") || "no written path is named at all"
   );
+
+  // Last, because it stages the repository and every check above reads it unstaged.
+  const { plan, verdict, size } = await reviewWhatWasWritten(repo, key);
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  const reading = join(OUTPUT_DIR, `pergamon-reviewed-${new Date().toISOString().slice(0, 10)}.md`);
+  writeReviewReading(reading, { plan, verdict, size });
+  console.log(`\nreviewed what the session wrote: ${reading}`);
+
+  // A session that wrote a feature is not a trivial change, so the gate firing here means the diff
+  // never reached the rules and both assertions below would pass on nothing.
+  check("the change the session wrote is big enough to be reviewed at all", Boolean(verdict), plan.reason ?? "");
+  const findings = plan.deterministic_findings ?? [];
+  check(
+    "Smith's own reviewer does not block what Pergamon wrote",
+    verdict ? !verdict.blocking : false,
+    verdict ? verdict.reason ?? "" : "there was no verdict to read"
+  );
+  const critical = findings.filter((finding) => finding.severity === "critical");
+  check(
+    "nothing the session wrote is a critical finding",
+    critical.length === 0,
+    critical.map((finding) => `${finding.rule_id} at ${finding.file}:${finding.line ?? "?"}`).join(" ; ")
+  );
 }
 
 /**
@@ -804,7 +931,9 @@ async function discardProject(slug) {
 }
 
 async function catalogIsLoaded(key) {
-  const listed = await fetch(`${API}/v1/catalog`, { headers: { authorization: `Bearer ${key}` } });
+  const listed = await fetch(`${API}/v1/catalog`, {
+    headers: { ...NO_KEEPALIVE, authorization: `Bearer ${key}` },
+  });
   const entries = listed.ok ? (await listed.json()).entries : [];
   if (!entries.some((entry) => entry.id === "duplicate-order-prevention")) {
     throw new Error(
@@ -1071,9 +1200,67 @@ function unregisteredIn(created, body, alsoWritten = []) {
   }
 }
 
+/**
+ * The reading, rendered from a review that blocks.
+ *
+ * The apply walks find nothing, which is the good answer and also the one that never exercises this
+ * — a field named wrong prints "?" forever and only a bad run would say so. So the shape that
+ * matters is asserted here, against a blocking verdict the walks are not supposed to produce.
+ */
+function readingSelfCheck() {
+  const plan = {
+    platform_version: "2211",
+    deterministic_findings: [
+      {
+        index: 1,
+        rule_id: "hardcoded-secret",
+        severity: "critical",
+        file: "acmecore/src/com/acme/Bad.java",
+        line: 3,
+        quoted_line: 'private static final String PASSWORD = "…";',
+        message: "a credential is written into the source",
+        suggestion: "read it from a property",
+      },
+    ],
+  };
+  const verdict = { blocking: true, reason: "1 finding(s) at or above `critical`" };
+  const path = join(mkdtempSync(join(tmpdir(), "smith-reading-")), "reading.md");
+  try {
+    writeReviewReading(path, { plan, verdict, size: { files: 18, lines: 640 } });
+    const written = readFileSync(path, "utf8");
+    for (const expected of [
+      "## 1. hardcoded-secret — critical",
+      "acmecore/src/com/acme/Bad.java`:3",
+      "Verdict: **blocks**",
+      "Reviewed: 18 files, 640 added lines",
+      "- reading, pick one:",
+    ]) {
+      assert.ok(written.includes(expected), `the reading does not say "${expected}":\n${written}`);
+    }
+
+    // The other ending, which a green walk also never reaches: nothing was written, so there is no
+    // verdict to report. It must say that rather than print a blank one and read as "not blocking".
+    writeReviewReading(path, {
+      plan: { skipped: true, reason: "the session wrote nothing, so there was no diff to review" },
+      verdict: null,
+      size: { files: 0, lines: 0 },
+    });
+    const nothing = readFileSync(path, "utf8");
+    for (const expected of ["No review: the server skipped it", "Reviewed: 0 files, 0 added lines"]) {
+      assert.ok(nothing.includes(expected), `the reading does not say "${expected}":\n${nothing}`);
+    }
+    assert.ok(!nothing.includes("Verdict:"), `a review that never ran still claims a verdict:\n${nothing}`);
+
+    return written.split("\n").find((line) => line.startsWith("## "));
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true });
+  }
+}
+
 async function main() {
   selfCheck();
   const rejected = structuralSelfCheck();
+  const rendered = readingSelfCheck();
   if (process.argv[2] === "--self-check") {
     console.log(
       "the registration check rejects a commented-out registration, and the schema check rejects " +
@@ -1081,6 +1268,7 @@ async function main() {
     );
     console.log("the structural pass rejects a broken xml, java and impex file, saying:");
     for (const problem of rejected) console.log(`  ${problem}`);
+    console.log(`a blocking review renders in the reading as:\n  ${rendered}`);
     return;
   }
   const name = process.argv[2] ?? "claude";
@@ -1096,7 +1284,7 @@ async function main() {
     process.exit(1);
   }
 
-  const health = await fetch(`${API}/health`).catch(() => null);
+  const health = await fetch(`${API}/health`, { headers: NO_KEEPALIVE }).catch(() => null);
   if (!health?.ok) {
     console.error(
       `nothing is answering at ${API}. Start it with:\n  uv run uvicorn smith.main:app --port 8099`
@@ -1140,7 +1328,7 @@ async function main() {
     check("the agent said something to the developer", text.length > 0);
     // The repository is read by the checks, so it outlives the session and is removed after them.
     try {
-      walk.checks({ repo, text, commands });
+      await walk.checks({ repo, text, commands, key });
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

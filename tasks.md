@@ -3638,6 +3638,177 @@ What breaks for a developer if this does not exist: the session overwrites a bea
 depends on, the build stays green, and it surfaces as behaviour changing in a part of the project
 nobody touched.
 
+## Phase Y — three entries is a proof of concept, and one reading is not a measurement
+
+Phase X closed the loop: an apply session's output goes through Smith's own reviewer and the walk
+reads the verdict. X2's number was **0 findings over 607 added lines, not blocking**, and X2 was
+right to refuse to celebrate it — at the corpus rate of 0.267 per 1000 lines, 607 lines predict 0.16
+findings. Zero is what a quiet ruleset returns on a diff that size. It says the output is not
+obviously bad. It does not say it is good.
+
+Two things stand between here and a number that means something, and they are the first two tasks.
+The catalog holds **3** entries against **13** packaged in the previous Pergamon, and the calibration
+has run **once**, on **one** entry.
+
+The rest of the phase is what the last four phases wrote down and did not fix: two defects with a
+measurement behind them, and one promise to a developer that no walk has ever checked is kept.
+
+Nothing here adds a review rule, so the fixture-fires / fixture-stays-quiet bar does not bind except
+where a task says it does. What binds instead: every task that changes the plugin conversation means
+`node scripts/walk_skill.mjs apply` **and** `... apply cursor` green with the API up, because a
+`SKILL.md` no agent has been run against is not finished.
+
+### [ ] Y1. The rest of the catalog, and the ones that should not be in it
+
+U2 carried three entries on purpose, to test the format rather than confirm it, and that was the
+right call. Three is still a proof of concept. The other ten already exist, written, under
+`~/Documents/commerce/projects/features/` (6) and `~/Documents/commerce/projects/features-best-run/`
+(7) — read, never written, and outside this repository.
+
+**This task is not "carry ten".** The doctrine that deleting a noisy rule beats adding a careful one
+has an exact analogue here: an entry a developer would never choose costs more than the empty slot,
+because it is one more thing to read past. Carry the ones that pass a bar, and write down which
+did not and why.
+
+The bar, and a task that rejects nothing has not applied it:
+
+- It is a **feature**, not a technique. `rule-ir-sentence-condition` injects raw Drools IR to bypass
+  the translator and its own README calls it dangerous. That is a thing an expert does once, not a
+  thing a project asks for by name.
+- It **generalises**. `portfolio` was coupled to a showcase library and `product-comparison` was
+  reconstructed from a `.tgz`. An entry that only fits the project it came from is a copy, not a
+  pattern.
+- It is **worth a tool**. A wrapper whose whole content is "import the SAP feature module" —
+  `cdc`, most of Group D — is a line of documentation. The developer does not need a catalog to find it.
+
+Acceptance:
+
+- Every remaining entry is read and gets a verdict: carried, or rejected with the reason in the
+  notes log. The rejections are the part that proves the bar was applied.
+- Each carried entry is written to the format U2 settled, and **the format does not grow to fit
+  them**. U2's rule holds: a field only one entry needs is deleted. If an entry cannot be expressed
+  without a new field, that is a finding about the format — record it, add the field once, and say
+  which entries now use it.
+- `scripts/seed_catalog.py` loads them all, `GET /v1/catalog` returns them, and the existing fixture
+  test that every `catalog/*.yaml` parses and carries the required fields stays green.
+- The entries carry no client anything. These files came out of a demo codebase and a client-facing
+  archive; read what you are about to commit. Names, paths and business logic from a real project do
+  not go into this repository — the engineering pattern does.
+- `uv run pytest` green.
+
+What breaks for a developer if this does not exist: they ask for a feature, the catalog holds three,
+and they go back to writing it by hand — which is the problem Pergamon exists to solve.
+
+### [ ] Y2. The measurement three entries could not give
+
+X2 built the pipeline and ran it once. This runs it across the catalog and reads the result as a
+rate, which is the only form in which it can be compared to anything.
+
+Acceptance:
+
+- An apply walk per carried entry, each writing into a fresh skeleton project, each sent through
+  `plan` and `submit` the way X2 wired it. Reuse that path; do not write a second collector.
+- `output/pergamon-reviewed-<date>.md` (gitignored) records, per entry: files written, added lines,
+  findings by rule id, verdict. Then the headline, which is the point of the task: **findings per
+  1000 generated lines across every entry**, against the corpus's 0.267.
+- The reading interprets the number rather than reporting it. Three outcomes and each means something
+  different: near the corpus rate says generated code is about as good as human code here; far below
+  says either it is better or the ruleset is blind to how it is wrong, and the reading has to say
+  which by looking at what the rules would have had to catch; far above names the entries that
+  produced the findings, and those entries are wrong, not the rules.
+- **A blocking verdict on any entry is a result, not a failure.** It gets fixed at its source — the
+  entry, or the skill — and the fix is described. Loosening an assertion to get a green run is the
+  one thing this repository does not do.
+- Total generated volume is written down even if it is small, because it is what bounds the whole
+  reading. A rate over 2000 lines is a hint; the reading says so rather than implying more.
+- `uv run pytest` green, and every walk green.
+
+What breaks for a developer if this does not exist: the only claim anyone can make about Pergamon's
+output is that one session of it did not trip a quiet ruleset.
+
+### [ ] Y3. A walk that is killed leaves its project behind
+
+X2 measured **9** `walk-%` projects in the database, four days after W5 emptied it. The cause is in
+the note: `discardProject` runs in a `finally`, so it covers a walk that fails and not a walk that is
+killed — which is what a night run does when it hits a session limit mid-walk. The runner is the
+main user of these walks, so the leak is not an edge case here, it is the normal path.
+
+Acceptance:
+
+- A walk's project is removed even when the process is killed. The simplest thing that holds: name
+  the project so it can be found again, and have a walk sweep the ones an earlier run abandoned
+  before it starts. A signal handler alone does not cover `SIGKILL` and should not be the whole fix.
+- The sweep only removes projects a walk created — the naming has to make that unambiguous, and a
+  test proves a project that merely looks similar is left alone. This deletes rows in a real
+  database; getting the predicate wrong deletes somebody's project.
+- Run it against the 9 that are there now and record the count before and after.
+- A postgres-backed test that skips when the database is down, per the storage rule.
+- `uv run pytest` green.
+
+What breaks for a developer if this does not exist: the projects list fills with junk, and the last
+time that happened it was T4 clearing 94 of them.
+
+### [ ] Y4. A test that is red for the environment reads as a defect
+
+`tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on this machine and
+was red at `HEAD~15`, so it is the environment. X1 left the diagnosis rather than the fix: the guard
+is `shutil.which("depcruise") is None`, which asks whether the binary exists and not whether it can
+resolve a module graph. `depcruise` finds the cycle by hand over the same two files and returns zero
+violations in the materialized workspace, with no warning logged.
+
+A red test nobody can act on is worse than a missing one: it trains the next reader to skip a red
+suite, and the next real failure goes with it.
+
+Acceptance:
+
+- The guard asks the question the test depends on — can the analyzer see a module graph here — and
+  skips with a message naming what is missing when it cannot. `README.md` already documents the
+  TypeScript-resolution limit; the skip message and that paragraph say the same thing.
+- The test still **fails** when the analyzer can see the graph and misses the cycle. A guard that
+  makes a real regression skip is a worse defect than the one it fixed, so prove it: make the
+  analyzer capable, break the detection, and read the red.
+- `uv run pytest` reports the same suite with no unexplained red, and the notes log records the
+  before and after counts.
+
+What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
+next person to see red assumes it is this one.
+
+### [ ] Y5. The sentence that protects the developer is written and never checked
+
+`plugin/skills/review/SKILL.md:178` already tells the agent to say it: *"I'll record that for your
+lead."* Once per session, the first time the developer rules something out. Line 175 tells it to send
+their sentence rather than a summary, and line 180 tells it to ask for a reason when they gave none,
+naming where it goes. The design is right and the words are already there.
+
+Nothing checks that any of it happens. `scripts/walk_skill.mjs` asserts the verdict, the numbering
+and the fixes, and not one assertion reads for this. So the guarantee a developer has that they were
+warned before their words reached their lead is a line of prose in a file, of the same kind as every
+other line an agent sometimes skips.
+
+This is the same class of defect the review walk exists for. An instruction no agent has been run
+against is a hope, and this one is about what happens to somebody's words.
+
+Acceptance:
+
+- The review walk asserts it, on the session that already dismisses a finding: before or with the
+  dismissal, the agent says the reason goes to their lead. Read for the meaning, not for the exact
+  wording — an agent that says it in its own words has complied, and an assertion on a literal string
+  turns a fine paraphrase into a red run.
+- The negative case, which is the one that makes the check worth having: a session that dismisses
+  nothing does not say it. A rule that fires on every session is not reading anything.
+- Run it before trusting it. Remove the line from `SKILL.md`, watch the assertion go red, put it
+  back. Record both readings in the notes log — a check that has only ever been green is a check
+  nobody has read.
+- If the walk shows the agent skipping the sentence, **that is the finding**: `SKILL.md` is what
+  changes, and the notes log records what the agent did instead. Do not weaken the assertion to fit
+  the behaviour.
+- Green in both editors, since this is an instruction each of them follows differently:
+  `node scripts/walk_skill.mjs review` and `node scripts/walk_skill.mjs review cursor`.
+
+What breaks for a developer if this does not exist: nothing visibly, until an agent quietly stops
+saying it and the first person to notice is a developer who finds their own sentence on a screen they
+did not know existed.
+
 ## Notes and decisions log
 
 - 2026-09-04 — W4 read all 9 `modelservice-remove-in-loop` sites against their source and **none of

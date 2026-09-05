@@ -3587,7 +3587,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they take code that reads well, drop it into a
 project, and find out from the platform's startup log that it was never valid.
 
-### [x] X2. Reviewer reviews what Pergamon wrote — done, commit PENDING
+### [x] X2. Reviewer reviews what Pergamon wrote — done, commit b673502
 
 `docs/pergamon.md` names this as the first honest calibration Pergamon can have, and the two
 products have still never met. The apply walk ends with a git repository holding a real change.

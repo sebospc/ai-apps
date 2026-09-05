@@ -33,6 +33,7 @@ from smith.reviewer.domain.models import (
 from smith.reviewer.domain.rules import (
     _blank_java_noise,
     _lines_inside_a_loop,
+    parse_impex,
     properties_hygiene,
     run_checks,
 )
@@ -184,6 +185,42 @@ class Dao {
     assert 5 not in inside  # the DAO shape: the query runs before the loop over its own result
     assert 7 in inside  # the loop body, past a string holding an unbalanced `{`
     assert 9 in inside  # a one-statement loop body with no braces
+
+
+def test_impex_rows_are_read_past_macros_comments_and_quoted_separators() -> None:
+    """The parser both the `impex-headers` rule and `scripts/impex_structure.py` read a file with."""
+    rows = parse_impex(
+        """
+$catalog=catalogversion(catalog(id[default='acme']),version)[unique=true]
+# a comment
+"#% impex.setLocale( Locale.GERMAN );"
+INSERT_UPDATE Product;code[unique=true];name;$catalog
+;p1;"a name with a ; in it";
+REMOVE Product;code[unique=true]
+;p2
+;"never closed
+"""
+    )
+
+    assert [(row.line, row.mode) for row in rows] == [
+        (5, "INSERT_UPDATE"),
+        (6, ""),
+        (7, "REMOVE"),
+        (8, ""),
+        (9, ""),
+    ]
+    # The macro is expanded, so a caller counts the columns an import would see, not the ones
+    # written: `$catalog` is one column here and holds a `;` of its own when it is not.
+    assert rows[0].cells is not None
+    assert len(rows[0].cells) == 3
+    assert rows[0].cells[0] == "code[unique=true]"
+    assert rows[0].cells[2].startswith("catalogversion(")
+    # A `;` inside quotes is data, not a column boundary: splitting on the character alone reads
+    # this row as four values under a header of three.
+    assert rows[1].cells == ("p1", '"a name with a ; in it"', "")
+    # A cell whose quote never closes spans lines and nothing here joins them, so the row declines
+    # to be counted rather than being counted wrong.
+    assert rows[4].cells is None
 
 
 def test_dedup_drops_agent_finding_that_restates_a_deterministic_one() -> None:

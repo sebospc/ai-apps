@@ -3557,7 +3557,7 @@ reads the files off the disk. No new harness. Every task here means
 `node scripts/walk_skill.mjs apply` **and** `node scripts/walk_skill.mjs apply cursor` green, with
 the API up, and `node scripts/walk_skill.mjs apply-ask` still green because it must stay untouched.
 
-### [ ] X1. The generated code parses, and the one check that cannot run says so
+### [x] X1. The generated code parses, and the one check that cannot run says so — done, commit PENDING
 
 Nothing today reads the generated files as anything but text. A `<bean>` missing its closing tag,
 an `items.xml` with a stray `&`, a Java file with an unbalanced brace — every one of those passes
@@ -5377,3 +5377,43 @@ Append here when a task forces a decision. One line each: what was decided and w
   handful of them are tracked from before that rule and so still show up as modified after any walk.
   Restored rather than committed. Untracking the ones already in history is a separate task, not
   W5's.
+- 2026-09-05 — X1 found the tree dirty: the run before it had extracted `parse_impex` out of the
+  `impex-headers` rule and written `scripts/impex_structure.py`, then stopped. Both were coherent and
+  are what the task asks for — one ImpEx reader, read by the rule and by the walk — so they were
+  finished rather than reverted.
+- 2026-09-05 — X1 chose `javac -proc:only` over `-proc:none`, and that decision is the whole
+  precision of the Java check. `-proc:none` compiles all the way through attribution, where an
+  unresolved base class invents a bad `@Override`, an unknown method and an incompatible type; the
+  filter would then have to guess an open-ended family of codes, and every code it missed fails a
+  correct file. `-proc:only` stops after the symbols are entered, which is the last point a
+  diagnostic still means anything without a classpath, and leaves exactly three ways an import can
+  fail: `cant.resolve`, `doesnt.exist`, `cant.access`, plus the static-import spelling
+  `static.imp.only.classes.and.interfaces`. Everything else that survives is a parse error.
+- 2026-09-05 — X1's first real apply walk failed the new check, and it was the check that was wrong,
+  not the code. Claude wrote `DefaultOrderLockServiceTest.java` with `import static
+  org.mockito.Mockito.when` and three siblings; javac says
+  `compiler.err.static.imp.only.classes.and.interfaces` about a static import whose package it
+  cannot find, not `doesnt.exist`, so four correct lines read as syntax errors. Verified in
+  isolation that javac emits that code only alongside a `doesnt.exist` on the same import, added it
+  to the filter, and put the exact shape into the self-check's *quiet* Java fixture so the case
+  cannot come back. The re-run is green, 21 checks passed.
+- 2026-09-05 — X1's proof that the structural pass can fail, run and read rather than asserted.
+  `node scripts/walk_skill.mjs --self-check` now prints what it rejected:
+  `broken-items.xml:1: parser error : Opening and ending tag mismatch: itemtype line 1 and items`,
+  `broken-items.xml:2: parser error : Premature end of data in tag items line 1`,
+  `Broken.java:2:47: expected: ';'`, `Broken.java:2:49: premature.eof`, and
+  `broken.impex:2: 2 values under a header of 3 columns`. The same run asserts the three correct
+  copies stay quiet — including a Java file importing SAP and Mockito types that resolve to nothing
+  here — because a filter one code too wide passes every malformed file on earth.
+- 2026-09-05 — X1 read `tests/test_reviewer.py::test_impex_rows_...` against a broken parser before
+  trusting it: deleting the two lines in `_impex_cells` that track quotes makes it fail naming the
+  cells, `('p1', '"a na...; in it"', '') != ('p1', 'a nam... ; in it', '')`, not a length.
+- 2026-09-05 — `tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on
+  this machine and X1 did not touch it. It is red at HEAD~15 too, so it is the environment and not a
+  regression. Diagnosis, so the next run does not repeat it: `depcruise` 17.4.3 resolves the cycle
+  correctly when run by hand over the same two files, TypeScript 5.9.3 does resolve from its install
+  directory, and the adapter logs no warning — so `run_json` gets valid JSON with zero violations
+  and the analyzer goes quiet in the materialized workspace only. The test's guard is
+  `shutil.which("depcruise") is None`, which asks whether the binary exists and not whether it can
+  see a module graph, so the documented limit in `adapters/depcruise.py` surfaces as a failure
+  instead of a skip. Worth its own task; not X1's.

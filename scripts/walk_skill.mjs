@@ -31,7 +31,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   accessSync,
   constants,
@@ -53,6 +53,7 @@ const API = process.env.SMITH_API_URL ?? "http://localhost:8099";
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const PLUGIN_DIR = join(REPO_ROOT, "plugin");
 const OUTPUT_DIR = join(REPO_ROOT, "output");
+const IMPEX_STRUCTURE = join(REPO_ROOT, "scripts", "impex_structure.py");
 
 const LEAD_EMAIL = "rehearsal@smith.test";
 const LEAD_PASSWORD = "rehearsal-password";
@@ -469,6 +470,94 @@ function extensionsWrittenInto(repo, written) {
   return [...new Set(written.map(owner).filter(Boolean))];
 }
 
+/** What a command printed, on either stream, whether or not it exited zero. */
+function output(binary, args, cwd) {
+  const done = spawnSync(binary, args, { cwd, encoding: "utf8" });
+  if (done.error) throw done.error;
+  return `${done.stdout ?? ""}${done.stderr ?? ""}`;
+}
+
+/**
+ * The javac diagnostics that mean "this machine has no SAP Commerce platform", not "this file is
+ * broken".
+ *
+ * Nothing here links — `docs/pergamon.md` records why — so every framework type the session
+ * imported is unresolvable and reporting those would fail every correct file. The list stays this
+ * short only because `-proc:only` stops javac after it enters the symbols: past that point an
+ * unresolved base class also produces a bad `@Override`, an unknown method and an incompatible
+ * type, and filtering the consequences would mean guessing a family of codes instead of naming a
+ * closed one. These four are all that phase can report about a type it cannot find.
+ *
+ * The diagnostic *code* is matched and never the message: `-XDrawDiagnostics` prints the code,
+ * which is a stable identifier, while the message beside it is prose that changes between JDKs.
+ * `static.imp.only.classes.and.interfaces` is here because javac says it about
+ * `import static org.mockito.Mockito.when` whenever `org.mockito` is not on the classpath, which is
+ * every generated test file on this machine.
+ */
+const UNRESOLVABLE =
+  /^compiler\.err\.(cant\.resolve|doesnt\.exist|cant\.access|static\.imp\.only\.classes\.and\.interfaces)/;
+
+const JAVA_DIAGNOSTIC = /^\S+:(\d+):(\d+): (compiler\.err\.[\w.]+)(?::\s*(.*))?$/;
+
+/**
+ * Whether the files the session wrote are files their own parser can read.
+ *
+ * The floor under "is this code any good", and until now nothing checked it at all: XML that does
+ * not parse is not a build failure, it is a platform that refuses to start. Each kind is handed to
+ * the parser that will really read it rather than to a pattern written here — `xmllint` for XML,
+ * `javac` for Java, and for ImpEx the reviewer's own reader through `scripts/impex_structure.py`,
+ * so a file the walk accepts is a file the product accepts.
+ */
+function structuralProblems(repo, written) {
+  const of = (extension) => written.filter((path) => path.toLowerCase().endsWith(extension));
+  return [
+    ...xmlProblems(repo, of(".xml")),
+    ...javaProblems(repo, of(".java")),
+    ...impexProblems(repo, of(".impex")),
+  ];
+}
+
+function xmlProblems(repo, paths) {
+  if (!paths.length) return [];
+  // xmllint already reports `path:line: parser error : what`, which is what a developer needs and
+  // "the xml is invalid" is not. Only the lines it prefixes with a path we asked about are kept:
+  // the rest of a report is the offending source line and a caret under it.
+  return output("xmllint", ["--noout", ...paths], repo)
+    .split("\n")
+    .filter((line) => paths.some((path) => line.startsWith(`${path}:`)));
+}
+
+function javaProblems(repo, paths) {
+  if (!paths.length) return [];
+  // One file per call, because `-XDrawDiagnostics` prints a file's simple name and two extensions
+  // may each hold a `Cache.java`. A file read alone cannot see its siblings either, but that reads
+  // as an unresolved symbol and is filtered with the platform's. `-proc:only` writes no class file,
+  // so there is nothing to put in a `-d` directory and none is made.
+  return paths.flatMap((path) =>
+    output("javac", ["-XDrawDiagnostics", "-proc:only", "-nowarn", path], repo)
+      .split("\n")
+      .map((line) => JAVA_DIAGNOSTIC.exec(line.trim()))
+      .filter((found) => found && !UNRESOLVABLE.test(found[3]))
+      // The code carries the kind of error and the text beside it carries the detail, so both are
+      // reported: `expected: ';'` says more to a developer than either half alone.
+      .map(
+        (found) =>
+          `${path}:${found[1]}:${found[2]}: ${found[3].replace("compiler.err.", "")}` +
+          (found[4] ? `: ${found[4]}` : "")
+      )
+  );
+}
+
+function impexProblems(repo, paths) {
+  if (!paths.length) return [];
+  // The reviewer's ImpEx reader, not a second one written here: `parse_impex` is what the
+  // `impex-headers` rule sees, so the two products cannot disagree about what a header is. It is
+  // Python and the walk is Node, which is the whole reason for the script in between.
+  return output("uv", ["run", "--project", REPO_ROOT, IMPEX_STRUCTURE, ...paths], repo)
+    .split("\n")
+    .filter((line) => paths.some((path) => line.startsWith(`${path}:`)));
+}
+
 /**
  * Which extensions the session's code landed in, and which of those the build would not load.
  *
@@ -595,6 +684,15 @@ function applyChecks({ repo, text, commands }) {
     "the developer got code, not only a plan",
     written.some((path) => /\.(java|ts|impex)$/i.test(path)),
     written.join(" ; ").slice(0, 300)
+  );
+  // The floor: code that reads well and does not parse costs the developer a startup log to find
+  // out. Every problem is reported, not the first, because a session writing fifteen files that
+  // learns about one of them is a session that has to be run again.
+  const malformed = structuralProblems(repo, written);
+  check(
+    "every file the session wrote parses",
+    malformed.length === 0,
+    malformed.join(" ; ").slice(0, 600)
   );
   // The one mistake step 2 exists to prevent. Adding a type next to somebody's is ordinary work —
   // the first walk to reach code put the feature's type in the project's own extension, because the
@@ -893,6 +991,65 @@ function selfCheck() {
 }
 
 /**
+ * The structural pass, read against a broken copy and a correct copy of all three file kinds.
+ *
+ * A pass that has only ever been green is a pass nobody has read, and this one is the easiest in
+ * the walk to get silently wrong: filter one diagnostic code too many and every malformed Java file
+ * on earth compiles. So both halves are asserted — three files that must be rejected, and three
+ * that must not, the correct Java one importing SAP types that cannot resolve on this machine
+ * because that is what every real generated file does.
+ */
+function structuralSelfCheck() {
+  const files = {
+    "core/resources/broken-items.xml": '<items><itemtype code="Lock"></items>\n',
+    "core/src/Broken.java": "package acme;\npublic class Broken { String go() { return \"x\" }\n",
+    "core/resources/broken.impex": "INSERT_UPDATE Order;code[unique=true];date;total\n;order-1;2024-01-01\n",
+    "core/resources/fine-items.xml": '<items><itemtype code="Lock"/></items>\n',
+    // Every shape the pass has to stay quiet on, and each one is here because it was measured, not
+    // imagined: a platform import, a base class that cannot resolve, an `@Override` against it, and
+    // the static imports of a test file — which is what the 2026-09-05 apply walk failed on.
+    "core/src/Fine.java":
+      "package acme;\nimport de.hybris.platform.core.model.order.OrderModel;\n" +
+      "import static org.mockito.Mockito.when;\nimport static org.junit.Assert.assertEquals;\n" +
+      "public class Fine extends AbstractBusinessService {\n" +
+      "  @Override public String go(OrderModel order) { assertEquals(1, 1); return order.getCode(); }\n}\n",
+    "core/resources/fine.impex":
+      "$catalog=catalogversion(catalog(id[default='acme']),version)[unique=true]\n" +
+      "# a comment\nINSERT_UPDATE Product;code[unique=true];name;$catalog\n" +
+      ';p1;"a name with a ; in it";\n',
+  };
+  const repo = mkdtempSync(join(tmpdir(), "smith-structural-"));
+  const rejected = [];
+  try {
+    for (const [path, contents] of Object.entries(files)) {
+      mkdirSync(join(repo, dirname(path)), { recursive: true });
+      writeFileSync(join(repo, path), contents);
+    }
+    for (const path of Object.keys(files)) {
+      const problems = structuralProblems(repo, [path]);
+      const broken = path.toLowerCase().includes("broken");
+      if (broken) rejected.push(...problems);
+      assert.equal(
+        problems.length > 0,
+        broken,
+        broken
+          ? `a malformed ${path} reads as parsing`
+          : `a correct ${path} reads as malformed: ${problems.join(" ; ")}`
+      );
+      if (broken) {
+        assert.ok(
+          problems.every((problem) => problem.startsWith(`${path}:`)),
+          `a problem in ${path} does not name the file and the line: ${problems.join(" ; ")}`
+        );
+      }
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+  return rejected;
+}
+
+/**
  * A throwaway project holding these extensions, registering `body`, with every file under the new
  * extensions written by the session — and what the walk's check would say about it.
  */
@@ -916,11 +1073,14 @@ function unregisteredIn(created, body, alsoWritten = []) {
 
 async function main() {
   selfCheck();
+  const rejected = structuralSelfCheck();
   if (process.argv[2] === "--self-check") {
     console.log(
       "the registration check rejects a commented-out registration, and the schema check rejects " +
         "the attribute declared on the lock type instead of on Order"
     );
+    console.log("the structural pass rejects a broken xml, java and impex file, saying:");
+    for (const problem of rejected) console.log(`  ${problem}`);
     return;
   }
   const name = process.argv[2] ?? "claude";

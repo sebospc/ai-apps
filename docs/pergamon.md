@@ -105,6 +105,30 @@ feature does, and a tool that stops to demand a document nobody has is friction 
 Not delivered, and each was in the previous version: a separate functional spec, separate test
 cases, an implementation guide. They can be added when somebody asks for one by name.
 
+## How far a check on the generated code can go here
+
+There is no SAP Commerce platform in this repository and none is coming: `bin/platform` is not in
+the corpus checkout, `ant` is not installed, and the framework jars every generated file imports
+exist nowhere on the machine. So the one question a developer actually wants answered — does this
+compile against the platform it targets — is the one question the apply walk cannot answer, and
+nothing here should be read as if it did.
+
+What the walk does check is that each written file parses: `xmllint` on every `.xml`, the reviewer's
+own ImpEx reader on every `.impex`, and `javac -proc:only` on every `.java`. That `javac` run is
+syntax and never linking. `-proc:only` stops it after the symbols are entered, which is the last
+point where a diagnostic still means something without a classpath — past there an unresolved base
+class invents a bad `@Override`, an unknown method and an incompatible type, none of them real. What
+that phase can still say about a type it cannot find is three codes, and they are dropped by code
+rather than by message: `cant.resolve`, `doesnt.exist`, `cant.access` and the static-import form
+`static.imp.only.classes.and.interfaces`. What survives is a file that would not parse on any
+classpath. A missing method, a wrong argument type, an interface implemented incompletely: all of
+that passes here and fails in a real build.
+
+That is a floor, not a ceiling, and it is worth having because the failures under it are the
+expensive kind. A `<bean>` missing its closing tag is not a compile error, it is a platform that
+refuses to start, and before this existed nothing in the walk read a generated file as anything but
+text.
+
 ## Nothing is frozen
 
 A delivery is not immutable. The session continues, the developer changes a decision they made

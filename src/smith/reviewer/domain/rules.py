@@ -495,7 +495,7 @@ def spring_xml_wiring(ctx: RuleContext) -> list[Finding]:
 
 # The type may carry its own modifiers before the first column: `INSERT_UPDATE Media[batchmode=true];...`.
 _IMPEX_HEADER_RE = re.compile(
-    r"^\s*(INSERT_UPDATE|INSERT|UPDATE)\s+(\w+)\s*(?:\[[^\]]*\])?\s*;(.*)$", re.I
+    r"^\s*(INSERT_UPDATE|INSERT|UPDATE|REMOVE)\s+(\w+)\s*(?:\[[^\]]*\])?\s*;(.*)$", re.I
 )
 _IMPEX_MACRO_DEF_RE = re.compile(r"^\s*(\$[\w-]+)\s*=\s*(.*)$")
 _IMPEX_MACRO_USE_RE = re.compile(r"\$[\w-]+")
@@ -515,6 +515,99 @@ def _expand_impex_macros(text: str, definitions: dict[str, str]) -> str:
     return text
 
 
+class ImpexRow(NamedTuple):
+    """One row of an ImpEx file: a header, or a value line under the header above it.
+
+    Blank lines, comments, script directives and macro definitions carry no row and never appear
+    here. `columns` and `cells` are read after macro substitution, so a caller sees what the import
+    would see rather than what the file says.
+    """
+
+    line: int
+    mode: str
+    """`INSERT_UPDATE`, `INSERT`, `UPDATE` or `REMOVE` on a header, empty on a value line."""
+    item_type: str
+    """The type a header declares, empty on a value line."""
+    columns: str
+    """A header's column text, empty on a value line."""
+    cells: tuple[str, ...] | None
+    """The cells after the mode and type slot, or None when a quoted cell is left open."""
+    text: str
+
+
+def _impex_cells(text: str) -> tuple[str, ...] | None:
+    """Split one ImpEx line on `;`, leaving separators inside a quoted cell alone.
+
+    A quoted cell may hold its own `;`, so splitting on the character alone reads two columns as
+    one. A cell may also stay open across lines and nothing here joins them, so a line whose quotes
+    do not close returns None: a caller that cannot count declines rather than counting wrong.
+    """
+    cells: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in text:
+        if char == '"':
+            quoted = not quoted
+        if char == ";" and not quoted:
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if quoted:
+        return None
+    cells.append("".join(current).strip())
+    return tuple(cells)
+
+
+def parse_impex(text: str) -> list[ImpexRow]:
+    """The rows of an ImpEx file, macros expanded — the one ImpEx reader in this repository.
+
+    Two callers with two questions read it: the `impex-headers` rule, which asks whether an
+    `INSERT_UPDATE` names a unique key, and `scripts/impex_structure.py`, which asks whether a
+    generated file has the shape an import could read at all.
+    """
+    rows: list[ImpexRow] = []
+    macros: dict[str, str] = {}
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        stripped = raw.strip()
+        # `"#% impex.setLocale(...)"` is a script directive, not a row of data.
+        if not stripped or stripped.startswith("#") or stripped.startswith('"#'):
+            continue
+        definition = _IMPEX_MACRO_DEF_RE.match(stripped)
+        if definition:
+            macros[definition.group(1)] = definition.group(2).strip()
+            continue
+        # Matched against the line as written, expanded only afterwards: a macro standing where the
+        # mode or the type goes would otherwise turn a value line into a header.
+        header = _IMPEX_HEADER_RE.match(stripped)
+        if header:
+            columns = _expand_impex_macros(header.group(3), macros)
+            rows.append(
+                ImpexRow(
+                    line=line_no,
+                    mode=header.group(1).upper(),
+                    item_type=header.group(2),
+                    columns=columns,
+                    cells=_impex_cells(columns),
+                    text=stripped,
+                )
+            )
+            continue
+        cells = _impex_cells(_expand_impex_macros(stripped, macros))
+        rows.append(
+            ImpexRow(
+                line=line_no,
+                mode="",
+                item_type="",
+                columns="",
+                # The first cell of a value line is the empty slot under the mode and the type.
+                cells=None if cells is None else cells[1:],
+                text=stripped,
+            )
+        )
+    return rows
+
+
 @rule("impex-headers", emits=("impex-no-unique-key",))
 def impex_headers(ctx: RuleContext) -> list[Finding]:
     """An INSERT_UPDATE with no unique key updates nothing and inserts duplicates on every run.
@@ -531,36 +624,26 @@ def impex_headers(ctx: RuleContext) -> list[Finding]:
         if content is None:
             continue
         added = ctx.added.get(diff.path, set())
-        macros: dict[str, str] = {}
 
-        for line_no, raw in enumerate(content.splitlines(), start=1):
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
+        for row in parse_impex(content):
+            if row.mode != "INSERT_UPDATE" or row.line not in added:
                 continue
-            definition = _IMPEX_MACRO_DEF_RE.match(stripped)
-            if definition:
-                macros[definition.group(1)] = definition.group(2).strip()
-                continue
-            match = _IMPEX_HEADER_RE.match(stripped)
-            if not match or match.group(1).upper() != "INSERT_UPDATE" or line_no not in added:
-                continue
-            columns = _expand_impex_macros(match.group(3), macros)
-            if "unique=true" in columns.replace(" ", "").lower():
+            if "unique=true" in row.columns.replace(" ", "").lower():
                 continue
             findings.append(
                 Finding(
                     file=diff.path,
-                    line=line_no,
+                    line=row.line,
                     severity="critical",
                     rule_id="impex-no-unique-key",
-                    message=f"INSERT_UPDATE {match.group(2)} marks no column `[unique=true]`, "
+                    message=f"INSERT_UPDATE {row.item_type} marks no column `[unique=true]`, "
                     f"so it can only ever insert — and it will insert again next run.",
                     source="rules",
                     issue_type="bug",
                     suggestion=f"Mark the column that identifies an existing "
-                    f"{match.group(2)} with `[unique=true]` — `code` for most types, `uid` for "
+                    f"{row.item_type} with `[unique=true]` — `code` for most types, `uid` for "
                     f"users — so a second run updates that row instead of adding another.",
-                    quoted_line=stripped,
+                    quoted_line=row.text,
                 )
             )
     return findings

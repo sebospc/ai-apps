@@ -1,0 +1,64 @@
+id: feature-flags
+title: Feature flags the storefront reads once at bootstrap
+about: >
+  Flags delivered to the storefront over OCC and resolved through a platform region cache, so a
+  flag check costs nothing per request. Two shapes behind one pattern: values in properties, which
+  travel with the build, or typed rows a business user edits in Backoffice at runtime. The
+  question that picks one is who flips the flag.
+
+ask:
+  - Who flips a flag, a developer at deploy time or a business user at runtime? Properties answer
+    the first and a Backoffice-editable type the second, and it decides whether there is an item
+    type at all.
+  - Does a flag differ per base site, or is one value enough for the whole platform?
+  - Are the flags only on and off, or does one carry a string or a number the storefront reads?
+  - Which flags does the storefront need at bootstrap? The codes are a request parameter, so a
+    flag nobody names is never fetched.
+
+build:
+  - A core extension with the service that resolves a flag's value, reading through a dedicated
+    region cache rather than hitting the database or the configuration service on every call.
+  - The region is registered with a listMergeDirective into cacheRegions plus its regioncache
+    properties. The cache key carries the flag code and the tenant, and the base site too when
+    flags are per-site.
+  - An OCC extension with a controller taking the codes to read as a request parameter, and its
+    own web spring file, so the storefront fetches every flag it needs in one call.
+  - "Properties-backed, and this is the whole server side: the loader is the configuration
+    service, the cache is emptied by a service method when somebody changes a property at runtime,
+    and there is no item type and no system update."
+  - Database-backed, a FeatureFlag type in items.xml with the code, the typed value attributes and
+    an optional base site; a DAO that resolves the site's row before the global one; a backoffice
+    config so the type is editable; and ImpEx creating the flags the project starts with.
+  - Database-backed invalidation - an interceptor on save and on remove publishes a cluster-aware
+    event, and a listener on every node clears the region. Never a time to live.
+  - A storefront module with an APP_INITIALIZER that fetches the codes once at bootstrap, keeps
+    them in local storage, and a service exposing whether a code is enabled.
+
+good:
+  - "The cache is the point of this pattern. The implementation it replaces read the database on
+    every flag check, and a flag checked in a template is checked once per render."
+  - Invalidate when a value changes, never on a timer. A flag read a thousand times a minute and
+    written twice a year has no business expiring.
+  - The storefront fetches at bootstrap, not per component. Twelve flag checks on a page must not
+    be twelve requests.
+  - A flag the storefront never received reads as off. Failing closed turns a broken fetch into a
+    missing feature instead of a broken page.
+  - Build one of the two shapes, not both. Properties and Backoffice rows together mean two places
+    to look when a flag is wrong, and the answer to who flips it is one of the two.
+
+integration:
+  extensions:
+    - featureflagscore
+    - featureflagsocc
+  localextensions:
+    - featureflagscore
+    - featureflagsocc
+  platform_extensions:
+    - commerceservices
+    - commercewebservicescommons
+    - backoffice
+  item_types:
+    - FeatureFlag (database-backed only)
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

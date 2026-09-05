@@ -1,0 +1,61 @@
+id: webp-media
+title: WebP images produced by the platform's own media conversion
+about: >
+  The platform stores an uploaded image once and derives the sizes a storefront asks for. Pointing
+  that conversion at WebP gives every derived format a much smaller file without changing a single
+  template, and the work is one conversion strategy, the format rows that use it, and teaching
+  Backoffice and SmartEdit to accept a media type they do not know. There is no storefront module
+  and no new item type.
+
+ask:
+  - Which sizes does the storefront ask for? Each is a conversion media format row, and the
+    qualifiers have to match the ones the templates already use.
+  - Should the original upload be converted too, or kept as it arrived? A raw original is what
+    lets every size be regenerated later.
+  - Lossy or lossless, and at what quality? It is one property and it is the entire page-weight
+    argument.
+  - Do editors upload WebP directly, or only JPEG and PNG that the platform converts for them?
+
+build:
+  - A conversion strategy in a core extension implementing the platform's media conversion
+    strategy - read the source media, scale it, and write it through an ImageIO WebP writer with
+    the compression type and the quality read from properties.
+  - ImpEx creating the conversion media format rows, each naming the strategy bean, its target
+    dimensions, and image/webp as the media type. The row standing for the untouched original
+    keeps its own type.
+  - "Backoffice will not render a media type it does not know: add image/webp to the web mimes
+    properties file and load that file as a properties bean in the backoffice spring file."
+  - An override of the CMS media facade, so an image uploaded through Backoffice or SmartEdit goes
+    through the conversion instead of being stored as it arrived.
+  - SmartEdit's own upload validation rejects the extension before the server sees it, so allowing
+    it there is a change in the file validation service.
+  - The WebP writer is a third-party dependency, not a platform class. Pick one with a native
+    binary for the architecture the build runs on and the one the servers run on, and pin the
+    version - the obvious choice has no arm64 binary and fails at runtime, not at build time.
+
+good:
+  - "The image count multiplies. Six formats over fifty thousand products is three hundred
+    thousand conversions on the first sync, so the backfill is scheduled, never triggered from an
+    import."
+  - Keep one unconverted original. Without it, changing a size or the quality means asking the
+    source system for every image again.
+  - "A media URL is cached hard, by browsers and by the CDN. Changing an existing format's media
+    type without a new qualifier serves yesterday's bytes under today's content type."
+  - Quality belongs in a property, not in the strategy. It is tuned once against real product
+    photography and never again in a code review.
+  - "Do not set the media type without converting the bytes: the platform will happily store a
+    JPEG as image/webp, every browser will render it, and the saving nobody made is invisible."
+
+integration:
+  extensions:
+    - webpmediacore
+  localextensions:
+    - webpmediacore
+  platform_extensions:
+    - mediaconversion
+    - backoffice
+    - cmsfacades
+    - smartedit
+  item_types: []
+  written_against:
+    sap_commerce: "2211"

@@ -1,0 +1,62 @@
+id: dashboard
+title: A dashboard of chart widgets the user arranges
+about: >
+  A page of widgets - bar, line, pie, a single number, a table - on a grid the user drags into the
+  shape they want. Each widget names a dataset, the server resolves that dataset to a Spring bean
+  that returns labels and numbers at request time, and the layout is saved per user with a site
+  default behind it. Adding a number later is a bean and a row, not a release.
+
+ask:
+  - Which numbers go on it? Each one is a dataset with a query behind it, so the answer is a list
+    somebody has to write.
+  - Who sees the dashboard, an internal user or a buyer? It decides whether the numbers are scoped
+    to the caller's unit or cover the whole store.
+  - Does every user arrange their own layout, or does the site have one everybody gets?
+  - Does a dataset take a parameter, a date range for example, or is one fixed query per number
+    enough?
+
+build:
+  - A core extension with types for the saved layout, the dataset and the color palette, plus a
+    service that resolves a dataset's evaluator bean id and calls it.
+  - An evaluator interface and one implementation per number the project wants, each a registered
+    Spring bean, plus the ImpEx creating the dataset rows whose bean id points at them.
+  - A facades extension with the DTO beans, the facade and the populators.
+  - "An OCC extension with a controller and its own web spring file: list the palettes, read and
+    write the site default layout, read and write one user's layout, list the datasets, and
+    evaluate one dataset."
+  - A storefront module mapping a CMS component onto the grid of widgets. It needs a charting
+    library and a drag-and-drop grid library the project does not have yet, and adding them is
+    part of the work.
+  - The layout is stored as opaque JSON on the configuration type. Normalising widgets into their
+    own item types buys nothing until somebody has to query widgets in Backoffice.
+
+good:
+  - "A dataset is a query that runs on a page load. Give it a bean and a cache, or the dashboard
+    is a nightly report re-run every time a tab opens."
+  - Evaluate one dataset per request rather than all of them in one call. Nine widgets behind a
+    single endpoint means one slow query blanks the whole page.
+  - Every number is scoped to the caller. A dashboard reading orders without filtering by the
+    user's unit shows one customer another customer's revenue.
+  - The layout is presentation, so JSON on a column is the right storage for it. That is a
+    deliberate exception, not a licence to store anything else that way.
+  - The charting library is a public dependency the project carries for years. Pick one and keep
+    it behind a thin wrapper, so replacing it is a file rather than a sprint.
+
+integration:
+  extensions:
+    - dashboardcore
+    - dashboardfacades
+    - dashboardocc
+  localextensions:
+    - dashboardocc
+  platform_extensions:
+    - commerceservices
+    - commercefacades
+    - commercewebservices
+  item_types:
+    - DashboardConfiguration
+    - DashboardDataset
+    - DashboardColorPalette
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

@@ -1,0 +1,49 @@
+id: product-comparison
+title: Products compared side by side, with nothing stored on the server
+about: >
+  A shopper adds products from a listing tile or a detail page, a floating button counts them, and
+  a comparison page tables their classification features. The selection is client state and the
+  rows come from the standard product endpoint, so the whole feature is a storefront module plus
+  one change to an OCC field set.
+
+ask:
+  - Which attributes are compared? Classification features table themselves; anything else, a
+    price or a stock level, is added by hand.
+  - Does the selection survive a reload and a new session, or is it gone when the tab closes?
+  - How many products may be compared at once? The table stops being readable past four on a
+    phone.
+  - Where does the add control appear, on the detail page, on listing tiles, or both?
+
+build:
+  - A storefront module with a small store holding the selected product codes, and an effect that
+    loads each one through the platform's own product service.
+  - A service flattening a product's classifications into comparable rows, so two products that
+    share a feature line up and one that lacks it shows a gap rather than shifting the column.
+  - Components - the comparison table as a CMS component on its own page, an add and remove
+    control, a detail-page wrapper for it, a listing wrapper injected through the product list
+    outlet, and the floating button carrying the count.
+  - Classifications added to the product OCC field configuration, on the detail endpoint and on
+    the search endpoint both. Without it every product arrives with no features.
+  - Translations for the labels, since none of this is in the platform's own i18n chunks.
+
+good:
+  - "None of this belongs on the server. A comparison list is a handful of product codes, and an
+    item type to hold it is a migration and a cleanup job bought for nothing."
+  - The empty table is the failure every project hits, and it is always the field set. Read the
+    product response and confirm it carries classifications before touching a component.
+  - Cap how many can be compared and say so on screen. An uncapped list is a table nobody can read
+    and a page that loads twenty products.
+  - Load through the platform's product service rather than calling the endpoint directly, so a
+    compared product is the same cached object the rest of the storefront holds.
+  - Persist the selection where the shopper expects it. Losing it on a reload reads as a bug, and
+    so does keeping it for a month.
+
+integration:
+  extensions: []
+  localextensions: []
+  platform_extensions:
+    - commercewebservices
+  item_types: []
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

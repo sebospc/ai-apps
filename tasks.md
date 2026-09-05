@@ -3658,7 +3658,7 @@ where a task says it does. What binds instead: every task that changes the plugi
 `node scripts/walk_skill.mjs apply` **and** `... apply cursor` green with the API up, because a
 `SKILL.md` no agent has been run against is not finished.
 
-### [ ] Y1. The rest of the catalog, and the ones that should not be in it
+### [x] Y1. The rest of the catalog, and the ones that should not be in it — done, sha recorded by the next commit
 
 U2 carried three entries on purpose, to test the format rather than confirm it, and that was the
 right call. Three is still a proof of concept. The other ten already exist, written, under
@@ -5668,3 +5668,42 @@ Append here when a task forces a decision. One line each: what was decided and w
   reads `SMITH_CDP_PORT`, defaulting to 9222, so nothing changes when the port is free. The e2e is
   green on `SMITH_CDP_PORT=9333`: **96 passed, 0 failed**. The hijacked tab was left where it landed;
   guessing what had been open in it would have been a second change to somebody's browser.
+- 2026-09-05 — Y1 read the ten remaining entries and rejected **four**, which is the part that proves
+  the bar was applied rather than quoted. `rule-ir-sentence-condition` is a technique: it injects a
+  raw Drools sentence into a compiled rule to skip the condition-definition and translator SPI, and
+  its own README says to prefer that SPI wherever it can express the condition. `cdc` has no server
+  side at all — enable the platform's CDC extensions, enable the standard storefront CDC feature,
+  place a CMS component — which is a line of documentation, and nobody needs a catalog to find it.
+  `quotes` tells a new project, in its own README, to adopt the platform quote extension instead of
+  what it ships, and the facade it ships is a skeleton the project wires itself; an entry whose best
+  advice is not to use it costs more than the empty slot. `portfolio` does not generalise: it adds a
+  Portfolio type and a Product association that are a second category model beside the one the
+  platform already has, and a project grouping products by brand gets a category or a classification.
+  The showcase-library coupling the phase preamble names as portfolio's problem had already been
+  removed by whoever packaged it, so that is not the reason — the concept only existing in the
+  project that invented it is.
+- 2026-09-05 — Y1 carried the two feature-flag implementations as **one** entry rather than two, and
+  it is the friction call. They are the same feature with one decision inside it: who flips the flag.
+  Two entries make a developer who says "I want feature flags" choose between two ids they cannot
+  tell apart, and the doctrine is that a developer never types an id and never learns this product's
+  vocabulary. As one entry the agent asks the question that actually decides it — do business users
+  flip these at runtime, or are they release switches — and `build` branches on the answer, which is
+  a shape the format already had: `duplicate-order-prevention` branches B2B against B2C the same way.
+  The catalog holds **8** entries from **6** carried sources.
+- 2026-09-05 — Y1 added no field, and that is a reading about the format rather than luck. Five
+  entries of five different shapes went in: one with no extensions at all (`product-comparison`, the
+  whole feature is client state over a standard endpoint), one with no storefront at all
+  (`webp-media`), and one spanning the rule engine, Solr, three extensions and a storefront
+  (`potential-promotions`). `ask` / `build` / `good` / `integration` held all of them. The one thing
+  that moved is that `written_against.spartacus` is now used as the optional field it was declared
+  to be — `webp-media` is the first shipped entry that omits it, so that branch of the format test is
+  exercised by a real entry instead of by a comment about one.
+- 2026-09-05 — Y1's client check, worth writing down because these files came out of two real client
+  codebases and a client-facing demo. `webp-media`'s source is one client's media pipeline: package
+  roots naming the client, a strategy extending a partner's media-cloud scaling strategy, and S3
+  sync properties. None of that is the pattern. What was carried is the platform half — the media
+  conversion strategy, the conversion format rows, the Backoffice mime list, the CMS media facade
+  override — and the media-cloud and S3 half was dropped rather than renamed. The feature-flag
+  architecture note compares two named client implementations; the comparison was carried, the names
+  were not. A `grep -niE` over `catalog/` for every client, partner and demo name appearing in the
+  sources returns nothing.

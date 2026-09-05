@@ -1,0 +1,76 @@
+id: potential-promotions
+title: The discount a product would get, shown before anything is in the cart
+about: >
+  A badge on the listing and detail pages saying what a promotion would take off this price, and
+  how much more the buyer has to add to reach the next step. The promotion engine only computes
+  discounts for a cart, so the value has to be resolved when the product is indexed and carried on
+  the product from there - which is why this reaches from the rule engine through Solr to a
+  component.
+
+ask:
+  - Which promotions show, percentage and absolute off only, or also the tiered kind where buying
+    more moves the buyer to a better rate?
+  - Are promotions for everyone, or targeted at customer segments? Segment-aware badges mean the
+    indexed value carries the segment and the page filters on it.
+  - What targets a promotion in this catalog, categories alone, or a product attribute such as a
+    brand or a material group?
+  - What does a product with no promotion show, its plain price or nothing at all?
+  - Which price is the discount applied to, the indexed one, or a customer-group price the project
+    resolves for itself?
+
+build:
+  - A core extension with the discount value objects, a strategy that reads a compiled promotion's
+    actions and turns them into a discount, and a second strategy deciding whether a promotion
+    applies to a given product.
+  - A DAO finding the source rules that could apply to a product, by promotion group and validity.
+    This is the one piece every project writes against its own catalog, and until it does the
+    feature correctly shows nothing.
+  - A Solr value resolver writing one JSON document per applicable promotion into an indexed
+    field, so a listing page never asks the rule engine anything.
+  - A facades extension adding the potential discount to ProductData, and a search-result
+    populator reading the indexed JSON, filtering it, and computing the discount against the price
+    that is on screen.
+  - An OCC extension adding the same field to ProductWsDTO with a converter that emits the
+    discount's subtype, so a flat percentage and a tiered range do not arrive as the same shape.
+  - Storefront components for the badge, the range and the promotion message, plus the OCC field
+    configuration - the new fields go on the product detail endpoint and inside the products block
+    of the search endpoint, and missing the second is why a badge shows on the detail page only.
+  - Custom action types in items.xml for the tiered kind, because the platform's action model has
+    no shape for "buy three and the rate changes". Reconcile them against the platform version
+    before declaring them, and pick typecodes that are free in this project.
+
+good:
+  - "The engine computes a discount for a cart, not for a product. Anything that calls it per row
+    of a listing page is a listing page that times out."
+  - The indexed value is a snapshot. A promotion edited in Backoffice keeps showing the old badge
+    until the rules are recompiled and the index rebuilt, and the project decides whether that is
+    a nightly job or a trigger.
+  - Filter by segment after reading the index, never by indexing one document per segment. The
+    second is a Solr core that grows with the marketing calendar.
+  - A skeleton DAO returning nothing is the right starting point. A wrong query here shows a buyer
+    a discount that does not exist at checkout, which is worse than showing no badge at all.
+  - The badge is a claim about a price. If this project resolves prices per customer group, the
+    discount is computed against that price or the number on the tile is wrong for half the
+    buyers.
+
+integration:
+  extensions:
+    - potentialpromotionscore
+    - potentialpromotionsfacades
+    - potentialpromotionsocc
+  localextensions:
+    - potentialpromotionsocc
+  platform_extensions:
+    - promotionengineservices
+    - ruleengineservices
+    - solrfacetsearch
+    - commerceservices
+    - commercewebservicescommons
+  item_types:
+    - RangeDiscountActionForRule
+    - RangeDiscountConfiguration
+    - ProductData (adds the potential discount)
+    - ProductWsDTO (adds the potential discount)
+  written_against:
+    sap_commerce: "2211"
+    spartacus: "2211"

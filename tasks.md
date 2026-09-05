@@ -3613,7 +3613,7 @@ Acceptance:
 What breaks for a developer if this does not exist: Pergamon ships code that Smith's own reviewer
 would reject, and the first person to notice is a developer running both.
 
-### [ ] X3. The collisions the walk does not read yet
+### [x] X3. The collisions the walk does not read yet — done, commit PENDING
 
 `applyChecks` reads two collisions — the project's item type survives, and its typecode is not
 handed to the feature's type. Those were written because a walk got them wrong. Two more are the
@@ -5456,3 +5456,44 @@ Append here when a task forces a decision. One line each: what was decided and w
   days after W5 emptied it. `discardProject` runs in a `finally`, so the walks that leak are the ones
   killed outright — a night run stopped on a quota limit skips it. Worth a task; not X2's, and the
   one project X2 created was removed by the walk itself.
+- 2026-09-05 — X3 found the tree dirty and the work in it was X3's own, half written by the run
+  before. `node scripts/walk_skill.mjs --self-check` was green on it, so it was finished rather than
+  reverted — the same call X2 made, for the same reason.
+- 2026-09-05 — X3's first real walk with the collision planted is the finding, and it is not the one
+  the task expected. **17 passed, 10 failed.** All three new checks passed: the project's
+  `duplicateordercore` was untouched, `duplicateOrderService` still pointed at
+  `AcmeDuplicateOrderService`, and the agent named the collision. It passed them by writing nothing
+  at all. The agent read both collisions, reported them better than the task asked — it named the
+  existing class, the package root, the bean id and the consequence, "the one loaded last wins and
+  their nightly report quietly starts calling my code" — and then stopped to ask which extension
+  should win. The other 10 checks all fail on the same cause: there is no code, no items.xml, no
+  specs and no diff to review. A developer who said "Go ahead and write it" got a question about a
+  directory name.
+- 2026-09-05 — X3's fix went into `plugin/skills/apply/SKILL.md`, not into the checks, because the
+  skill was what told the agent to stop: "A conflict is reported, never written over ... The same for
+  an extension directory that already exists." That sentence treats a name the agent picked like a
+  type somebody modelled. X3's own text already draws the line — writing around a collision silently
+  is "a defect all the same", so the defect it names is the silence, not the rename. Step 2 now says
+  an extension directory or a bean id is a collision of names and the agent renames, reports and
+  keeps writing; a type stays a question, because extending theirs or declaring your own changes the
+  model and that is the developer's call. This is the less-friction option and it removes a whole
+  round trip from the path a developer takes.
+- 2026-09-05 — X3's re-run after that one paragraph: **27 passed, 0 failed.** The agent renamed to
+  `acmeorderlockcore` / `acmeorderlockfacades` with bean ids `acmeOrderLockService`,
+  `acmeOrderLockDao` and `acmeOrderLockCheckoutFacade`, and told the developer "Both the directory
+  name and that bean id are what this feature would have wanted ... Your extension and your bean are
+  untouched." 17 files, 543 added lines, reviewed by Smith's own rules, 0 findings, does not block.
+  The proof that the checks can fail is the run before it, read rather than asserted.
+- 2026-09-05 — X3 planted the bean id as `duplicateOrderService`, which the entry's `build` does not
+  spell out: it asks for "A service and DAO over that type" in an extension the entry calls
+  `duplicateordercore`, and that is the id an agent lands on. The X2 transcript is the evidence —
+  that session wrote `DuplicateOrderService` into `duplicateordercore` unprompted. Naming the
+  collision after what an agent actually produced is what makes it a collision rather than a trap.
+- 2026-09-05 — X3 added one line to `scripts/cdp.mjs` that the task does not ask for, and it is a
+  safety fix rather than scope creep. `launch()` hardcoded port 9222, which is the port a developer's
+  own browser already listens on. This machine's Brave held it, the spawned Chrome could not bind,
+  `/json/list` answered from Brave, and `scripts/e2e_browser.mjs` drove the user's logged-in tabs —
+  it navigated one of them to `http://localhost:3000/` before timing out on "Sign in". The port now
+  reads `SMITH_CDP_PORT`, defaulting to 9222, so nothing changes when the port is free. The e2e is
+  green on `SMITH_CDP_PORT=9333`: **96 passed, 0 failed**. The hijacked tab was left where it landed;
+  guessing what had been open in it would have been a second change to somebody's browser.

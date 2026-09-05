@@ -77,6 +77,11 @@ forgets. Do it yourself, from the checkout, before you ask a single question:
   laptop and fails in the cloud, which is the failure they pay the most for.
 - **Item types.** Every `items.xml` in the project. An entry's `item_types` that is already
   declared is a collision: a second declaration of the same type breaks the build.
+- **Spring bean ids.** Every bean id you are about to declare, searched for in the project's
+  `*-spring.xml` files before you write it. This one has no build failure to warn you: two
+  definitions of an id are legal and the one loaded last wins, so a service of theirs quietly
+  becomes a service of yours and the first thing anybody notices is behaviour changing in a part of
+  the project nobody touched.
 - **Version.** The project's `commerceSuiteVersion` in `manifest.json` against the entry's
   `written_against`. A different release does not stop the work; it changes what you check.
 
@@ -89,8 +94,16 @@ from their checkout, never from this page.
 
 **A conflict is reported, never written over.** If `B2BDocument` is already declared, you do not
 declare it again and you do not quietly rename it: you say where it is and ask whether to extend the
-existing one or use another name. The same for an extension directory that already exists. Writing
-over somebody's type is the one mistake this step exists to prevent.
+existing one or use another name. Writing over somebody's type is the one mistake this step exists
+to prevent.
+
+**A name you chose is yours to change, and changing it costs the developer nothing.** An extension
+directory or a bean id that the entry wants and the project already has is a collision of names,
+not of meaning — nothing about the feature depends on being called `duplicateordercore`. Pick
+another name in the project's own style, say which one and what it collided with, and keep writing.
+The defect here is silence, not the rename: they have to be able to see that their extension and
+their bean were left alone. A type is different, because extending theirs or declaring your own
+changes the model and that decision is theirs.
 
 Missing extensions are different from collisions. A `localextensions.xml` entry that is not there
 yet is part of the work — add it. A missing platform extension is the developer's decision, because

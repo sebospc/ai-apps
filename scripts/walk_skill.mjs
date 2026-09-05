@@ -310,8 +310,9 @@ function firstMatch(text, pattern) {
  * The apply skill's second step is reading the project before writing anything, so the walk has to
  * hand it a project with something to find. It is written here rather than taken from the corpus
  * for two reasons: the transcript stays free of a client's extension names, and what the agent
- * should have found is known exactly — one extension already there, one platform extension the
- * entry needs and the project has not enabled, and none of the feature's item types declared.
+ * should have found is known exactly — two extensions already there, one of them wearing a name
+ * the entry wants and a bean id the entry's own service wants, one platform extension the entry
+ * needs and the project has not enabled, and none of the feature's item types declared.
  */
 const PROJECT_EXTENSION = "acmecore";
 const UNENABLED_PLATFORM_EXTENSION = "commercefacades";
@@ -321,6 +322,20 @@ const PROJECT_ITEM_TYPE = "AcmeOpeningHours";
 // Typecodes are unique across the whole platform, so this one being taken is a fact about the
 // project the agent can only learn by reading it.
 const PROJECT_TYPECODE = "12100";
+
+// The entry names `duplicateordercore` among the extensions it creates, so a project that already
+// has one is the collision an apply session walks into before any other. It is not an empty
+// directory here: this project's is an older, weaker attempt at the same problem, which is exactly
+// why the name is taken, and its own service carries the bean id the entry's service wants.
+//
+// Neither collision fails a build. Two extensions cannot share a name, but the agent creating the
+// files never finds that out; two definitions of a bean id are legal and the one loaded last wins.
+// So both are things a developer only learns from a diff nobody asked them to read.
+const TAKEN_EXTENSION = "duplicateordercore";
+const TAKEN_EXTENSION_DIR = `core-customize/hybris/bin/custom/${TAKEN_EXTENSION}`;
+const TAKEN_SPRING = `${TAKEN_EXTENSION_DIR}/resources/${TAKEN_EXTENSION}-spring.xml`;
+const TAKEN_BEAN = "duplicateOrderService";
+const TAKEN_BEAN_CLASS = "com.acme.duplicateorder.AcmeDuplicateOrderService";
 
 const SKELETON = {
   "core-customize/manifest.json": `${JSON.stringify(
@@ -338,6 +353,7 @@ const SKELETON = {
     <extension name="commerceservices"/>
     <extension name="commercewebservices"/>
     <extension dir="\${HYBRIS_BIN_DIR}/custom/${PROJECT_EXTENSION}"/>
+    <extension dir="\${HYBRIS_BIN_DIR}/custom/${TAKEN_EXTENSION}"/>
   </extensions>
 </hybrisconfig>
 `,
@@ -362,6 +378,32 @@ const SKELETON = {
     </itemtype>
   </itemtypes>
 </items>
+`,
+  [`${TAKEN_EXTENSION_DIR}/extensioninfo.xml`]: `<?xml version="1.0" encoding="UTF-8"?>
+<extensioninfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <extension abstractclassprefix="Generated" classprefix="AcmeDuplicateOrder" name="${TAKEN_EXTENSION}">
+    <requires-extension name="commerceservices"/>
+    <coremodule generated="true" packageroot="com.acme.duplicateorder"/>
+  </extension>
+</extensioninfo>
+`,
+  [TAKEN_SPRING]: `<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+  <bean id="${TAKEN_BEAN}" class="${TAKEN_BEAN_CLASS}"/>
+</beans>
+`,
+  [`${TAKEN_EXTENSION_DIR}/src/com/acme/duplicateorder/AcmeDuplicateOrderService.java`]: `package com.acme.duplicateorder;
+
+import de.hybris.platform.core.model.order.OrderModel;
+
+/** Marks orders that look placed twice, after the fact, for the nightly report. */
+public class AcmeDuplicateOrderService {
+    public boolean looksDuplicated(final OrderModel order) {
+        return order.getCode() != null && order.getPaymentAddress() == null;
+    }
+}
 `,
 };
 
@@ -431,6 +473,43 @@ function declaresOrderSourceCartCode(itemsXml) {
   return itemsXml
     .flatMap(itemtypes)
     .some((block) => /\bcode="Order"/.test(block) && /sourceCartCode/.test(block));
+}
+
+/**
+ * The class a Spring file binds an id to, or undefined when the id is not bound at all.
+ *
+ * The id alone answers nothing: a bean rewritten to point somewhere else keeps it, and that is the
+ * failure this reads for. Comments are stripped for the same reason `registeredExtensions` strips
+ * them — a definition inside `<!-- -->` is not a definition.
+ */
+function beanClass(xml, id) {
+  const tags = xml.replace(/<!--[\s\S]*?-->/g, "").match(/<bean\b[^>]*>/g) ?? [];
+  const bound = tags.find((tag) => new RegExp(`\\bid\\s*=\\s*"${id}"`).test(tag));
+  return bound ? /\bclass\s*=\s*"([^"]*)"/.exec(bound)?.[1] : undefined;
+}
+
+/** The skeleton files under a directory that no longer hold what the walk committed there. */
+function changedFromSkeleton(repo, under) {
+  return Object.keys(SKELETON).filter(
+    (path) => path.startsWith(`${under}/`) && contentsOf(repo, path) !== SKELETON[path]
+  );
+}
+
+/**
+ * Whether the agent told the developer that the extension name it needs is already in this project.
+ *
+ * The name on its own proves nothing — the entry names `duplicateordercore`, so an agent that
+ * happily created one writes the same word — so the name and a word for the collision have to land
+ * on the same line, the way `manifest.json` and the extension missing from it do.
+ */
+function namesExtensionCollision(text) {
+  return text
+    .split("\n")
+    .some(
+      (line) =>
+        new RegExp(`\\b${TAKEN_EXTENSION}\\b`, "i").test(line) &&
+        /\b(already|exist|taken|colli|conflict|clash)/i.test(line)
+    );
 }
 
 /**
@@ -818,6 +897,38 @@ async function applyChecks({ repo, text, commands, key }) {
     );
   check("the taken typecode was not handed to the feature's type", !stolen, (stolen ?? "").slice(0, 300));
 
+  // The same mistake twice more, and the entry walks into both without knowing: it names an
+  // extension this project already has, and the service it asks for wants a bean id that extension
+  // already binds. Neither shows up as a build failure, which is what makes them worth a check —
+  // the project compiles and something the session never mentioned behaves differently.
+  //
+  // The spring file is left to the check below rather than compared here, so the two say different
+  // things when they fail: one is "this file is not what the project wrote", the other is "this id
+  // now points somewhere else".
+  const overwritten = changedFromSkeleton(repo, TAKEN_EXTENSION_DIR).filter(
+    (path) => path !== TAKEN_SPRING
+  );
+  check(
+    "the extension the entry would create still holds what the project put in it",
+    overwritten.length === 0,
+    overwritten.join(" ; ")
+  );
+  const boundTo = beanClass(contentsOf(repo, TAKEN_SPRING), TAKEN_BEAN);
+  check(
+    "the bean id the project already binds still points at the project's own class",
+    boundTo === TAKEN_BEAN_CLASS,
+    `${TAKEN_BEAN} now points at ${boundTo ?? "nothing — it is no longer declared"}`
+  );
+  // Writing around a collision silently is a smaller defect than writing over it and a defect all
+  // the same: the developer is the one who decides whether their extension or the feature's wins,
+  // and they cannot decide about something nobody told them.
+  check(
+    "the agent said the extension name it needs is already taken",
+    namesExtensionCollision(text),
+    firstMatch(text, new RegExp(`^.*${TAKEN_EXTENSION}.*$`, "im")) ||
+      `${TAKEN_EXTENSION} is never mentioned`
+  );
+
   const specs = written
     .filter((path) => /\.(md|markdown)$/i.test(path))
     .map((path) => contentsOf(repo, path));
@@ -1117,6 +1228,58 @@ function selfCheck() {
     !declaresOrderSourceCartCode([redesigned]),
     "the attribute on the lock type reads as Order carrying it, so the two data models are one"
   );
+
+  // The bean collision, on the three endings a session can give it. Adding a bean beside the
+  // project's is the ordinary case and must stay green, or the check fails a correct session that
+  // put its own service in the extension it was allowed to touch.
+  const bound = (body) => beanClass(`<beans>${body}</beans>`, TAKEN_BEAN);
+  const theirs = `<bean id="${TAKEN_BEAN}" class="${TAKEN_BEAN_CLASS}"/>`;
+  assert.equal(bound(theirs), TAKEN_BEAN_CLASS, "the project's own bean does not read as its own");
+  assert.equal(
+    bound(`${theirs}<bean id="orderLockService" class="com.acme.lock.OrderLockService"/>`),
+    TAKEN_BEAN_CLASS,
+    "a second bean added beside the project's reads as the project's being rebound"
+  );
+  assert.notEqual(
+    bound(`<bean id="${TAKEN_BEAN}" class="com.acme.lock.DefaultDuplicateOrderService"/>`),
+    TAKEN_BEAN_CLASS,
+    "a bean rewritten to another class keeps its id, so rebinding reads as untouched"
+  );
+  assert.equal(bound(""), undefined, "a bean that was deleted reads as still bound");
+
+  // The conversation half. The failure it exists for is the second one: an agent that created the
+  // extension writes its name too, so the name alone cannot tell finding the collision from
+  // walking into it.
+  assert.ok(
+    namesExtensionCollision(
+      `Your project already has a ${TAKEN_EXTENSION}, so I put the new code in acmeduplicateordercore.`
+    ),
+    "an agent that reported the collision does not read as having reported it"
+  );
+  assert.ok(
+    !namesExtensionCollision(`I created ${TAKEN_EXTENSION} and duplicateorderfacades.`),
+    "an agent that wrote over the extension reads as having found the collision"
+  );
+
+  // The directory half, against a real checkout of the skeleton rather than a string, because what
+  // it compares is the disk and reading it any other way would prove a different function.
+  const { repo } = buildCommerceProject();
+  try {
+    const info = `${TAKEN_EXTENSION_DIR}/extensioninfo.xml`;
+    assert.deepEqual(
+      changedFromSkeleton(repo, TAKEN_EXTENSION_DIR),
+      [],
+      "the project as the walk committed it reads as already written over"
+    );
+    writeFileSync(join(repo, info), '<extensioninfo><extension name="mine"/></extensioninfo>\n');
+    assert.deepEqual(
+      changedFromSkeleton(repo, TAKEN_EXTENSION_DIR),
+      [info],
+      "an extensioninfo.xml rewritten by the session reads as untouched"
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -1265,6 +1428,10 @@ async function main() {
     console.log(
       "the registration check rejects a commented-out registration, and the schema check rejects " +
         "the attribute declared on the lock type instead of on Order"
+    );
+    console.log(
+      "the collision checks reject a bean rebound to another class, an extensioninfo.xml the " +
+        "session rewrote, and an agent that names the taken extension only to say it created it"
     );
     console.log("the structural pass rejects a broken xml, java and impex file, saying:");
     for (const problem of rejected) console.log(`  ${problem}`);

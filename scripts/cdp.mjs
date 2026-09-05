@@ -41,7 +41,10 @@ const FIRST_PAINT_PROBE = `
  * alternative — installing a CA into the machine's keychain from a test — costs a lot.
  */
 export async function launch({
-  port = 9222,
+  // 9222 is the port a developer's own browser is usually already listening on. When it is taken,
+  // the spawned Chrome cannot bind it and `/json/list` answers from *their* browser instead, so the
+  // suite drives the tabs they are logged into. Overriding the port is the way out of that.
+  port = Number(process.env.SMITH_CDP_PORT ?? 9222),
   headless = true,
   insecure = process.env.SMITH_INSECURE_TLS === "1",
 } = {}) {

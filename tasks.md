@@ -3658,7 +3658,7 @@ where a task says it does. What binds instead: every task that changes the plugi
 `node scripts/walk_skill.mjs apply` **and** `... apply cursor` green with the API up, because a
 `SKILL.md` no agent has been run against is not finished.
 
-### [x] Y1. The rest of the catalog, and the ones that should not be in it — done, sha recorded by the next commit
+### [x] Y1. The rest of the catalog, and the ones that should not be in it — done, commit 9169615
 
 U2 carried three entries on purpose, to test the format rather than confirm it, and that was the
 right call. Three is still a proof of concept. The other ten already exist, written, under

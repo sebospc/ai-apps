@@ -3613,7 +3613,7 @@ Acceptance:
 What breaks for a developer if this does not exist: Pergamon ships code that Smith's own reviewer
 would reject, and the first person to notice is a developer running both.
 
-### [x] X3. The collisions the walk does not read yet — done, commit PENDING
+### [x] X3. The collisions the walk does not read yet — done, commit d541414
 
 `applyChecks` reads two collisions — the project's item type survives, and its typecode is not
 handed to the feature's type. Those were written because a walk got them wrong. Two more are the

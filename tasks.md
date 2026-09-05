@@ -3557,7 +3557,7 @@ reads the files off the disk. No new harness. Every task here means
 `node scripts/walk_skill.mjs apply` **and** `node scripts/walk_skill.mjs apply cursor` green, with
 the API up, and `node scripts/walk_skill.mjs apply-ask` still green because it must stay untouched.
 
-### [x] X1. The generated code parses, and the one check that cannot run says so — done, commit PENDING
+### [x] X1. The generated code parses, and the one check that cannot run says so — done, commit 9c11864
 
 Nothing today reads the generated files as anything but text. A `<bean>` missing its closing tag,
 an `items.xml` with a stray `&`, a Java file with an unbalanced brace — every one of those passes

@@ -7,7 +7,8 @@ Two editors are supported. **Cursor is first below** because it needs one more i
 Claude Code and gets it wrong more easily. If you use Claude Code, skip to
 [Claude Code](#claude-code).
 
-Every command on this page was run on 2026-08-21 on macOS before it was written down. The `smith`
+Every command on this page was run on macOS before it was written down — the install sections on
+2026-09-07, the rest on 2026-08-21. The `smith`
 commands were run in an empty environment: nothing but `HOME`, and a PATH holding `node` and the
 system tools. What was observed and what is still an assumption is listed at the end, in
 [What was observed](#what-was-observed).
@@ -19,7 +20,32 @@ answer.
 
 ### 1. Install
 
-From the root of your checkout, run all three lines:
+One command in a terminal, then one pick inside Cursor. Nothing to clone.
+
+```bash
+cursor-agent plugin marketplace add https://github.com/sebospc/ai-apps
+```
+
+Then in Cursor, type `/plugins` and install **smith** from the list.
+
+To update later, re-index and Cursor picks up the new version:
+
+```bash
+cursor-agent plugin marketplace update smith
+```
+
+If a `smith` marketplace already exists pointing somewhere else, the name collides and the old one
+wins silently — `marketplace list` still shows the old URL after an `add` that printed a tick.
+Remove it first:
+
+```bash
+cursor-agent plugin marketplace remove smith
+```
+
+#### From a checkout instead
+
+Only when you are changing the plugin itself, or the machine cannot reach GitHub. From the root of
+your checkout, all three lines:
 
 ```bash
 rm -rf ~/.cursor/plugins/local/smith
@@ -86,14 +112,26 @@ run the three install lines again, all of them.
 
 ## Claude Code
 
-Two commands, from the root of your checkout:
+Two commands, and nothing to clone:
+
+```bash
+claude plugin marketplace add https://github.com/sebospc/ai-apps.git
+claude plugin install smith@smith
+```
+
+Then ask for a review with `/smith:review`.
+
+Give it the full `https://` URL, not the `owner/repo` shorthand. The shorthand clones over SSH, so on
+a machine with no GitHub key it fails on a repository that is public and that `git clone` would have
+read without asking anyone.
+
+From a checkout instead, when you are changing the plugin itself, the same two commands with a path
+in place of the repository:
 
 ```bash
 claude plugin marketplace add "$PWD"
 claude plugin install smith@smith
 ```
-
-Then ask for a review with `/smith:review`.
 
 Claude Code puts the plugin's `bin/` on PATH by itself, so there is nothing else to set up. To run
 against a checkout without installing anything: `claude --plugin-dir ./plugin`.

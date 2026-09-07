@@ -3809,6 +3809,110 @@ What breaks for a developer if this does not exist: nothing visibly, until an ag
 saying it and the first person to notice is a developer who finds their own sentence on a screen they
 did not know existed.
 
+## Phase Z — one door, and the developer is asked at it
+
+Two things were decided by someone installing the plugin on a second machine and finding it does not
+behave the way a plugin should.
+
+**A plugin must not touch a developer who did not ask for it.** Today both skills sit in Cursor's
+"Agent Decides" list, so `review`'s description — which ends "or mentions Smith" — is matched against
+every sentence a developer types. Nothing about that is opt-in. The decision: **`/smith-review` is
+the only way in**, and when a developer has not typed it, this plugin does nothing at all.
+
+**Credentials are asked for, never handed over.** The config already starts empty — `readConfig`
+returns empty strings and `requireConfig` throws `not configured` — so nothing is baked in and there
+is nothing to remove. What is missing is the other half: the moment the command finds no credentials,
+or finds ones the server no longer accepts, it asks for them in the conversation and saves them. A
+developer should never have to be told to paste a key into a chat message, which is what the README
+tells them to do today.
+
+One correction this phase is built on, because the README states the opposite in two places
+(`plugin/README.md` and `scripts/walk_skill.mjs:27`): **Cursor does invoke a skill by name.** Its
+plugin reference says skills "appear in the Agent Decides section and can be invoked manually with
+`/skill-name` in chat", and it documents a `commands/` directory of `.md` files with `name` and
+`description` frontmatter. The old finding — that Cursor gives a plugin skill no name and selection
+is by description only — was true when it was measured and is not true now. Anything written on top
+of it is suspect and gets re-read, not assumed.
+
+What is deliberately **not** used: Cursor's plugin **Variables**. They look like the answer and are
+not — the reference says values are set by a team administrator in the Cursor dashboard, and they are
+substituted into config files like `mcp.json` rather than read by a script. That is a GUI step for
+somebody else, on a product whose install is one terminal command. The conversation asks; that is
+the whole mechanism.
+
+### [ ] Z1. `/smith-review` is the only door
+
+Acceptance:
+
+- `plugin/commands/smith-review.md` and `plugin/commands/smith-apply.md`, each with `name` and
+  `description` frontmatter, are the entry points. Both editors read `commands/`.
+- The skills no longer volunteer. Whether that is a narrowed description that cannot match ordinary
+  work, or no skill at all with the instructions living in the command, is settled by trying it:
+  the test is a session that talks about a code review **without** typing the command and gets no
+  Smith behaviour at all. Record which way it went and why in the notes log.
+- The two commands do not collide with anything: not with each other, and not with Cursor's built-in
+  `/review`, which is the collision that started this.
+- `scripts/walk_skill.mjs:1269,1278` hardcode `/smith:apply` and `/smith:review` for Claude Code and
+  a plain sentence for Cursor. Both editors now use the command, and the walk says so.
+- The comment at `scripts/walk_skill.mjs:27` and the `README.md` paragraph headed "There is no
+  `/smith` command in Cursor and there is not meant to be" are wrong as of Cursor's current
+  reference. Both are rewritten against what the walk actually observes, not against the
+  documentation — if a walk shows the old behaviour, the walk is the finding and the doc says so.
+- Green in both editors, both walks. A command no agent has been run through is not finished.
+
+What breaks for a developer if this does not exist: they install a review plugin and it starts
+answering questions they did not ask it, which is how a plugin gets uninstalled.
+
+### [ ] Z2. The door asks for what it needs
+
+`smith status` already prints what is missing in prose, and `explainHttp` already turns a revoked key
+into a sentence naming the fix. Neither is reached by a developer, because the skill's error table
+tells the agent to relay a message rather than to resolve it.
+
+Acceptance:
+
+- On `not configured`, the command asks for the server URL and the API key, in the conversation, one
+  question at a time, and runs `smith auth` itself. The developer types answers, never a command.
+- On a key the server rejects — revoked, or issued for another project — it says so in one sentence
+  and asks whether they have a new one, then saves it. It does not retry the old key and does not go
+  looking for another.
+- Nothing is asked twice. Once saved, a second review in the same repository asks nothing.
+- **The project is not asked for.** A key is bound to a project on the server, so there is no project
+  to choose — asking for one would be asking for something the product does not use. What is worth
+  having is the opposite: after `auth` succeeds, say which project the key belongs to, so a developer
+  who was handed the wrong key finds out at setup instead of at their first blocked review. There is
+  no endpoint that answers that today; if adding one is the only way, it is a fourth call on a
+  surface that is deliberately three, so weigh it in the notes log and take the smaller option.
+- The key never appears in the transcript once saved. `smith status` already prints a 12-character
+  prefix; nothing this task adds may print more.
+- A walk asserts the whole thing: a session starting with no `~/.smith/config.json` ends with one,
+  mode 600, without the developer running a command. `SMITH_HOME` already exists for pointing the
+  CLI at a temporary directory, so the walk needs no fixture beyond that.
+- `node --test plugin/test` green, both walks green in both editors.
+
+What breaks for a developer if this does not exist: their first contact with the product is being
+told to paste a credential into a chat box, and their second is a review that fails with a message
+about a command they have never run.
+
+### [ ] Z3. The README describes the product that exists
+
+Three things in `plugin/README.md` are now wrong, and it is the file somebody reads before they trust
+this enough to install it.
+
+Acceptance:
+
+- The Cursor section leads with `/smith-review`, not with a sentence explaining that there is no such
+  command.
+- The first-review instructions stop telling a developer to put a server URL and an API key in a chat
+  message. They type `/smith-review`; it asks.
+- Every command on the page is run before it is written down, which is what the page already claims
+  about itself. The provenance line records the date this was done.
+- The `apply` half says plainly that it needs a server with the catalog on it, since the deployed one
+  answers `Not Found` and a developer meeting that has no way to know why.
+
+What breaks for a developer if this does not exist: the documentation teaches the old install, and
+the person who follows it concludes the product is what the page describes.
+
 ## Notes and decisions log
 
 - 2026-09-04 — W4 read all 9 `modelservice-remove-in-loop` sites against their source and **none of

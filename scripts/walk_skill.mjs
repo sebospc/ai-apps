@@ -1031,9 +1031,9 @@ function reviewUnaskedChecks({ text, commands }) {
   // this plugin. What it must not do is produce the one thing only the plugin can: a verdict from
   // the server, which `commands/smith-review.md` tells it to open with as `blocked` or `clear`.
   //
-  // The bare word "Smith" is not the check and cannot be. The corpus this walk builds from holds a
-  // client package called `co.smith.*`, so every honest sentence about that file matches it — the
-  // first two runs failed on a `git checkout --` path and then on a package name.
+  // The bare word "Smith" is not the check and cannot be. The corpus this walk builds from happens
+  // to use this product's own name as a package segment, so every honest sentence about the file
+  // under review matches it — the first two runs failed on a path and then on a package name.
   const verdictLine = text
     .split("\n")
     .find((line) => /^\s*[*_#>-]*\s*(blocked|clear)\b/i.test(line));

@@ -3978,10 +3978,10 @@ works, and no way to tell what was written or what it collided with.
   then passed 15/15 in Cursor typing `/smith-review`. The old note — Cursor gives a plugin skill no
   name, so selection is by description — was true in August and is not true now.
 - 2026-09-07 — the `review-unasked` walk cost two red runs before it read the right thing, and both
-  failures were the assertion rather than the product. The corpus this walk builds from contains a
-  client package called `co.smith.*`, so "the agent never says Smith" matched a `git checkout --`
-  path on the first run and a package name in honest prose on the second. **The bare product name is
-  not usable as a signal against this corpus.** What it reads now is the one thing only the plugin
+  failures were the assertion rather than the product. The corpus this walk builds from happens to
+  use this product's own name as a package segment, so "the agent never says Smith" matched a path on
+  the first run and a package name in honest prose on the second. **The bare product name is not
+  usable as a signal against this corpus.** What it reads now is the one thing only the plugin
   can produce: a verdict line opening `blocked` or `clear`. Trap worth remembering for any future
   assertion about what an agent said.
 - 2026-09-07 — the first `cursor apply` run after the conversion failed with the session writing

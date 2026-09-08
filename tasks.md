@@ -4224,7 +4224,50 @@ Acceptance:
 What breaks for a developer if this does not exist: the plugin that was made quiet in Z1 gets loud
 again through a second door, and the first person to notice is a developer it interrupted.
 
+## Phase AC — the update path lies, so at least say where you are
+
+### [ ] AC1. `/smith-update`, because keeping this current is four commands and a hash
+
+A developer on 2026-09-08 deleted their plugin cache, reinstalled, and landed on `8a1262f` — the
+first commit in the repository, months of work behind, with `/smith-review` gone in between. Nothing
+told them. The sequence that actually works is four commands and a directory listing, and every one
+of them has a way of reporting success while doing nothing:
+
+- `marketplace update` prints `✓ Updated marketplace smith: 1 plugin indexed` and moves neither copy.
+  Measured twice, the second time well outside the ten-minute re-index window the docs describe.
+- `marketplace add` without `--git-ref` can land on a stale commit; with `--git-ref main` it fetched
+  the current head on the same machine minutes later.
+- `remove` and `add` move `~/.cursor/plugins/marketplaces/`, and a terminal session reads
+  `~/.cursor/plugins/cache/` — a copy only an interactive `/plugins` reinstall moves.
+- Deleting the cache does not refresh it. It uninstalls the plugin, and the next session answers that
+  no such command exists.
+
+Acceptance:
+
+- `/smith-update` tells the developer what they are on, what is current, and what to do about it. It
+  cannot install anything itself — nothing in the plugin may run outside a review, and reinstalling
+  is interactive — so what it saves is knowing, which is the part that failed here.
+- It compares the commit it is running from against the repository's head, and says plainly whether
+  they are current, how far behind, and the exact commands in order.
+- It works when the network is gone: unreachable means "could not check", not an error.
+- It reads its own commit from where it actually lives, not from a constant somebody must remember
+  to bump. The path carries the sha, and `plugin.json` carries the version — both are available.
+- A walk asserts the honest case: an install that is behind is told so, and one that is current says
+  so in one line and stops.
+
+What breaks for a developer if this does not exist: they follow four commands, one of them lies to
+them, and they end up on the first commit of the repository with no way to know.
+
+
 ## Notes and decisions log
+- 2026-09-08 — a developer deleted the plugin cache to force an update and landed on `8a1262f`, the
+  repository's first commit, with the command gone in between. Three separate false greens in one
+  path: `marketplace update` reports indexing and moves nothing (measured twice, the second outside
+  the documented ten-minute window), `add` without `--git-ref` can restore an old pin while
+  `--git-ref main` fetched head correctly minutes later on the same machine, and deleting the cache
+  uninstalls rather than refreshes. The user asked for `/smith-update` and they are right — phase AC.
+  Auto Refresh on a team marketplace stays the answer for a team; this is the answer for the person
+  who is not the administrator.
 - 2026-09-08 — **phase AB is parked the day it was written, and the reason is a wrong call, not new
   information.** Auto Refresh on a Team Marketplace updates plugins on push, needs the Cursor GitHub
   App, and is configured once by whoever administers the team — it was already found and quoted

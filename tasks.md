@@ -4226,7 +4226,7 @@ again through a second door, and the first person to notice is a developer it in
 
 ## Phase AC — the update path lies, so at least say where you are
 
-### [x] AC1. `/smith-update`, because keeping this current is four commands and a hash
+### [x] AC1. `/smith-update`, because keeping this current is four commands and a hash — 97af78a
 
 A developer on 2026-09-08 deleted their plugin cache, reinstalled, and landed on `8a1262f` — the
 first commit in the repository, months of work behind, with `/smith-review` gone in between. Nothing
@@ -4261,7 +4261,7 @@ them, and they end up on the first commit of the repository with no way to know.
 
 ## Phase AD — a review nobody agreed to
 
-### [x] AD1. Ask before opening a review, whatever the change is
+### [x] AD1. Ask before opening a review, whatever the change is — 97af78a
 
 Reported on 2026-09-08, watching it happen: `/smith-review`, and the session went straight into 32
 uncommitted files — `smith plan --preview`, then `smith plan`, then the ticket, with no question in

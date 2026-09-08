@@ -4005,7 +4005,7 @@ acceptance criteria, so the body stays on the machine and only the ticket's key 
 That is worth having on its own terms. "Does this change do what was asked" is the one question no
 deterministic rule will ever answer, and it is where the reasoning half earns its place.
 
-### [x] AA1. Say what is being reviewed, before reviewing it
+### [x] AA1. Say what is being reviewed, before reviewing it — done, commit 9b5bd39
 
 Acceptance:
 
@@ -4022,7 +4022,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they get a verdict and cannot tell whether it
 covers the change they meant.
 
-### [x] AA2. The base is whatever was last fetched, and nobody is told
+### [x] AA2. The base is whatever was last fetched, and nobody is told — done, commit 9b5bd39
 
 Acceptance:
 
@@ -4043,7 +4043,7 @@ What breaks for a developer if this does not exist: they are shown findings on c
 write, and the rules that fire on it are correct — which is worse, because there is nothing to
 argue with.
 
-### [x] AA3. The ticket, found rather than asked for
+### [x] AA3. The ticket, found rather than asked for — done, commit 9b5bd39
 
 Acceptance:
 
@@ -4063,7 +4063,7 @@ Acceptance:
 What breaks for a developer if this does not exist: a lead reads a list of untitled reviews and
 cannot tell which piece of work each one was.
 
-### [x] AA4. Read the ticket, and review against what was asked
+### [x] AA4. Read the ticket, and review against what was asked — done, commit 9b5bd39
 
 AA3 gets a label. This is the part that makes the review better: the acceptance criteria, the
 description and the comments are what the change was supposed to do, and a review that has them can

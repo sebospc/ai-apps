@@ -4106,7 +4106,32 @@ Acceptance:
 What breaks for a developer if this does not exist: the review checks the code against the rules and
 never against the reason the code was written, which is the half a human reviewer actually does.
 
-## Phase AB — a developer cannot update this plugin, and the fix is a second adapter
+## Phase AB — parked: Auto Refresh is the answer, and it needs no migration
+
+> **Do not start this phase without being asked to.** It was written on 2026-09-08 in the belief that
+> a developer could not be kept up to date without a second distribution surface. That was wrong, and
+> the documentation says so plainly:
+>
+> > "Turn on **Enable Auto Refresh** to update plugins automatically whenever changes are pushed to
+> > the branch the marketplace tracks. This requires the Cursor GitHub App installed on the
+> > repository. Cursor re-indexes a marketplace at most once every 10 minutes… For marketplaces
+> > created with 'Import from Repo', Auto Refresh re-reads the full manifest on each push, so new
+> > plugins added to the repository are picked up automatically."
+>
+> One setup, once, by whoever administers the team. Developers install from `/plugins` and never run
+> anything again. The plugin stays a plugin, `plugin/commands/` stays where it is, and nothing below
+> is needed.
+>
+> The pinning that started this is real and stays documented in `plugin/README.md` — but it is a
+> property of `cursor-agent plugin marketplace add`, the personal quick-install route, not of plugins.
+> Reaching for a migration instead of the setting was over-correcting on a constraint that applied to
+> developers installing, never to the one person configuring the marketplace.
+>
+> What the measurements below are still good for: they are the answer if Auto Refresh ever turns out
+> not to move an already-installed developer forward, which is the one part the documentation does
+> not describe. Re-read them then, not before.
+
+## The measurements, kept
 
 Measured on 2026-09-08, after a developer installed on a second machine and could not move forward:
 
@@ -4200,6 +4225,14 @@ What breaks for a developer if this does not exist: the plugin that was made qui
 again through a second door, and the first person to notice is a developer it interrupted.
 
 ## Notes and decisions log
+- 2026-09-08 — **phase AB is parked the day it was written, and the reason is a wrong call, not new
+  information.** Auto Refresh on a Team Marketplace updates plugins on push, needs the Cursor GitHub
+  App, and is configured once by whoever administers the team — it was already found and quoted
+  before AB was drafted. What sent the work sideways was the developer saying they work from the
+  terminal: that is true of installing, and not true of the one person setting up a marketplace, so
+  a Dashboard setting got ruled out for a constraint it never had. Nothing about the plugin needs to
+  change. The pinning of `cursor-agent plugin marketplace add` is still real and still documented, as
+  a property of that quick-install route rather than of plugins.
 - 2026-09-08 — phase AB's two open questions were measured before the phase was started, with a
   throwaway skill in `~/.cursor/skills/` rather than by reading documentation. **A skill can carry a
   CLI and reach the network**: invoked as `/smith-probe` from a terminal session, it ran a script by a

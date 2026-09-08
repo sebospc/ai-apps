@@ -37,15 +37,29 @@ cursor-agent plugin marketplace add https://github.com/sebospc/ai-apps
 
 Then `/plugins` and install **smith** again.
 
-**`marketplace update` does not fetch anything**, whatever it prints. Measured 2026-09-08: it
-answered `✓ Updated marketplace smith: 1 plugin indexed` and the cached checkout stayed on the
-commit it already had — an old plugin, with the directory this version deleted still in it. Remove
-and add moved it to the current commit. A tick from that command is not evidence you are up to date;
-this is:
+Reinstalling from `/plugins` is the part that matters, and it is not optional. Cursor keeps two
+copies: the **index**, under `~/.cursor/plugins/marketplaces/`, and the **plugin it actually loads**,
+under `~/.cursor/plugins/cache/`. `remove` and `add` move the first. Only reinstalling moves the
+second — measured 2026-09-08, where the index went to the new commit and the loaded plugin stayed
+three commits behind.
+
+So check the one that runs, not the one that was fetched:
 
 ```bash
-ls ~/.cursor/plugins/marketplaces/github.com/<owner>/<repo>/*/plugin
+ls ~/.cursor/plugins/cache/smith/smith/
 ```
+
+That prints the commit you are on. Compare it with the head of the repository, or ask the question
+without reading a hash — this answers for the version that added `smith plan --preview`:
+
+```bash
+grep -q -- --preview ~/.cursor/plugins/cache/smith/smith/*/bin/smith \
+  && echo "up to date" || echo "OUT OF DATE"
+```
+
+**`marketplace update` does not fetch at all**, whatever it prints. It answered
+`✓ Updated marketplace smith: 1 plugin indexed` and left even the index on the commit it already
+had. A tick from that command is not evidence of anything.
 
 The same collision bites on `add`: if a `smith` marketplace already exists pointing somewhere else,
 the name collides, the old one wins silently, and `marketplace list` still shows the old URL after an

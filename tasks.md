@@ -4107,6 +4107,14 @@ What breaks for a developer if this does not exist: the review checks the code a
 never against the reason the code was written, which is the half a human reviewer actually does.
 
 ## Notes and decisions log
+- 2026-09-08 — Cursor keeps **two** copies of a plugin and the docs named the wrong one. The index
+  lives under `~/.cursor/plugins/marketplaces/`, the plugin that actually loads under
+  `~/.cursor/plugins/cache/<marketplace>/<plugin>/<sha>/`. `remove` then `add` moves the index only:
+  measured with the index at `0086812` and the loaded plugin still at `5fc015f`, three commits and a
+  whole phase behind. Reinstalling from `/plugins` is what moves the second. The README had been
+  telling people to check the index, which reports success while the old plugin is still the one
+  running — the same false green as `marketplace update`, one level down. It now names the cache path
+  and gives a check that answers without reading a hash.
 - 2026-09-08 — AA1 shipped "derive and state, never ask" and a developer using it said that was
   wrong for the case that matters: they had nothing uncommitted, typed the command, and it reviewed
   their whole branch without a word. Stating it after the fact does not help — the review is already

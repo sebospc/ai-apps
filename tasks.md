@@ -3985,10 +3985,15 @@ The governing constraint, from the developer who asked for this: **priorizing ea
 answer to all four is the same shape — derive it, state it in one line, and let them correct it.
 Not a form, not a wizard, not four questions before a review starts.
 
-**Deliberately out of scope: an integration with Jira or any other ticket provider.** No API, no
-credentials, no fourth endpoint. A ticket key read off the branch name is worth having because it
-labels the review; going to fetch the ticket's contents is a product nobody asked for and a
-credential this plugin has no business holding.
+**The plugin holds no ticket credential, and the ticket's text never reaches the server.** Those
+are the two constraints, and neither one rules out reading the ticket — that was a wrong call on
+2026-09-08, corrected the same day. The agent already runs in the developer's editor with the
+developer's own access: an MCP server, a `jira` or `gh` CLI, or a URL they paste. It reads the ticket
+the same way it reads their code, locally. And it keeps it there: the deterministic rules do not need
+acceptance criteria, so the body stays on the machine and only the ticket's key travels, as a label.
+
+That is worth having on its own terms. "Does this change do what was asked" is the one question no
+deterministic rule will ever answer, and it is where the reasoning half earns its place.
 
 ### [ ] AA1. Say what is being reviewed, before reviewing it
 
@@ -4041,15 +4046,56 @@ Acceptance:
 - The pattern is configurable per project, because `ABC-123` is Jira's shape and not everyone's.
   That is project configuration, so it belongs in `projects.config` and a lead edits it — not `.env`,
   and not a constant in the plugin.
-- No network call to any ticket system, no credentials, no new endpoint. If the review should ever
-  link to the ticket, that is a URL template a lead sets, and it is a separate task.
+- Only the key travels. The title is a label a lead reads in a list; it is not the ticket.
 - A walk assertion: a branch named for a ticket produces a review carrying that title, and a branch
   that is not produces one question and takes no for an answer.
 
 What breaks for a developer if this does not exist: a lead reads a list of untitled reviews and
 cannot tell which piece of work each one was.
 
+### [ ] AA4. Read the ticket, and review against what was asked
+
+AA3 gets a label. This is the part that makes the review better: the acceptance criteria, the
+description and the comments are what the change was supposed to do, and a review that has them can
+say the one thing no rule can — that the code is fine and does not do it.
+
+Optional, and optional means it degrades to exactly today's review with one line saying so, not an
+error and not a smaller review pretending to be a whole one.
+
+Acceptance:
+
+- The agent reads the ticket with whatever the developer already has, in this order: an MCP tool
+  exposed by their editor, then a CLI on their PATH (`jira`, `gh`), then asking them for a URL or a
+  paste. **The plugin stores no ticket credential and gains no configuration for one.** If none of
+  those reach it, that is the degraded path above.
+- What it reads is used as context for its own reasoning, next to the diff. Findings that come from
+  it obey the same rule as every other finding: they point at a file and a line in the change. "The
+  ticket asks for X and nothing here does it" is one finding on the change, not a checklist of
+  acceptance criteria with ticks.
+- **The ticket's text is never sent to the server.** Not in the diff, not in a finding's message, not
+  in `quoted_line`. A finding whose message quotes the ticket is quoting somebody's business
+  requirements into a database that exists to hold code review. A test asserts the request body of
+  both plugin calls carries nothing from the ticket.
+- Precision over recall holds here too, and this is the rule most likely to break it: a change that
+  implements two of three criteria because the third is a separate ticket must not be reported as
+  incomplete. When the ticket and the diff disagree, the finding says what it observed and lets the
+  developer answer — the disposition flow already exists for exactly that.
+- Measured before it ships: run the review on the same change with and without the ticket, and write
+  down what the ticket bought. If it bought nothing, that is the finding and the notes log says so.
+- A walk with a fixture ticket the agent reads from disk, so it runs without a Jira, and a second one
+  with nothing to read that asserts the degraded line and a normal review.
+
+What breaks for a developer if this does not exist: the review checks the code against the rules and
+never against the reason the code was written, which is the half a human reviewer actually does.
+
 ## Notes and decisions log
+- 2026-09-08 — AA3 was first written with "an integration with Jira is out of scope", and that was
+  wrong. The constraint that matters is that **the plugin holds no ticket credential and the ticket's
+  text never reaches the server**, and neither one requires giving up the ticket. The agent already
+  runs in the developer's editor with their own access — an MCP tool, a CLI, or a URL they paste —
+  so it reads the ticket the way it reads their code, locally, and keeps it there. Only the key
+  travels, as a label. Split into AA3 (the label) and AA4 (the reading), because the first is cheap
+  and the second is the one that changes what a review can say.
 - 2026-09-08 — `cursor-agent plugin marketplace update <name>` **does not fetch**. It answered
   `✓ Updated marketplace smith: 1 plugin indexed` and left the cached checkout on the commit it
   already had, which still carried the `skills/` directory Z1 deleted — so an agent kept reading the

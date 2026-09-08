@@ -4226,7 +4226,7 @@ again through a second door, and the first person to notice is a developer it in
 
 ## Phase AC — the update path lies, so at least say where you are
 
-### [ ] AC1. `/smith-update`, because keeping this current is four commands and a hash
+### [x] AC1. `/smith-update`, because keeping this current is four commands and a hash
 
 A developer on 2026-09-08 deleted their plugin cache, reinstalled, and landed on `8a1262f` — the
 first commit in the repository, months of work behind, with `/smith-review` gone in between. Nothing
@@ -4259,7 +4259,56 @@ What breaks for a developer if this does not exist: they follow four commands, o
 them, and they end up on the first commit of the repository with no way to know.
 
 
+## Phase AD — a review nobody agreed to
+
+### [x] AD1. Ask before opening a review, whatever the change is
+
+Reported on 2026-09-08, watching it happen: `/smith-review`, and the session went straight into 32
+uncommitted files — `smith plan --preview`, then `smith plan`, then the ticket, with no question in
+between. "arranco ahi mismo a hacer el review, porque?????? deberia esperar a que le de las
+instrucciones."
+
+The command was written that way. AA1's follow-up decided that `kind: "uncommitted"` was obvious
+enough to state and go, and only `kind: "branch"` was worth confirming. That reasoning was about the
+range being guessable, and it missed what a review costs: it is attributed to the developer, it
+lands on their lead's screen, and they spend the next minutes reading it. Typing the command says
+they want a review. It does not say of what, and only they know that.
+
+Acceptance:
+
+- The confirmation is unconditional. Uncommitted, branch, one file or thirty-two, the command says
+  what it would compare and waits.
+- Saying it is not asking. "Reviewing the 32 uncommitted files for ABC-123 — fetching the plan" is
+  what the session actually said, and it is the failure, not a near miss.
+- The developer who already said what they want — `/smith-review my uncommitted changes` — has
+  answered before being asked. Confirm in one line and go. Asking twice is the same defect facing
+  the other way.
+- A walk reads both halves: bare `/smith-review` on uncommitted work opens nothing, and the loop
+  still runs to a verdict when the range was given up front.
+
+Done: measured with a real Claude session on a plain repository, twice. Bare `/smith-review` ran
+`plan --preview` and stopped at "1 uncommitted file on `feature/ACME-42-prices`, ticket ACME-42.
+Review that?" — no `plan`, no review row. With the range in the prompt, the same command answered
+"Uncommitted work on `feature/ACME-42-prices`, ticket ACME-42. Going." and carried the whole loop to
+a blocked verdict with three findings. `scripts/walk_skill.mjs review-confirm` is the walk; it needs
+a corpus, which this machine does not have, so what was run was the same session shape by hand.
+
+
 ## Notes and decisions log
+- 2026-09-08 — `smith update` reads the commit from the directory it is installed in, and that made
+  a second defect visible immediately: on a machine with an old `smith` symlink on PATH, the session
+  ran the symlink and was told it was current while the plugin the editor had loaded was 65 commits
+  behind. Every other command is indifferent to which copy runs — they all reach the same server —
+  so this is the one that must be run by path. The symlink came from this repository's own old PATH
+  advice. `commands/smith-update.md` says why, and the old copy's missing subcommand is now itself
+  an answer: `update` shipped in 0.3.0, so a copy without it is older than that.
+- 2026-09-08 — the walks for AC1 and AD1 are written and were not run: `scripts/walk_skill.mjs`
+  builds its repository from `SMITH_CORPUS`, and there is no corpus on this machine. What was run
+  instead is the same session, by hand, on a plain repository — a real `claude` session, the plugin
+  loaded from a sha-named directory, the tool calls read back. Four measurements, all four the
+  honest case. Twice the probe was answered by a stale Smith install elsewhere on this machine
+  rather than by the copy under test, which is the same contamination the caveman runs had; the
+  stale installs were moved aside for the measurement and put back after.
 - 2026-09-08 — a developer deleted the plugin cache to force an update and landed on `8a1262f`, the
   repository's first commit, with the command gone in between. Three separate false greens in one
   path: `marketplace update` reports indexing and moves nothing (measured twice, the second outside

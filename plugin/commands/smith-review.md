@@ -13,7 +13,7 @@ JSON. Everything below is yours to run and yours to translate.
 
 ## The loop
 
-1. `smith plan --preview` → what would be reviewed. Confirm it if it is a whole branch.
+1. `smith plan --preview` → what would be reviewed. Ask whether that is what they meant, and wait.
 2. `smith plan` → the rules and what the server already found. Not the code; you fetch that.
 3. Reason over the diff, `smith submit` your findings.
 4. Say what you reviewed, the verdict, then the findings, numbered.
@@ -63,21 +63,35 @@ smith plan --preview
 Costs nothing and creates nothing: no server call, no review, no credentials needed. It answers with
 `kind`, `base`, `files`, `branch`, `ticket` and `freshness` — what a review *would* be taken against.
 
-**`kind: "uncommitted"`** — their working changes. Obvious, cheap to redo, and asking would be noise.
-Say what you are reviewing in one line at step 3 and go straight on to the plan.
+**Then ask, in one sentence, and wait.** Whatever the `kind` is. A review is not free — it lands on
+their lead's screen, it is attributed to them, and it costs them the minutes they spend reading it.
+Typing `/smith-review` says they want a review; it does not say of what. Only they know that.
 
-**`kind: "branch"`** — they have nothing uncommitted, so the whole branch against `base` is what
-there is. **Ask before you review it**, in one sentence, and wait:
+The question names what you would compare, so the answer is informed rather than a shrug:
 
-> Nothing uncommitted here. Review the whole `feature/ABC-77-thing` branch against `main` — 7 files?
+> 32 uncommitted files on `feature/ABC-77-thing`, against `origin/main`. Review those?
 
-They may have meant a different base, or work they have not committed yet, or nothing at all. A
-review of the wrong range wastes their time and puts a review on their lead's screen that is not the
-one they asked for. This is the only question this command asks unprompted, so it is worth it.
+> Nothing uncommitted here, so it would be the whole `feature/ABC-77-thing` branch against
+> `origin/main` — 7 files. Review that?
 
-If they name a different base, pass it: `smith plan --base <ref>`.
+Then stop and wait. Do not run `smith plan` in the same breath, and do not soften it into a
+statement with a question mark on the end — an agent that says "reviewing the 32 uncommitted files"
+and keeps going has not asked, it has announced.
 
-**`empty: true`** — nothing to review either way. Say so and stop; do not call `plan`.
+Three answers you will get, and what each one means:
+
+- **Yes** — go to step 2.
+- **A different base** — pass it: `smith plan --base <ref>`.
+- **Something else entirely** — a file, a directory, a commit. The plugin compares refs, so a base
+  is the only thing you can pass it. Say what you can compare, and let them choose again.
+
+**The exception, and the only one:** they already said what to review in the message that opened the
+command — "/smith-review my uncommitted changes", "review this branch against develop". Then they
+have answered the question before you asked it. Confirm what you understood in one line and go on.
+Asking again is the same failure in the other direction.
+
+**`empty: true`** — nothing to review either way. Say so and stop; do not call `plan`, and do not
+ask a question there is no useful answer to.
 
 ## 2. Get the plan
 

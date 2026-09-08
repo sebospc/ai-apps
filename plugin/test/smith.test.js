@@ -886,3 +886,61 @@ test("preview says what would be reviewed and creates nothing", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// A plugin installed from a repository is pinned to the commit it was added at, and Cursor never
+// says so. A developer who deleted their cache to force an update landed on the first commit in the
+// repository with the review command gone. `smith update` is the only thing that tells them, so
+// what it says has to be right in all three states without a network to reach.
+test("update names both commits when behind, one line when current, and neither when unreachable", () => {
+  const installed = "8a1262f6e4f552a386514430c89aaa63332f72f5";
+  const current = "7d91ee955677d79ddd1c61674649d8fff08661e5";
+
+  const behind = smith.updateReport({ installed, current, version: "0.1.0", ahead: 47 });
+  assert.match(behind, /8a1262f/);
+  assert.match(behind, /7d91ee9/);
+  assert.match(behind, /47 commits/);
+  // The steps are in the only order that works: the marketplace index moves first, the interactive
+  // reinstall moves the copy the agent actually loads.
+  assert.ok(
+    behind.indexOf("marketplace remove") < behind.indexOf("marketplace add"),
+    "remove has to come before add",
+  );
+  assert.ok(behind.indexOf("marketplace add") < behind.indexOf("/plugins"), "the reinstall comes last");
+  assert.match(behind, /--git-ref main/, "without a ref, add can restore the pin they already had");
+
+  const up = smith.updateReport({ installed: current, current, version: "0.3.0", ahead: null });
+  assert.equal(up, "Smith is current: 0.3.0 (7d91ee9).");
+
+  // Offline must not read as current, and must not read as an error either.
+  const unknown = smith.updateReport({ installed, current: null, version: "0.1.0", ahead: null });
+  assert.match(unknown, /Could not reach/);
+  assert.doesNotMatch(unknown, /current:/);
+  assert.doesNotMatch(unknown, /marketplace/, "nothing to do until it is known there is something to do");
+
+  // A count the forge would not give is a missing sentence, not a missing report.
+  const noCount = smith.updateReport({ installed, current, version: "0.1.0", ahead: null });
+  assert.match(noCount, /Current is 7d91ee9\./);
+});
+
+// The sha comes from the install path rather than from a constant, because the copy that is out of
+// date is exactly the copy whose constant was never bumped.
+test("update reads its own commit from where it is installed, not from a constant", async () => {
+  const cache = tempDir("smith-cache-");
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  const installed = path.join(cache, "smith/smith", sha);
+  fs.mkdirSync(path.join(installed, "bin"), { recursive: true });
+  fs.copyFileSync(CLI, path.join(installed, "bin/smith"));
+  fs.writeFileSync(path.join(installed, "plugin.json"), JSON.stringify({ version: "9.9.9" }));
+
+  try {
+    const child = require("child_process").spawnSync("node", [path.join(installed, "bin/smith"), "update"], {
+      encoding: "utf8",
+      // No remote reachable, so this exercises the path that only reads the install itself.
+      env: { ...process.env, GIT_ALLOW_PROTOCOL: "none" },
+    });
+    assert.equal(child.status, 0);
+    assert.match(child.stdout, /9\.9\.9 \(0123456\)/);
+  } finally {
+    fs.rmSync(cache, { recursive: true, force: true });
+  }
+});

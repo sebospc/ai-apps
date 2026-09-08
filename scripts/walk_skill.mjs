@@ -46,6 +46,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
@@ -54,6 +55,8 @@ import { bootstrapProject, buildRepo, INJECTED_FIXES, introduceProblems } from "
 const API = process.env.SMITH_API_URL ?? "http://localhost:8099";
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const PLUGIN_DIR = join(REPO_ROOT, "plugin");
+// Where the plugin says it comes from, read from the plugin rather than repeated here.
+const { PLUGIN_SOURCE } = createRequire(import.meta.url)(join(PLUGIN_DIR, "bin", "smith"));
 const OUTPUT_DIR = join(REPO_ROOT, "output");
 const IMPEX_STRUCTURE = join(REPO_ROOT, "scripts", "impex_structure.py");
 
@@ -119,9 +122,9 @@ function shellCommandsOf(toolCalls) {
 const EDITORS = {
   claude: {
     binary: "claude",
-    args: (prompt, tools) => [
+    args: (prompt, tools, pluginDir) => [
       "--plugin-dir",
-      PLUGIN_DIR,
+      pluginDir,
       "-p",
       prompt,
       "--allowedTools",
@@ -153,7 +156,7 @@ const EDITORS = {
     },
     // `--force` is this CLI's non-interactive shell approval. Without it a headless run stalls on
     // the first command instead of failing, and there is nobody here to approve one.
-    args: (prompt) => ["--plugin-dir", PLUGIN_DIR, "-p", prompt, "--output-format", "stream-json", "--force"],
+    args: (prompt, tools, pluginDir) => ["--plugin-dir", pluginDir, "-p", prompt, "--output-format", "stream-json", "--force"],
     suffix: "-cursor",
     // One `tool_call` message carries one `<name>ToolCall` key — `shellToolCall`, `readToolCall`,
     // `globToolCall`. Reading the key rather than a list of names keeps a tool this CLI adds later
@@ -1054,6 +1057,35 @@ async function applyChecks({ repo, text, commands, key }) {
  * old skill's description word for word.
  */
 /**
+ * The uncommitted case, which used to go without asking.
+ *
+ * Same claim as `review-branch` and a different fixture: there *are* working changes, so the old
+ * command called the choice obvious and announced it instead of asking. The developer who reported
+ * it had 32 files reviewed under their name before they could say a word.
+ */
+function reviewConfirmChecks({ text, commands }) {
+  check(
+    "the agent looked before it started",
+    commands.some((c) => /--preview\b/.test(c)),
+    commands.join(" ; ").slice(0, 300)
+  );
+  const opened = commands.some((c) => /\bplan\b/.test(c) && !/--preview\b/.test(c));
+  check("no review was opened without asking first", !opened, commands.join(" ; ").slice(0, 300));
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  check(
+    "the session ended by asking whether that is what they meant",
+    /\?/.test(paragraphs.slice(-2).join("\n\n")),
+    paragraphs.slice(-1)[0]?.slice(-300) ?? ""
+  );
+  // A question nobody can act on is not a question. What would be compared has to be in it.
+  check(
+    "what would be reviewed is named, so the answer is informed",
+    /\buncommitted\b|\bworking (changes|tree)\b/i.test(text),
+    firstMatch(text, /^.*(uncommitted|working (changes|tree)).*$/im) || "nothing says what was compared"
+  );
+}
+
+/**
  * The branch case, where the command has to ask rather than assume.
  *
  * The developer has nothing uncommitted, so `smith plan --preview` reports the whole branch. That is
@@ -1210,12 +1242,101 @@ const APPLY_REQUEST =
 const APPLY_SYMPTOM =
   "buyers are placing the same order twice when they double-click, can you fix that";
 
+// --------------------------------------------------------------------------------------------
+// staying current
+// --------------------------------------------------------------------------------------------
+
+/**
+ * This checkout's plugin, laid out the way Cursor installs one: a directory named by a commit sha.
+ * `smith update` reads the sha from that directory name, so this is what lets a walk decide whether
+ * the session under test is looking at an install that is behind or one that is current.
+ */
+function installAt(sha) {
+  const cache = mkdtempSync(join(tmpdir(), "smith-walk-cache-"));
+  const target = join(cache, "smith", "smith", sha);
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(PLUGIN_DIR, target, { recursive: true });
+  return target;
+}
+
+/** What the source repository's main points at now, which is what a current install would be on. */
+function currentPluginCommit() {
+  const listed = execFileSync("git", ["ls-remote", "--heads", PLUGIN_SOURCE, "main"], { encoding: "utf8" });
+  const sha = listed.split(/\s+/)[0] ?? "";
+  assert.match(sha, /^[0-9a-f]{40}$/, `no head at ${PLUGIN_SOURCE}`);
+  return sha;
+}
+
+/** The commands that move an install. Run by a person, in order, never by the session. */
+const DESTRUCTIVE = /marketplace\s+(remove|add)|rm\s+-[rf]*\s*.*\.cursor\/plugins/;
+
+function updateBehindChecks({ text, commands }) {
+  check("the session asked the plugin itself", commands.some((c) => /\bsmith\b.*\bupdate\b/.test(c)), commands.join(" ; ").slice(0, 300));
+  check("the developer is told which commit they are on", text.includes("8a1262f"));
+  check("and which one is current", text.includes(currentPluginCommit().slice(0, 7)));
+  // Without the ref, `add` can restore the pin they already had — measured on 2026-09-08, and the
+  // reason the developer this phase came from ended up on the repository's first commit.
+  check("the reinstall carries --git-ref", /--git-ref main/.test(text), firstMatch(text, /marketplace add[^\n]*/));
+  // The one that would actually hurt: `marketplace remove` uninstalls the plugin the session is
+  // running from, and a developer whose reinstall then does not happen is left with nothing.
+  const ran = commands.filter((c) => DESTRUCTIVE.test(c));
+  check("the session did not move the install itself", ran.length === 0, ran.join(" ; ").slice(0, 300));
+}
+
+function updateCurrentChecks({ text, commands }) {
+  check("the session asked the plugin itself", commands.some((c) => /\bsmith\b.*\bupdate\b/.test(c)), commands.join(" ; ").slice(0, 300));
+  check("the developer is told they are current", /\bcurrent\b/i.test(text));
+  // Nothing to do is the whole answer. A session that hands over the update commands anyway has
+  // given a developer three commands that would uninstall a plugin that was fine.
+  check("no update instructions are offered", !/marketplace/.test(text), firstMatch(text, /[^\n]*marketplace[^\n]*/));
+  const ran = commands.filter((c) => DESTRUCTIVE.test(c));
+  check("the session did not move the install itself", ran.length === 0, ran.join(" ; ").slice(0, 300));
+}
+
 const WALKS = {
+  update: {
+    // An install two hundred commits behind, which is the state a developer cannot see. What is read
+    // is whether the session hands the commands over, or runs them — `marketplace remove` uninstalls
+    // the plugin it is running from.
+    prompts: { claude: "/smith-update", cursor: "/smith-update" },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "update-walk",
+    pluginDir: () => installAt("8a1262f6e4f552a386514430c89aaa63332f72f5"),
+    setup: () => {
+      const { repo } = buildRepo("smith-walk-repo-");
+      return { repo, about: "an install behind the repository" };
+    },
+    forbidden: FORBIDDEN,
+    checks: updateBehindChecks,
+  },
+  "update-current": {
+    // The same command with nothing to do. Half of being useful here is being quiet: an agent that
+    // offers the update block anyway is handing a developer commands that would uninstall a working
+    // plugin, which is exactly the accident this phase came from.
+    prompts: { claude: "/smith-update", cursor: "/smith-update" },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "update-current-walk",
+    pluginDir: () => installAt(currentPluginCommit()),
+    setup: () => {
+      const { repo } = buildRepo("smith-walk-repo-");
+      return { repo, about: "an install that is already current" };
+    },
+    forbidden: FORBIDDEN,
+    checks: updateCurrentChecks,
+  },
   review: {
     // One door in both editors. The plugin ships commands rather than skills precisely so that
     // nothing answers a developer who did not type this, so the walk types it — asking in words
     // is what must now reach nothing, and `review-unasked` is the walk that reads for that.
-    prompts: { claude: "/smith-review", cursor: "/smith-review" },
+    //
+    // The range is in the prompt because the command now confirms before it opens anything, and a
+    // single-shot session has nobody to confirm with. A developer who says what they want up front
+    // has answered the question already, and that is the one path where the whole loop runs to a
+    // verdict. Whether a bare `/smith-review` stops and asks is read by `review-confirm`.
+    prompts: {
+      claude: "/smith-review my uncommitted changes",
+      cursor: "/smith-review my uncommitted changes",
+    },
     tools: "Bash,Read,Glob,Grep",
     transcript: "rehearsal",
     setup: () => {
@@ -1231,6 +1352,28 @@ const WALKS = {
     },
     forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
     checks: reviewChecks,
+  },
+  "review-confirm": {
+    // Reported 2026-09-08 by a developer whose `/smith-review` went straight into 32 uncommitted
+    // files: "arranco ahi mismo a hacer el review". The command used to treat uncommitted work as
+    // obvious enough to skip the question. It is not — a review is attributed to them and lands on
+    // their lead's screen — so the confirmation is now unconditional, and this walk is what reads
+    // for it. A single-shot session has nobody to answer, so an agent that opened one anyway chose
+    // not to ask.
+    prompts: { claude: "/smith-review", cursor: "/smith-review" },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-confirm",
+    setup: () => {
+      const { repo, target } = buildRepo("smith-walk-repo-");
+      execFileSync("git", ["checkout", "-q", "-b", "feature/ACME-42-fix-the-constants"], {
+        cwd: repo,
+        stdio: "ignore",
+      });
+      introduceProblems(repo, target);
+      return { repo, about: `uncommitted change in ${target}` };
+    },
+    forbidden: FORBIDDEN,
+    checks: reviewConfirmChecks,
   },
   "review-branch": {
     // Nothing uncommitted, so the whole branch is what there is — the case the command must confirm
@@ -1667,7 +1810,10 @@ async function main() {
     // the key this run created, so its prompt is a function and gets them.
     const declared = walk.prompts[name];
     const prompt = typeof declared === "function" ? declared({ api: API, key }) : declared;
-    const args = editor.args(prompt, walk.tools);
+    // Most walks run the plugin out of this checkout. The update walk has to run it from a
+    // directory named by a commit sha, because that is where the sha it reports comes from.
+    const pluginDir = walk.pluginDir?.() ?? PLUGIN_DIR;
+    const args = editor.args(prompt, walk.tools, pluginDir);
     console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
     console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
 

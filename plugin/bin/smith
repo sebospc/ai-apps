@@ -15,6 +15,7 @@
  *   smith review <review_id>
  *   smith catalog [<entry_id>]
  *   smith status
+ *   smith update
  */
 
 const fs = require("fs");
@@ -300,6 +301,154 @@ function ticketFromRepository(root, base) {
   const log = gitOrNull(["log", "--format=%s%n%b", range], root);
   const fromCommits = log ? TICKET.exec(log.toUpperCase()) : null;
   return fromCommits ? fromCommits[1] : "";
+}
+
+// --------------------------------------------------------------------------------------------
+// staying current
+// --------------------------------------------------------------------------------------------
+
+/**
+ * Where this plugin comes from. Not configuration — it is the plugin's own address, it is public,
+ * and a copy that does not know it cannot tell a developer whether it is out of date.
+ */
+const PLUGIN_SOURCE = "https://github.com/sebospc/ai-apps";
+const PLUGIN_BRANCH = "main";
+
+function pluginRoot() {
+  return path.dirname(__dirname);
+}
+
+/**
+ * The commit this copy was installed from.
+ *
+ * Cursor installs a plugin at `…/plugins/cache/<marketplace>/<plugin>/<sha>/`, so the sha is the
+ * directory this file lives two levels under. Reading it there rather than from a constant is the
+ * point: a constant is only right until somebody forgets to bump it, and the copy that is out of
+ * date is exactly the copy whose constant is wrong.
+ */
+function installedCommit() {
+  const directory = path.basename(pluginRoot());
+  if (/^[0-9a-f]{40}$/.test(directory)) return directory;
+  // Not an install: a checkout of the repository, which is what a maintainer runs from.
+  return gitOrNull(["rev-parse", "HEAD"], pluginRoot());
+}
+
+function installedVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(pluginRoot(), "plugin.json"), "utf8")).version || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * What the source repository's branch points at now. `ls-remote` writes nothing and needs no
+ * checkout. Unreachable — offline, private repository, no credentials — returns null, which reads
+ * as "could not check" rather than as an error.
+ */
+function remoteHead(source, branch) {
+  const listed = gitOrNull(["ls-remote", "--heads", source, branch], os.tmpdir());
+  if (!listed) return null;
+  const head = listed.split("\n")[0]?.split(/\s+/)[0] ?? "";
+  return /^[0-9a-f]{40}$/.test(head) ? head : null;
+}
+
+/**
+ * How many commits the current head is ahead of the installed one.
+ *
+ * The installed copy has no git history — it is a directory of files — so the count cannot be
+ * worked out locally and comes from the forge instead. GitHub only, unauthenticated, and every
+ * failure returns null: the difference between "behind" and "behind by 40" is worth one request,
+ * never worth blocking on.
+ */
+function commitsAhead(source, base, head) {
+  const match = /github\.com[/:]([^/]+)\/([^/.]+)/.exec(source);
+  if (!match) return Promise.resolve(null);
+  const route = `https://api.github.com/repos/${match[1]}/${match[2]}/compare/${base}...${head}`;
+  return new Promise((resolve) => {
+    const req = https.request(
+      route,
+      { method: "GET", headers: { "User-Agent": "smith-plugin", Accept: "application/vnd.github+json" }, timeout: 10_000 },
+      (res) => {
+        let raw = "";
+        res.on("data", (chunk) => (raw += chunk));
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(raw);
+            resolve(typeof parsed.ahead_by === "number" ? parsed.ahead_by : null);
+          } catch {
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.end();
+  });
+}
+
+const UPDATE_STEPS = [
+  `cursor-agent plugin marketplace remove smith`,
+  `cursor-agent plugin marketplace add ${PLUGIN_SOURCE} --git-ref ${PLUGIN_BRANCH}`,
+  `cursor-agent            # then type /plugins and install smith`,
+];
+
+/**
+ * The whole answer as text, from values only, so what a developer is told can be checked without a
+ * network or an install.
+ */
+function updateReport({ installed, current, version, ahead }) {
+  const short = (sha) => (sha ? sha.slice(0, 7) : "unknown");
+  const running = `${version ? `${version} ` : ""}(${short(installed)})`;
+
+  if (!installed) {
+    return [
+      "Could not tell which commit this copy was installed from, so there is nothing to compare.",
+      `Reinstalling from ${PLUGIN_SOURCE} puts you on the current one:`,
+      ...UPDATE_STEPS.map((step) => `  ${step}`),
+    ].join("\n");
+  }
+
+  if (!current) {
+    return [
+      `You are on ${running}.`,
+      `Could not reach ${PLUGIN_SOURCE}, so whether that is current is unknown. Try again when you have network.`,
+    ].join("\n");
+  }
+
+  if (installed === current) return `Smith is current: ${running}.`;
+
+  const distance = ahead === null ? "" : ` — ${ahead} commit${ahead === 1 ? "" : "s"} of changes`;
+  return [
+    `You are on ${running}. Current is ${short(current)}${distance}.`,
+    "",
+    "To update, in this order:",
+    ...UPDATE_STEPS.map((step) => `  ${step}`),
+    "",
+    `Then check: ls ~/.cursor/plugins/cache/smith/smith/  →  ${short(current)}`,
+    "",
+    "Three things in this path report success without doing anything, so do not skip a step:",
+    "  - `marketplace update` prints that it indexed the plugin and moves neither copy.",
+    "  - `marketplace add` without --git-ref can put you back on the commit you already had.",
+    "  - deleting the cache directory uninstalls the plugin rather than refreshing it.",
+  ].join("\n");
+}
+
+/**
+ * What this copy is, what the repository has, and what to do about it.
+ *
+ * It installs nothing. Nothing in this plugin may run outside a review, and the reinstall is
+ * interactive anyway — what was missing was never the commands, it was knowing they were needed.
+ */
+async function cmdUpdate() {
+  const installed = installedCommit();
+  const current = remoteHead(PLUGIN_SOURCE, PLUGIN_BRANCH);
+  const ahead = installed && current && installed !== current ? await commitsAhead(PLUGIN_SOURCE, installed, current) : null;
+  console.log(updateReport({ installed, current, version: installedVersion(), ahead }));
 }
 
 // --------------------------------------------------------------------------------------------
@@ -669,6 +818,7 @@ const USAGE = `smith — Smith client
   smith review <review_id>                    print a review the conversation lost track of
   smith catalog [<entry_id>]                  list the implementation catalog, or print one entry
   smith status                                show configuration and reachability
+  smith update                                whether this plugin is current, and how to update it
 `;
 
 async function main(argv) {
@@ -689,6 +839,8 @@ async function main(argv) {
       return cmdCatalog(positional);
     case "status":
       return cmdStatus();
+    case "update":
+      return cmdUpdate();
     default:
       process.stdout.write(USAGE);
       process.exitCode = command ? 1 : 0;
@@ -704,6 +856,12 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs,
+  updateReport,
+  installedCommit,
+  installedVersion,
+  remoteHead,
+  PLUGIN_SOURCE,
+  PLUGIN_BRANCH,
   platformVersion,
   explainHttp,
   explainNetwork,

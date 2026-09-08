@@ -3954,6 +3954,101 @@ Acceptance:
 What breaks for a developer if this does not exist: they type `/smith-apply` in Cursor, get code that
 works, and no way to tell what was written or what it collided with.
 
+## Phase AA — the review starts without telling the developer what it is reviewing
+
+Read off a developer's first real session on 2026-09-08, not from a hunch. They typed
+`/smith-review`, answered the two setup questions, and the next thing that happened was
+`bin/smith plan`. It reviewed something. They were never told what.
+
+Four gaps, and they are not equally bad. In order:
+
+**The base is whatever was last fetched.** `defaultBase` in `plugin/bin/smith:86` walks
+`origin/main`, `origin/master`, `main`, `master` and takes the first that resolves. Nothing runs
+`git fetch`, and nothing reads the branch's actual upstream (`@{u}`). On a machine that last fetched
+a week ago, `origin/main` is a week old, so the diff carries every change merged since — other
+people's work, reviewed as this developer's, against rules that will fire on it. This is the one
+that produces wrong findings rather than missing context.
+
+**Nothing says what was compared.** `cmdPlan` already returns `compared_against` and
+`plugin/commands/smith-review.md` never mentions it, so the developer cannot tell whether their
+uncommitted work was reviewed or their whole branch. Both are reasonable defaults; picking one in
+silence is not.
+
+**Nothing says which project.** Correct that it does not *ask* — a key is bound to a project on the
+server, so there is nothing to choose — but a developer handed the wrong key finds out at their first
+blocked review instead of at setup.
+
+**No ticket ever reaches the review.** `smith plan --title` exists and nothing passes it, so every
+review a lead reads is untitled.
+
+The governing constraint, from the developer who asked for this: **priorizing ease of use.** So the
+answer to all four is the same shape — derive it, state it in one line, and let them correct it.
+Not a form, not a wizard, not four questions before a review starts.
+
+**Deliberately out of scope: an integration with Jira or any other ticket provider.** No API, no
+credentials, no fourth endpoint. A ticket key read off the branch name is worth having because it
+labels the review; going to fetch the ticket's contents is a product nobody asked for and a
+credential this plugin has no business holding.
+
+### [ ] AA1. Say what is being reviewed, before reviewing it
+
+Acceptance:
+
+- Before the findings, one line naming what was compared and what it holds: the developer's
+  uncommitted work, or this branch against its base, with the file count. It reads like a sentence,
+  not a summary block, and it comes from `compared_against`, which the plan already returns.
+- The developer can redirect it in their own words — "no, the whole branch" — and the agent re-runs
+  with `--base`. They never type a ref unless they want to.
+- The plan response carries the project the key belongs to, and the same line names it. A field on an
+  existing response, not a fourth endpoint.
+- A walk assertion on each: the developer was told what was compared, and was told the project.
+- `uv run pytest`, `node --test plugin/test`, both review walks in both editors.
+
+What breaks for a developer if this does not exist: they get a verdict and cannot tell whether it
+covers the change they meant.
+
+### [ ] AA2. The base is whatever was last fetched, and nobody is told
+
+Acceptance:
+
+- Before comparing, the plugin learns whether the base it is about to use is current: fetch it, or
+  read the remote ref and compare. Whichever is chosen, the developer's network is not a hard
+  dependency — offline, the review still runs and the line says the base may be stale.
+- The branch's own upstream (`@{u}`) is preferred over the guessed list when it exists. A developer
+  branching from `develop` is reviewed against `develop`.
+- The fetch does not write anything else, touches no other ref, and never modifies the working tree.
+  This runs on a developer's real repository.
+- Measured, in the notes log: build a repository whose `origin/main` is deliberately behind, run the
+  review, and record the file count before and after the fix. The number is the point — "the diff
+  carried 40 files that were not theirs" is the finding.
+- A test that the stale case is detected, and one that an unreachable remote degrades to a warning
+  rather than a failure.
+
+What breaks for a developer if this does not exist: they are shown findings on code they did not
+write, and the rules that fire on it are correct — which is worse, because there is nothing to
+argue with.
+
+### [ ] AA3. The ticket, found rather than asked for
+
+Acceptance:
+
+- The plugin derives a ticket key from the branch name (`feature/ABC-123-thing` → `ABC-123`) and
+  falls back to the commit messages on the branch. Whatever it finds becomes the review's title,
+  through the `--title` that already exists.
+- Found: it is stated in the same line as AA1's, not as a separate question.
+- Not found: **one** question, once, and "no" is a complete answer that is never asked again in that
+  session. A developer who does not use tickets must not be nagged.
+- The pattern is configurable per project, because `ABC-123` is Jira's shape and not everyone's.
+  That is project configuration, so it belongs in `projects.config` and a lead edits it — not `.env`,
+  and not a constant in the plugin.
+- No network call to any ticket system, no credentials, no new endpoint. If the review should ever
+  link to the ticket, that is a URL template a lead sets, and it is a separate task.
+- A walk assertion: a branch named for a ticket produces a review carrying that title, and a branch
+  that is not produces one question and takes no for an answer.
+
+What breaks for a developer if this does not exist: a lead reads a list of untitled reviews and
+cannot tell which piece of work each one was.
+
 ## Notes and decisions log
 - 2026-09-08 — `cursor-agent plugin marketplace update <name>` **does not fetch**. It answered
   `✓ Updated marketplace smith: 1 plugin indexed` and left the cached checkout on the commit it

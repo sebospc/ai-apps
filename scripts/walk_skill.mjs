@@ -1355,7 +1355,7 @@ const WALKS = {
   },
   "review-confirm": {
     // Reported 2026-09-08 by a developer whose `/smith-review` went straight into 32 uncommitted
-    // files: "arranco ahi mismo a hacer el review". The command used to treat uncommitted work as
+    // files without asking. The command used to treat uncommitted work as
     // obvious enough to skip the question. It is not — a review is attributed to them and lands on
     // their lead's screen — so the confirmation is now unconditional, and this walk is what reads
     // for it. A single-shot session has nobody to answer, so an agent that opened one anyway chose

@@ -4265,8 +4265,7 @@ them, and they end up on the first commit of the repository with no way to know.
 
 Reported on 2026-09-08, watching it happen: `/smith-review`, and the session went straight into 32
 uncommitted files — `smith plan --preview`, then `smith plan`, then the ticket, with no question in
-between. "arranco ahi mismo a hacer el review, porque?????? deberia esperar a que le de las
-instrucciones."
+between. It started right there, and it should have waited for instructions.
 
 The command was written that way. AA1's follow-up decided that `kind: "uncommitted"` was obvious
 enough to state and go, and only `kind: "branch"` was worth confirming. That reasoning was about the

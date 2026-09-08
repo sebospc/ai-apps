@@ -272,6 +272,13 @@ back is a regression, and `plugin/test/smith.test.js` fails if the directory exi
 
 The prefix is not decoration either: `/review` belongs to Cursor and never reaches this plugin.
 
+**Other plugins composing with this one is wanted.** A developer with a plugin that claims code
+review in its description will have it fire alongside Smith, and that is the ecosystem working, not a
+collision to rename away — the name is never what such a plugin matches on. Smith is a typed command
+and still runs; what it can lose is how the agent phrases the answer. So an assertion about prose is
+weak evidence on a machine with other plugins installed, and an assertion about what Smith did —
+which calls ran, what the verdict was — is strong evidence anywhere.
+
 `bin/smith` uses the Node standard library only. Adding a dependency means every user needs an
 install step; a few lines of `http`/`child_process` do not.
 

@@ -3922,8 +3922,16 @@ the person who follows it concludes the product is what the page describes.
 > assertions were reading for. Every number in the table below was taken with that plugin installed
 > and none of them separate "Cursor follows a command worse" from "another plugin won". Removing it
 > does not stick either: it is a user-scope plugin and Cursor restored it from the account within
-> minutes. **Re-measure before acting on any of this, and find a way to isolate the walk first — that
-> is now this task's first acceptance criterion.**
+> minutes. **Re-measure before acting on any of this.**
+>
+> And re-measure without trying to remove it. Settled with the user on 2026-09-08: a developer's own
+> plugins composing with this one is **wanted**, not a defect to engineer around. Smith is a typed
+> command and still ran — `plan`, `submit`, the verdict, the numbered findings, 15 of 18 on the clean
+> run — so what another plugin changes is how the agent *speaks*, not whether the review happens.
+> The walk's job is therefore to measure Smith's own half without asserting on prose another plugin
+> may legitimately compress. Renaming the command buys nothing: `caveman-review`'s description claims
+> "review this PR", "code review", "review the diff" and auto-triggers on pull requests, so it fires
+> on the conversation and never on our name.
 
 Z1 moved the instructions from `skills/` to `commands/` so that nothing answers a developer who did
 not type a command. That is the right product decision and it is not in question here. It cost

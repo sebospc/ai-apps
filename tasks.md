@@ -3840,7 +3840,7 @@ substituted into config files like `mcp.json` rather than read by a script. That
 somebody else, on a product whose install is one terminal command. The conversation asks; that is
 the whole mechanism.
 
-### [x] Z1. `/smith-review` is the only door
+### [x] Z1. `/smith-review` is the only door — done, commit a98cc19
 
 Acceptance:
 
@@ -3863,7 +3863,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they install a review plugin and it starts
 answering questions they did not ask it, which is how a plugin gets uninstalled.
 
-### [x] Z2. The door asks for what it needs
+### [x] Z2. The door asks for what it needs — done, commit a98cc19
 
 `smith status` already prints what is missing in prose, and `explainHttp` already turns a revoked key
 into a sentence naming the fix. Neither is reached by a developer, because the skill's error table
@@ -3894,7 +3894,7 @@ What breaks for a developer if this does not exist: their first contact with the
 told to paste a credential into a chat box, and their second is a review that fails with a message
 about a command they have never run.
 
-### [x] Z3. The README describes the product that exists
+### [x] Z3. The README describes the product that exists — done, commit a98cc19
 
 Three things in `plugin/README.md` are now wrong, and it is the file somebody reads before they trust
 this enough to install it.

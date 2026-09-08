@@ -4107,6 +4107,16 @@ What breaks for a developer if this does not exist: the review checks the code a
 never against the reason the code was written, which is the half a human reviewer actually does.
 
 ## Notes and decisions log
+- 2026-09-08 — the update problem has an official answer and it is not the route this repository
+  documented. Cursor's plugin docs: a plugin added from GitHub without going through the Marketplace
+  "stays pinned to the commit it had when you added it and won't pull new commits or releases from
+  GitHub on its own". So `cursor-agent plugin marketplace add` — the one-command install written here
+  on 2026-09-07 — is pinned **by design**, and none of what looked like broken caching was a bug. The
+  supported path for a team is Dashboard → Plugins → Team Marketplaces → Import from Repo, with
+  **Auto Refresh**, which needs the Cursor GitHub App on the repository and re-indexes on push at
+  most every ten minutes. Written into `plugin/README.md`. The user-facing half — whether an already
+  installed developer is moved forward automatically — is still not documented anywhere, so it is
+  unverified and the README does not claim it.
 - 2026-09-08 — the plugin shipped every phase from A to AA as **version `0.1.0`**, unchanged since
   the first commit. A developer asked how they are supposed to update, which is the right question:
   `marketplace update` fetches nothing, `remove` and `add` move only the index, and the copy Cursor

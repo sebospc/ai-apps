@@ -65,6 +65,27 @@ The same collision bites on `add`: if a `smith` marketplace already exists point
 the name collides, the old one wins silently, and `marketplace list` still shows the old URL after an
 `add` that printed a tick. Removing first is what makes both cases behave.
 
+#### Keeping a team up to date
+
+The `marketplace add` above is the quickest way in and it has one property worth knowing before you
+hand it to other people: **a marketplace added this way stays pinned to the commit it had when it was
+added.** Cursor's plugin documentation says so — a plugin added from GitHub without going through the
+Marketplace "stays pinned to the commit it had when you added it and won't pull new commits or
+releases from GitHub on its own". Every update then costs each developer a remove, an add and a
+reinstall, and the check below to prove it took.
+
+For a team, do it from the other side once instead:
+
+1. **Dashboard → Plugins**
+2. **Team Marketplaces → Add Marketplace → Import from Repo**
+3. **Marketplace Settings → Auto Refresh**
+
+Auto Refresh needs the Cursor GitHub App installed on the repository. With it, Cursor re-indexes on
+push, at most once every ten minutes. Developers install once and stop thinking about it.
+
+One trap in that flow: if plugins were added to the marketplace individually, Auto Refresh only
+updates the ones already there — re-import the repository URL to pick up a new one.
+
 #### From a checkout instead
 
 Only when you are changing the plugin itself, or the machine cannot reach GitHub. From the root of

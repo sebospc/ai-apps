@@ -4295,7 +4295,7 @@ a corpus, which this machine does not have, so what was run was the same session
 
 ## Phase AE — a plan is not a review
 
-### [x] AE1. A review nobody finished does not reach the lead
+### [x] AE1. A review nobody finished does not reach the lead — 54a566e
 
 Reported 2026-09-08: review #9 in a project's list, six warnings, on a branch whose only change was
 a one-line `z-index`. The same command had answered "nothing here to review" minutes earlier, which

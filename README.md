@@ -24,7 +24,7 @@ and runs on the developer's own model. **No LLM keys live here.**
 
 ```
 web/               Next.js UI: sign in, projects, reviews, one review, settings
-plugin/            the editor plugin: a skill and one Node script
+plugin/            the editor plugin: two commands and one Node script
 src/smith/
   main.py          process entry point: one app, one router per context
   container.py     composition root — the only place adapters are constructed

@@ -7,8 +7,8 @@ Two editors are supported. **Cursor is first below** because it needs one more i
 Claude Code and gets it wrong more easily. If you use Claude Code, skip to
 [Claude Code](#claude-code).
 
-Every command on this page was run on macOS before it was written down — the install sections on
-2026-09-07, the rest on 2026-08-21. The `smith`
+Every command on this page was run on macOS before it was written down — the install and command
+sections on 2026-09-07, the rest on 2026-08-21. The `smith`
 commands were run in an empty environment: nothing but `HOME`, and a PATH holding `node` and the
 system tools. What was observed and what is still an assumption is listed at the end, in
 [What was observed](#what-was-observed).
@@ -63,52 +63,51 @@ A copy, not a symlink. Cursor rejects a plugin whose target lies outside
 
 ### 2. Your first review
 
-Ask in Cursor's chat, in plain words, and give it the two things it cannot know:
+Type it:
 
-> review this change with Smith. My Smith server is https://your-smith-server and my key is smk_...
-
-Your key comes from your project lead, who issues it on the project's settings page in the Smith
-web UI.
-
-That is the whole thing. The agent reads the skill, finds the CLI inside the plugin directory, saves
-your credentials, runs the review and tells you the verdict and what to fix. You never repeat the
-server or the key: they are stored user-only in `~/.smith/config.json`, mode 600, and sent as a
-bearer token. The server keeps only an argon2 hash of the key, so nobody can read it back out.
-
-**One step, down from three.** The two that went away were putting `smith` on PATH and running
-`smith auth` yourself. Neither was ever needed: the agent reaches the CLI through the plugin's own
-directory, and it can run `auth` for you.
-
-Every review after the first is shorter:
-
-> review this change with Smith
-
-If you would rather not put a key in a chat message, run this in a terminal once and then ask for
-the review with no credentials in it:
-
-```bash
-node ~/.cursor/plugins/local/smith/bin/smith auth --url https://your-smith-server --key smk_...
+```
+/smith-review
 ```
 
-Two steps instead of one, same result.
+It asks for your Smith server and your API key the first time, and saves them. You never type them
+again, in this repository or any other. Your key comes from your project lead, who issues it on the
+project's settings page in the Smith web UI.
+
+That is the whole thing. The agent finds the CLI inside the plugin directory, runs the review and
+tells you the verdict and what to fix. The credentials are stored user-only in
+`~/.smith/config.json`, mode 600, and sent as a bearer token. The server keeps only an argon2 hash
+of the key, so nobody can read it back out.
+
+**Nothing else in this plugin runs on its own.** Ask for a code review in your own words and you get
+whatever your editor normally does — this plugin stays out of it until you type the command. That is
+deliberate: a review tool that answers questions nobody asked it is a review tool people uninstall.
+
+The other command is `/smith-apply`, which builds a feature from Smith's implementation catalog. It
+needs a server with the catalog on it; against one without, it answers `Not Found`.
 
 ### 3. When it does not answer
 
-There is no `/smith` command in Cursor and there is not meant to be. Cursor gives a plugin skill no
-name and no namespace, so the agent picks it from its description: any request that mentions Smith
-and a review reaches it.
-
 **Do not type `/review`.** That one belongs to Cursor. It answers with a menu of `/review-bugbot`
-and `/review-security` and never reaches this plugin.
+and `/review-security` and never reaches this plugin. The command carries the `smith-` prefix for
+exactly that reason.
 
-If the agent says it cannot find Smith, check the install landed in the right shape:
+If `/smith-review` is not in the list, the install did not land. Check its shape:
 
 ```bash
-ls ~/.cursor/plugins/local/smith
+ls ~/.cursor/plugins/local/smith     # a checkout install
 ```
 
-You should see `bin`, `skills`, `plugin.json`. If you also see `plugin`, the nested copy happened:
-run the three install lines again, all of them.
+You should see `bin`, `commands`, `plugin.json`. If you also see `plugin`, the nested copy happened:
+run the three install lines again, all of them. On a marketplace install, re-index instead:
+
+```bash
+cursor-agent plugin marketplace update smith
+```
+
+This plugin ships **commands and no skills**, on purpose. A skill sits in Cursor's "Agent Decides"
+list and is matched against what a developer types, which is how a review plugin ends up answering
+questions about something else. If you ask for a review in your own words and nothing from Smith
+happens, that is the design working, not a broken install.
 
 ## Claude Code
 
@@ -119,7 +118,7 @@ claude plugin marketplace add https://github.com/sebospc/ai-apps.git
 claude plugin install smith@smith
 ```
 
-Then ask for a review with `/smith:review`.
+Then type `/smith-review`. It asks for your server and key the first time, and saves them.
 
 Give it the full `https://` URL, not the `owner/repo` shorthand. The shorthand clones over SSH, so on
 a machine with no GitHub key it fails on a repository that is public and that `git clone` would have
@@ -207,7 +206,7 @@ Observed:
   `output/first-review-cursor-2026-08-21.txt`.
 - **The agent reaches the CLI through the plugin directory even when `smith` is on PATH.** Every
   command in that run was `node ~/.cursor/plugins/local/smith/bin/smith ...`, with a working `smith`
-  sitting on PATH the whole time. It reads the path out of the skill; it does not go looking.
+  sitting on PATH the whole time. It reads the path out of the command; it does not go looking.
 - **That conversation is asserted, not just read.** `node scripts/walk_skill.mjs cursor` and
   `node scripts/walk_skill.mjs claude` run the same session in each editor, with credentials already
   saved, and check the same twelve things about what the developer was shown. Twelve green in both,
@@ -215,14 +214,18 @@ Observed:
 - **The whole CLI works from a plain shell.** `auth`, `status`, `plan`, `plan --base`, `submit`,
   `respond` and `review` were each run against a live server in a shell with an empty environment,
   and the exit codes documented above are the ones they returned.
-- **A plugin skill reaches the Cursor agent as a path and a description**, with no name and no
-  namespace. That is why Cursor has no `/smith:review`. Asked to print every skill line mentioning
-  Smith, the agent printed that line with the plugin installed and `NO SMITH ENTRY` without it.
+- **A plugin command is typed, in both editors.** Measured 2026-09-07 against a probe plugin: a
+  command file at `commands/smith-review.md` answered to `/smith-review` in Claude Code, and to the
+  namespaced `/probe:smith-review` as well. The older finding here — that Cursor gives a plugin skill
+  no name, so selection is by description alone — was true when it was measured in August and is not
+  true now: Cursor's plugin reference documents both a `commands/` directory and `/skill-name`
+  invocation. That is why this plugin ships commands and deleted its skills.
 - **`/review` is Cursor's own.** Typed with this plugin installed, it answers "Which review should I
-  run?" and offers `/review-bugbot` and `/review-security`. This skill is not among them.
+  run?" and offers `/review-bugbot` and `/review-security`. Nothing of this plugin is among them,
+  which is why its command is `/smith-review`.
 - **Cursor rejects a symlink** pointing outside `~/.cursor/plugins/local`. The same directory loaded
   nothing when symlinked and loaded when copied in.
-- **`--plugin-dir <checkout>/plugin` loads the skill straight from a checkout**, in both editors,
+- **`--plugin-dir <checkout>/plugin` loads the plugin straight from a checkout**, in both editors,
   with no copy.
 - **The PATH line is executed by the suite, not only written down here.** `node --test plugin/test`
   reads that block out of this file, runs it against a throwaway `node`, and fails if the `smith` it
@@ -239,7 +242,7 @@ Observed:
 - **A copy in `~/.cursor/plugins/local` is loaded as well as the one `--plugin-dir` names**, and the
   agent picks whichever skill it reads first. A stale install reviews with a stale CLI.
 - **A manifest `variables` schema cannot carry the server URL or the API key.** A throwaway plugin
-  declaring `PROBE_URL` and `PROBE_KEY` loaded, and then the skill file still read
+  declaring `PROBE_URL` and `PROBE_KEY` loaded, and then the command file still read
   `MARKER_PROBE_URL=${PROBE_URL}` when the agent opened it, `env` in the agent's shell had no
   `PROBE_*`, and `${CURSOR_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_ROOT}` came back literal too. The
   loader substitutes variables into the MCP server configuration and nowhere else, and a skill

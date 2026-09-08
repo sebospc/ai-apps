@@ -3840,7 +3840,7 @@ substituted into config files like `mcp.json` rather than read by a script. That
 somebody else, on a product whose install is one terminal command. The conversation asks; that is
 the whole mechanism.
 
-### [ ] Z1. `/smith-review` is the only door
+### [x] Z1. `/smith-review` is the only door
 
 Acceptance:
 
@@ -3863,7 +3863,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they install a review plugin and it starts
 answering questions they did not ask it, which is how a plugin gets uninstalled.
 
-### [ ] Z2. The door asks for what it needs
+### [x] Z2. The door asks for what it needs
 
 `smith status` already prints what is missing in prose, and `explainHttp` already turns a revoked key
 into a sentence naming the fix. Neither is reached by a developer, because the skill's error table
@@ -3894,7 +3894,7 @@ What breaks for a developer if this does not exist: their first contact with the
 told to paste a credential into a chat box, and their second is a review that fails with a message
 about a command they have never run.
 
-### [ ] Z3. The README describes the product that exists
+### [x] Z3. The README describes the product that exists
 
 Three things in `plugin/README.md` are now wrong, and it is the file somebody reads before they trust
 this enough to install it.
@@ -3913,7 +3913,87 @@ Acceptance:
 What breaks for a developer if this does not exist: the documentation teaches the old install, and
 the person who follows it concludes the product is what the page describes.
 
+### [ ] Z4. Cursor follows a command worse than it followed a skill, and apply pays for it
+
+Z1 moved the instructions from `skills/` to `commands/` so that nothing answers a developer who did
+not type a command. That is the right product decision and it is not in question here. It cost
+something, measured rather than suspected:
+
+| what the agent read | `node scripts/walk_skill.mjs cursor apply` |
+|---|---|
+| `skills/apply/SKILL.md`, asked in words | **27 passed, 0 failed** |
+| `commands/smith-apply.md`, typed | **14 passed, 13 failed** (twice) |
+| a thin command pointing at `instructions/apply.md` | **15 passed, 12 failed** |
+
+The baseline was re-run on a worktree at the pre-change commit, so it is this machine on this day and
+not a number from a previous phase. The regression reproduced twice. The third row was an attempt at
+a fix — a door that sends the agent to read the procedure off disk, which is the shape Cursor used
+for skills — and it was **worse**: on that run the agent did not even read the catalog.
+
+`claude apply` is **27 passed, 0 failed** with the same command file, so this is Cursor's handling of
+a command and not the instructions being wrong.
+
+What the failures look like: the agent does the work — one run wrote 10 files and its own summary
+says it ran the Smith review — and then reports in three bullet points, naming no path, writing no
+specs document, and never mentioning the collision it worked around. The checks that fail are the
+ones that read what the developer was *told*.
+
+Acceptance:
+
+- Find out what Cursor actually delivers to the agent for a command versus a skill, by reading the
+  session rather than reasoning about it: the `apply` walk transcript records every tool call, so
+  compare a green skill run against a red command run and say what is different.
+- Whatever the fix is, it may not reintroduce a `skills/` directory. That is the one thing Z1 bought
+  and `plugin/test` fails if it comes back.
+- Green is `cursor apply` back at 27, with `claude apply` unchanged and every review walk still
+  green. A partial recovery is a result — write the number.
+- If the conclusion is that Cursor cannot carry a procedure this long in a command, that is the
+  finding, and the honest options go in the notes log with what each costs. Do not narrow the walk's
+  assertions to fit the behaviour.
+
+What breaks for a developer if this does not exist: they type `/smith-apply` in Cursor, get code that
+works, and no way to tell what was written or what it collided with.
+
 ## Notes and decisions log
+- 2026-09-08 — Z1 shipped with a **measured regression**, recorded rather than discovered later. The
+  full table is in Z4. Short version: `cursor apply` fell from 27/0 to 14/13 when the instructions
+  moved from `skills/` to `commands/`, reproduced twice, with the baseline re-run on a worktree at
+  the pre-change commit so it is the same machine and the same day. `claude apply` is unchanged at
+  27/0 and every review walk is green in both editors, so the trade was taken deliberately: the
+  requirement was that nothing answers a developer who did not type a command, apply does not work
+  against the deployed server anyway (no catalog on it), and review is the half being rolled out.
+- 2026-09-08 — the attempted fix for that regression made it worse and is not in the tree. A thin
+  command pointing at `instructions/apply.md`, which is the shape Cursor used for a skill — it hands
+  the agent a path and the agent reads it — measured **15/12**, and on that run the agent did not
+  read the catalog at all. Reverted to the full body inline. Worth knowing before someone tries it
+  again as the obvious idea.
+- 2026-09-07 — Z1 settled the question its own acceptance left open: the skills are **deleted**, not
+  narrowed. A narrowed description is still an entry in Cursor's "Agent Decides" list, so it is still
+  matched against what a developer types and the only thing a narrower wording buys is a smaller
+  chance of firing. The instructions moved into `plugin/commands/*.md` whole. `plugin/test` now fails
+  if `plugin/skills/` exists at all, which is the cheap check that this does not come back.
+- 2026-09-07 — Z1 measured what an editor does with a command file, rather than assuming it, because
+  the assumption in `README.md` was wrong. A probe plugin with `commands/smith-review.md` answered to
+  both `/smith-review` and the namespaced `/probe:smith-review` in Claude Code, and the `review` walk
+  then passed 15/15 in Cursor typing `/smith-review`. The old note — Cursor gives a plugin skill no
+  name, so selection is by description — was true in August and is not true now.
+- 2026-09-07 — the `review-unasked` walk cost two red runs before it read the right thing, and both
+  failures were the assertion rather than the product. The corpus this walk builds from contains a
+  client package called `co.smith.*`, so "the agent never says Smith" matched a `git checkout --`
+  path on the first run and a package name in honest prose on the second. **The bare product name is
+  not usable as a signal against this corpus.** What it reads now is the one thing only the plugin
+  can produce: a verdict line opening `blocked` or `clear`. Trap worth remembering for any future
+  assertion about what an agent said.
+- 2026-09-07 — the first `cursor apply` run after the conversion failed with the session writing
+  nothing, and the cause was not the change: Cursor loads every plugin under
+  `~/.cursor/plugins/local` **as well as** the one `--plugin-dir` names, and a copy installed there
+  by hand days earlier still shipped `skills/`. The agent read the stale skill. Removing that install
+  fixed it. A walk on this machine is only evidence about the checkout if nothing is installed
+  locally under that directory.
+- 2026-09-07 — Z2's walk found `SMITH_HOME` is the configuration directory itself, not a home with
+  `.smith` inside it (`bin/smith::configPath`). The first version of `configLeftBehind` looked one
+  level too deep and read every run as "nothing was saved", which is a check that would have gone
+  green the day the feature broke. Read the path out of the CLI rather than guessing its shape.
 
 - 2026-09-04 — W4 read all 9 `modelservice-remove-in-loop` sites against their source and **none of
   them show the shape**, so the rule is left exactly as it was, as the task allows. Every one removes

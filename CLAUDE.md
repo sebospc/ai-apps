@@ -258,14 +258,26 @@ Rules that hold everywhere:
 
 ## The plugin
 
-`plugin/` is the whole client surface. It ships a skill and one Node script — **no hooks, no status
+`plugin/` is the whole client surface. It ships two commands and one Node script — **no hooks, no status
 line, no background monitors, no state files**. The previous version wired a status-line badge and a
 `UserPromptSubmit` hook; a stale flag file left a review permanently pinned in the user's status
 line and the plugin had to be uninstalled. Nothing in this plugin may run between reviews. If a
 feature seems to need one, it does not.
 
+**Commands, never skills.** A skill sits in Cursor's "Agent Decides" list and is matched against
+whatever a developer types, so the review skill's description — which ended "or mentions Smith" —
+answered people who never asked for it. The two entry points are `/smith-review` and `/smith-apply`,
+they are typed, and when nobody types one this plugin does nothing at all. `plugin/skills/` coming
+back is a regression, and `plugin/test/smith.test.js` fails if the directory exists.
+
+The prefix is not decoration either: `/review` belongs to Cursor and never reaches this plugin.
+
 `bin/smith` uses the Node standard library only. Adding a dependency means every user needs an
 install step; a few lines of `http`/`child_process` do not.
+
+Credentials are asked for in the conversation, by the command, on the first run and again when the
+server stops accepting them. Nothing ships configured: there is no default server, no default key
+and no default user, and `~/.smith/config.json` is the only file this plugin ever writes.
 
 ## The web UI
 
@@ -338,7 +350,7 @@ SMITH_REFRESH_BASELINE=1 uv run pytest -k baseline -s   # re-pin what the rulese
 SMITH_REFRESH_BASELINE=1 uv run pytest -k analyzer_precision -s  # re-pin what the analyzers catch
 node --test plugin/test                         # plugin CLI tests
 node scripts/rehearse.mjs                       # the finding lifecycle, end to end (needs the API up)
-node scripts/walk_skill.mjs [claude|cursor]     # an agent walks the skill in a real session (needs the API up)
+node scripts/walk_skill.mjs [claude|cursor] [walk]  # an agent walks a command in a real session (needs the API up)
 uv run python scripts/seed_catalog.py           # load catalog/*.yaml into the catalog table
 uv run alembic upgrade head                     # schema (bootstrap does this for you)
 uv run uvicorn smith.main:app --reload          # API on :8000

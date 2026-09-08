@@ -1,6 +1,6 @@
 ---
-name: apply
-description: Build a feature into this SAP Commerce project from Smith's implementation catalog. Use when the user asks to build, add or implement a feature — a cost center selector, an account summary, a duplicate order guard — or asks what Smith can build for them. Not for checking code that is already written.
+name: smith-apply
+description: Build a feature into this SAP Commerce project from Smith's implementation catalog. Runs only when the developer types this command.
 ---
 
 # Smith apply
@@ -33,8 +33,8 @@ smith catalog
 ```
 
 Claude Code puts this plugin's `bin/` on PATH by itself; Cursor does not. When the command is not
-found, run `node <plugin>/bin/smith catalog` instead, where `<plugin>` is the directory two levels
-above this file, the one holding `bin/` and `skills/`. That path always works, so it is the answer
+found, run `node <plugin>/bin/smith catalog` instead, where `<plugin>` is the directory one level
+above this file, the one holding `bin/` and `commands/`. That path always works, so it is the answer
 and not a workaround: say nothing about it and never suggest installing anything.
 
 You get every entry as an id, a title and a paragraph. Match the developer's words against the
@@ -167,7 +167,7 @@ starting with `smith:`. Say it in your own words, in one line, and stop.
 
 | The sentence contains | What you say, and what you do |
 | --- | --- |
-| `not configured` | Ask for their server URL and API key, then run `smith auth --url <server> --key <key>` yourself. The key comes from their project lead. Never invent one. |
+| `not configured` | Ask for their server URL and API key, one at a time, then run `smith auth --url <server> --key <key>` yourself. Their project lead issues the key; never invent one and never echo it back. Ask once — a later run finds it saved. |
 | `nothing is listening at` | The Smith server is not answering, so the catalog cannot be read. Say that and stop; retrying will not help. |
 | `may have been revoked` | Their API key no longer works, and their project lead issues a new one. Do not retry and do not go looking for another key. |
 | `no catalog entry with that id` | You picked the id, so a wrong one is your mistake. Read the list again, pick from it, and say nothing about it to the developer. |
@@ -187,5 +187,5 @@ starting with `smith:`. Say it in your own words, in one line, and stop.
 - Never overwrite an extension or an item type the project already has.
 - Never send the project's code, or their answers, anywhere. Nothing about this session is recorded,
   and that is a promise the product makes.
-- Never review the code you just wrote. That is the `review` skill and a different conversation; if
+- Never review the code you just wrote. That is `/smith-review` and a different conversation; if
   they ask for one, they get one there.

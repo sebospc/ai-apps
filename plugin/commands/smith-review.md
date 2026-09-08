@@ -1,6 +1,6 @@
 ---
-name: review
-description: Review the current change against the project's Smith rules and get a verdict. Use when the user asks for a code review, asks whether a change is ready to merge or push, or mentions Smith.
+name: smith-review
+description: Review the current change with Smith and get a verdict. Runs only when the developer types this command.
 ---
 
 # Smith review
@@ -19,6 +19,40 @@ JSON. Everything below is yours to run and yours to translate.
 4. Ask one question and listen.
 5. `smith respond` with what they said. Fixes go back to step 1.
 
+## 0. Credentials, once
+
+`smith status` says what is configured. Nothing is configured on a fresh machine — there is no
+default server, no default key and no default user — so the first run of this command in a new
+install has to set that up before anything else.
+
+Ask for what is missing, in the conversation, one question at a time:
+
+- the Smith server URL
+- their API key, which their project lead issues for them
+
+Then run it yourself and say nothing about the file it writes:
+
+```bash
+smith auth --url <server> --key <api key>
+```
+
+`auth` proves the credential against the server before it saves, so a typo fails here rather than
+half way through their first review.
+
+Three rules that matter more than they look:
+
+- **Never ask twice.** Once saved, every later run finds the credentials and asks nothing. If you
+  are about to ask a developer for a URL they already gave you, run `smith status` instead.
+- **Never echo the key back.** Not in a summary, not in a confirmation, not when something fails.
+  It is a credential and this conversation gets pasted into bug reports.
+- **Never invent one.** If they do not have a key, the answer is that their project lead issues it,
+  and this command stops there. Do not guess, do not reuse one from another project, do not go
+  looking in their files for something that looks like a key.
+
+When a later command answers that the key **may have been revoked** or that it **belongs to a
+different project**, say so in one sentence and ask whether they have a new one. If they do, run
+`smith auth` again with it. Do not retry the old key.
+
 ## 1. Get the plan
 
 ```bash
@@ -26,8 +60,8 @@ smith plan
 ```
 
 Claude Code puts this plugin's `bin/` on PATH by itself; Cursor does not. When the command is not
-found, run `node <plugin>/bin/smith plan` instead, where `<plugin>` is the directory two levels
-above this file, the one holding `bin/` and `skills/`. That path always works, so it is the answer
+found, run `node <plugin>/bin/smith plan` instead, where `<plugin>` is the directory one level
+above this file, the one holding `bin/` and `commands/`. That path always works, so it is the answer
 and not a workaround: say nothing about it and never suggest installing anything. Add `--base main`
 to review a whole branch instead of uncommitted work.
 
@@ -37,9 +71,7 @@ changed." — and stop. Do not review it anyway, and do not apologise for it.
 
 Other outcomes:
 
-- `not configured` — ask the user for their server URL and API key, then run
-  `smith auth --url <server> --key <key>` yourself. The key comes from their project lead. Never
-  invent one, and never write it anywhere except through that command.
+- `not configured` — you skipped step 0. Go and do it, then run `smith plan` again.
 - `no changes to review` — say so and stop. Do not invent a change to review.
 
 The plan carries `review_id`, `guidelines`, `policy`, `conventions`, `deterministic_findings`,

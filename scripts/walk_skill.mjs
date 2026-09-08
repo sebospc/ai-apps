@@ -2,7 +2,7 @@
  * An agent walks the skill, and we read what the developer would have seen.
  *
  * `rehearse.mjs` proves the CLI and the server agree. This proves the other half: that an agent
- * handed nothing but `skills/review/SKILL.md` runs the right commands and turns the answer into a
+ * handed nothing but `commands/smith-review.md` runs the right commands and turns the answer into a
  * conversation — a verdict, then numbered findings — without ever showing the developer an id, a
  * fingerprint, a piece of JSON or a command to type. That half has no unit test and cannot have
  * one: the only way to know is to run a real session and read the transcript.
@@ -21,7 +21,8 @@
  * Both editors are walked by the same assertions on purpose. A skill that reads well in one and
  * leaks a review id in the other is a skill that is only half written, and the two sessions differ
  * in everything except what the developer is allowed to see: Claude Code namespaces the skill and
- * is invoked with `/smith:review`, Cursor gives it no name at all and has to be asked in words.
+ * is typed as `/smith-review` in both editors: the plugin ships commands, not skills, so nothing
+ * of it reaches a developer who did not type one.
  *
  * The session runs on the host's own editor login and therefore inherits whatever global
  * configuration the host has. That is also what a developer's session looks like, so the walk is
@@ -42,6 +43,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -208,6 +210,24 @@ function pathWithoutForeignSmith() {
 }
 
 /** Run one session in a real editor and return its message stream. */
+/**
+ * What the session left in `~/.smith/config.json`, read before the throwaway home is removed.
+ *
+ * Mode is carried alongside the values because the file holds a credential: a walk that proved the
+ * key was saved and not that it was saved privately would pass on a world-readable one.
+ */
+function configLeftBehind(home) {
+  // `SMITH_HOME` is the directory itself, not a home with `.smith` inside it — see `configPath()`
+  // in bin/smith. Getting this wrong reads every run as "nothing was saved".
+  const file = join(home, "config.json");
+  try {
+    const stored = JSON.parse(readFileSync(file, "utf8"));
+    return { exists: true, mode: statSync(file).mode & 0o777, url: stored.url ?? "", key: stored.key ?? "" };
+  } catch {
+    return { exists: false, mode: 0, url: "", key: "" };
+  }
+}
+
 function runSession(editor, args, repo, home) {
   const env = { ...process.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
   // The plugin is not on PATH in either editor after a real install, so this is the developer's
@@ -996,6 +1016,56 @@ async function applyChecks({ repo, text, commands, key }) {
  * the point rather than a limitation: an agent that cannot know what to build must stop and ask,
  * and one that writes a schema out of its own head instead is the defect this reads for.
  */
+/**
+ * The walk that must find nothing.
+ *
+ * The plugin ships commands and no skills precisely so that a developer who did not type one is not
+ * touched by it. That is a claim about absence, and absence is only ever proved by looking: the
+ * session is handed the same plugin, the same repository and a request that would have matched the
+ * old skill's description word for word.
+ */
+function reviewUnaskedChecks({ text, commands }) {
+  const reached = commands.filter((c) => /\bsmith\b/.test(c) && !/smithers/i.test(c));
+  check("no smith command ran when the developer did not type one", reached.length === 0, reached.join(" ; ").slice(0, 300));
+  // The agent is free to review the change on its own — that is ordinary editor behaviour and not
+  // this plugin. What it must not do is produce the one thing only the plugin can: a verdict from
+  // the server, which `commands/smith-review.md` tells it to open with as `blocked` or `clear`.
+  //
+  // The bare word "Smith" is not the check and cannot be. The corpus this walk builds from holds a
+  // client package called `co.smith.*`, so every honest sentence about that file matches it — the
+  // first two runs failed on a `git checkout --` path and then on a package name.
+  const verdictLine = text
+    .split("\n")
+    .find((line) => /^\s*[*_#>-]*\s*(blocked|clear)\b/i.test(line));
+  check("the agent produced no Smith verdict", !verdictLine, verdictLine ?? "");
+}
+
+/**
+ * The first run on a new machine, where nothing is configured.
+ *
+ * `seedCredentials: false`, so `~/.smith/config.json` does not exist when the session starts. A
+ * headless session has nobody to answer a question, so the developer says everything at once — the
+ * same shape the `apply` walk uses — and what is read is whether the agent ran `auth` itself rather
+ * than telling the developer to run it.
+ */
+function reviewSetupChecks({ text, commands, credentials, key }) {
+  check("the agent ran auth itself", commands.some((c) => /\bauth\b/.test(c)), commands.join(" ; ").slice(0, 300));
+  check("the credentials were saved", credentials.exists, JSON.stringify(credentials));
+  check("the key is what the developer gave, not one the agent invented", credentials.key === key, credentials.key.slice(0, 12));
+  // A credential group- or world-readable is the defect this check exists for, and mode is the only
+  // way to see it: the file's contents look identical either way.
+  check("the saved file is private", credentials.mode === 0o600, `mode ${credentials.mode.toString(8)}`);
+  // The transcript is what gets pasted into a bug report. The key may be asked for and must not be
+  // repeated back once it is saved.
+  const echoed = text.split("\n").filter((line) => line.includes(key));
+  check("the key was not echoed back to the developer", echoed.length === 0, echoed.join(" / ").slice(0, 200));
+  check(
+    "the developer was never told to run a command themselves",
+    !/\bsmith auth\b/.test(text),
+    firstMatch(text, /^.*smith auth.*$/im) || ""
+  );
+}
+
 function applyAskChecks({ repo, text, commands }) {
   check(
     "the agent read the catalog before choosing",
@@ -1084,10 +1154,10 @@ const APPLY_SYMPTOM =
 
 const WALKS = {
   review: {
-    // Claude Code namespaces a plugin skill, so the developer types the command. Cursor gives it no
-    // name at all: the agent picks it from its description, so the walk asks the way the README
-    // tells a developer to ask.
-    prompts: { claude: "/smith:review", cursor: "review this change with Smith" },
+    // One door in both editors. The plugin ships commands rather than skills precisely so that
+    // nothing answers a developer who did not type this, so the walk types it — asking in words
+    // is what must now reach nothing, and `review-unasked` is the walk that reads for that.
+    prompts: { claude: "/smith-review", cursor: "/smith-review" },
     tools: "Bash,Read,Glob,Grep",
     transcript: "rehearsal",
     setup: () => {
@@ -1098,6 +1168,41 @@ const WALKS = {
     forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
     checks: reviewChecks,
   },
+  "review-unasked": {
+    // The words the deleted skill's description matched on, typed as a developer would type them.
+    // Before this phase they reached the review skill; now they must reach nothing at all.
+    prompts: {
+      claude: "can you review this change and tell me if it is ready to push?",
+      cursor: "can you review this change and tell me if it is ready to push?",
+    },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-unasked",
+    setup: () => {
+      const { repo, target } = buildRepo("smith-walk-repo-");
+      introduceProblems(repo, target);
+      return { repo, about: `change in ${target}` };
+    },
+    forbidden: FORBIDDEN,
+    checks: reviewUnaskedChecks,
+  },
+  "review-setup": {
+    // A first run on a new machine. The answers are in the prompt because a headless session has
+    // nobody to ask, and what is measured is whether the agent saves them itself.
+    prompts: {
+      claude: ({ api, key }) => `/smith-review my Smith server is ${api} and my key is ${key}`,
+      cursor: ({ api, key }) => `/smith-review my Smith server is ${api} and my key is ${key}`,
+    },
+    seedCredentials: false,
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-setup",
+    setup: () => {
+      const { repo, target } = buildRepo("smith-walk-repo-");
+      introduceProblems(repo, target);
+      return { repo, about: `change in ${target}` };
+    },
+    forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
+    checks: reviewSetupChecks,
+  },
   apply: {
     // The developer's request and the answers to the entry's three questions in one message. A
     // headless session has nobody to answer a question, and the skill is right to ask one and wait
@@ -1105,8 +1210,8 @@ const WALKS = {
     // walk plays a developer who says everything up front, which is the only shape of this
     // conversation a single-shot session can carry to code.
     prompts: {
-      claude: `/smith:apply ${APPLY_REQUEST}`,
-      cursor: `with Smith, ${APPLY_REQUEST}`,
+      claude: `/smith-apply ${APPLY_REQUEST}`,
+      cursor: `/smith-apply ${APPLY_REQUEST}`,
     },
     tools: "Bash,Read,Glob,Grep,Write,Edit",
     transcript: "apply-walk",
@@ -1120,8 +1225,8 @@ const WALKS = {
     // `apply` walk reach code are handed over here on purpose: an agent that writes anyway had
     // every chance not to, and the empty checkout afterwards is the measurement.
     prompts: {
-      claude: `/smith:apply ${APPLY_SYMPTOM}`,
-      cursor: `with Smith, ${APPLY_SYMPTOM}`,
+      claude: `/smith-apply ${APPLY_SYMPTOM}`,
+      cursor: `/smith-apply ${APPLY_SYMPTOM}`,
     },
     tools: "Bash,Read,Glob,Grep,Write,Edit",
     transcript: "apply-ask",
@@ -1465,21 +1570,30 @@ async function main() {
     await walk.before?.(key);
     const { repo, about } = walk.setup();
     const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
-    execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
-      env: { ...process.env, SMITH_HOME: home },
-      stdio: "ignore",
-    });
+    // Most walks are about what happens after setup, so they start configured. A walk that reads the
+    // setup itself says so, and then the session has to do what a developer's first one does.
+    if (walk.seedCredentials !== false) {
+      execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
+        env: { ...process.env, SMITH_HOME: home },
+        stdio: "ignore",
+      });
+    }
 
     editor.beforeSession?.();
-    const prompt = walk.prompts[name];
+    // Most prompts are fixed strings. A walk that reads the setup conversation needs the server and
+    // the key this run created, so its prompt is a function and gets them.
+    const declared = walk.prompts[name];
+    const prompt = typeof declared === "function" ? declared({ api: API, key }) : declared;
     const args = editor.args(prompt, walk.tools);
     console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
     console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
 
     let messages;
+    let credentials;
     try {
       messages = runSession(editor, args, repo, home);
     } finally {
+      credentials = configLeftBehind(home);
       rmSync(home, { recursive: true, force: true });
     }
 
@@ -1495,7 +1609,7 @@ async function main() {
     check("the agent said something to the developer", text.length > 0);
     // The repository is read by the checks, so it outlives the session and is removed after them.
     try {
-      await walk.checks({ repo, text, commands, key });
+      await walk.checks({ repo, text, commands, key, credentials });
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

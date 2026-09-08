@@ -16,12 +16,12 @@ const { execFileSync } = require("child_process");
 
 const smith = require("../bin/smith");
 
-// Every skill the plugin ships. The shape checks below hold for all of them: one that leaks a
-// Claude-only variable or points at a CLI that moved is a skill that fails in silence.
-const SKILLS = fs
-  .readdirSync(path.join(__dirname, "../skills"), { withFileTypes: true })
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name);
+// Every command the plugin ships. The shape checks below hold for all of them: one that leaks a
+// Claude-only variable or points at a CLI that moved is a command that fails in silence.
+const COMMANDS = fs
+  .readdirSync(path.join(__dirname, "../commands"))
+  .filter((entry) => entry.endsWith(".md"))
+  .map((entry) => entry.replace(/\.md$/, ""));
 
 function tempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -419,7 +419,7 @@ test("a change with nothing wrong exits clean, so it cannot read as a failure", 
 test("the sentences SKILL.md tells the agent to look for are the ones smith prints", () => {
   // The table in the skill is the whole handling of a failure: the agent matches on these phrases.
   // Reword an error without it and the agent silently stops recognising what went wrong.
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
+  const skill = fs.readFileSync(path.join(__dirname, "../commands/smith-review.md"), "utf8");
   const config = { url: "https://smith.example", key: "k" };
   const printed = [
     smith.explainHttp(401, { detail: "invalid API key" }, "", "", config),
@@ -434,7 +434,7 @@ test("the sentences SKILL.md tells the agent to look for are the ones smith prin
     "belongs to a different project",
     "only a project lead",
   ]) {
-    assert.ok(skill.includes(phrase), `SKILL.md no longer names "${phrase}"`);
+    assert.ok(skill.includes(phrase), `smith-review.md no longer names "${phrase}"`);
     assert.ok(
       printed.some((message) => message.includes(phrase)),
       `smith no longer prints "${phrase}"`
@@ -442,16 +442,16 @@ test("the sentences SKILL.md tells the agent to look for are the ones smith prin
   }
 });
 
-test("the skill teaches the agent no vocabulary the developer would have to learn", () => {
+test("the command teaches the agent no vocabulary the developer would have to learn", () => {
   // The agent says back whatever words the skill uses. A word in backticks is a wire field it reads;
   // the same word in prose is a word it repeats at someone who has never heard of this product.
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
+  const skill = fs.readFileSync(path.join(__dirname, "../commands/smith-review.md"), "utf8");
   // Everything up to "## Never": that closing section names these words in order to forbid them.
   const prose = skill
     .slice(0, skill.indexOf("## Never"))
     .replace(/```[\s\S]*?```/g, "")
     .replace(/`[^`\n]*`/g, "");
-  assert.ok(skill.includes("## Never"), "the skill lost the section that forbids our vocabulary");
+  assert.ok(skill.includes("## Never"), "the command lost the section that forbids our vocabulary");
   for (const word of ["disposition", "fingerprint", "suppress", "scoped"]) {
     const found = prose.split("\n").find((line) => line.toLowerCase().includes(word));
     assert.equal(found, undefined, `SKILL.md explains "${word}" in prose: ${found}`);
@@ -506,9 +506,13 @@ test("both editor manifests agree and carry a name Cursor's loader accepts", () 
     assert.deepEqual(manifest, manifests[0]);
   }
 
-  // No `skills` key, so Cursor falls back to scanning this directory.
-  assert.ok(!("skills" in manifests[0]));
-  assert.ok(fs.existsSync(path.join(pluginRoot, "skills/review/SKILL.md")));
+  // No `commands` key, so both editors fall back to scanning this directory.
+  assert.ok(!("commands" in manifests[0]));
+  assert.ok(fs.existsSync(path.join(pluginRoot, "commands/smith-review.md")));
+
+  // The plugin must volunteer nothing. A skills/ directory puts an entry in Cursor's "Agent
+  // Decides" list, which is how this plugin used to answer developers who never asked for it.
+  assert.ok(!fs.existsSync(path.join(pluginRoot, "skills")), "skills/ is back: the plugin would auto-fire again");
 });
 
 test("catalog lists the entries, and one id fetches that entry in full", async () => {
@@ -554,31 +558,36 @@ test("an unknown entry says to read the catalog again, not that a review is miss
   assert.match(smith.explainHttp(404, null, "", "", config, "/v1/reviews/7"), /no such review/);
 });
 
-// Cursor hands the agent this skill's path and its description, and nothing else — no name, no
-// namespace, no slash command. The description is therefore the only handle a developer's words can
-// catch, and README tells them to catch it by naming Smith. Drop the word and the skill goes dark.
-function describedBy(name) {
-  const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
-  const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/);
-  assert.ok(frontmatter, `${name}/SKILL.md must open with frontmatter`);
+// A command is reached by being typed, so its frontmatter `name` is the whole handle.
+function frontmatterOf(name) {
+  const command = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8");
+  const frontmatter = command.match(/^---\n([\s\S]*?)\n---/);
+  assert.ok(frontmatter, `${name}.md must open with frontmatter`);
+  const declared = frontmatter[1].match(/^name:\s*(.+)$/m);
   const description = frontmatter[1].match(/^description:\s*(.+)$/m);
+  assert.ok(declared, `${name} frontmatter must carry a name`);
   assert.ok(description, `${name} frontmatter must carry a description`);
-  return description[1];
+  return { name: declared[1].trim(), description: description[1].trim() };
 }
 
-test("the skill description carries the words Cursor selects it by", () => {
-  const review = describedBy("review");
-  assert.match(review, /Smith/);
-  assert.match(review, /review/i);
+test("every command is named for the plugin, so a developer types one door", () => {
+  // The collision that started this: Cursor ships its own /review, and a command called `review`
+  // never reaches this plugin. Every name carries the prefix, and the file name is the name.
+  for (const file of COMMANDS) {
+    const { name } = frontmatterOf(file);
+    assert.equal(name, file, `${file}.md declares a different name than its file`);
+    assert.match(name, /^smith-/, `${file} does not carry the smith- prefix`);
+  }
 
-  // Two skills in one plugin and no namespace between them: Cursor picks by description alone, so
-  // the words a developer would use for one must not be the words it selects the other by.
-  const apply = describedBy("apply");
-  assert.match(apply, /Smith/);
-  assert.match(apply, /\b(build|implement)\b/i);
-  // "Not for checking code that is already written" is how it steers a review request away, so the
-  // word may appear once as a boundary and never as a trigger.
-  assert.doesNotMatch(apply, /\bUse when[^.]*\breview\b/i);
+  assert.ok(COMMANDS.includes("smith-review"));
+  assert.ok(COMMANDS.includes("smith-apply"));
+
+  // A description that reads like a skill's — "use when the user mentions..." — is how this plugin
+  // got into ordinary conversations.
+  for (const file of COMMANDS) {
+    const { description } = frontmatterOf(file);
+    assert.doesNotMatch(description, /\bUse when\b/i, `${file} reads like an auto-selected skill`);
+  }
 });
 
 // Cursor expands no plugin-root variable and puts nothing on PATH, so the README line is the only
@@ -610,9 +619,9 @@ test("the install line in README puts a smith on PATH that answers", () => {
 
 // `${CLAUDE_PLUGIN_ROOT}` expands to nothing in Cursor, so a Claude-only variable in the skill is a
 // command the agent runs against a path that starts at the filesystem root.
-test("no skill names a variable only one editor defines", () => {
-  for (const name of SKILLS) {
-    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
+test("no command names a variable only one editor defines", () => {
+  for (const name of COMMANDS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8");
     assert.doesNotMatch(skill, /CLAUDE_[A-Z_]+/);
     for (const editor of ["Claude Code", "Cursor"]) {
       assert.ok(skill.includes(editor), `${name} does not say how to reach the CLI in ${editor}`);
@@ -623,15 +632,15 @@ test("no skill names a variable only one editor defines", () => {
 // Cursor puts nothing on PATH, so this sentence in the skill is the only thing that gets a Cursor
 // agent to the CLI. Move `bin/` or nest the skill one level deeper and the skill goes stale in
 // silence: the agent would run a path that does not exist and report the server as unreachable.
-test("the CLI is where every skill tells the agent to look for it", () => {
-  for (const name of SKILLS) {
-    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
-    assert.match(skill, /two levels\s+above this file/, `${name} does not point at the CLI`);
+test("the CLI is where every command tells the agent to look for it", () => {
+  for (const name of COMMANDS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8");
+    assert.match(skill, /one level\s+above this file/, `${name} does not point at the CLI`);
   }
 
   const pluginRoot = path.join(__dirname, "..");
-  for (const directory of ["bin", "skills"]) {
-    assert.ok(fs.existsSync(path.join(pluginRoot, directory)), `${directory}/ is not two levels up`);
+  for (const directory of ["bin", "commands"]) {
+    assert.ok(fs.existsSync(path.join(pluginRoot, directory)), `${directory}/ is not one level up`);
   }
 
   const home = tempDir("smith-plugin-relative-");
@@ -650,7 +659,7 @@ test("the CLI is where every skill tells the agent to look for it", () => {
 // sentence about the absence of a thing the developer was never told about. The agent has nothing
 // to go on but this document, so the condition has to be written down.
 test("the line naming what was hidden is conditional on something being hidden", () => {
-  const skill = fs.readFileSync(path.join(__dirname, "../skills/review/SKILL.md"), "utf8");
+  const skill = fs.readFileSync(path.join(__dirname, "../commands/smith-review.md"), "utf8");
   assert.doesNotMatch(skill, /not optional/i);
   assert.match(skill, /empty[\s\S]{0,80}no closing line/i);
 });
@@ -658,9 +667,9 @@ test("the line naming what was hidden is conditional on something being hidden",
 // Measured on 2026-08-21: the skill used to tell the agent to recommend the PATH install line, and
 // a Cursor agent duly closed a "Clear. Nothing to fix." verdict with a shell command to run. The
 // review had already worked without it, so the advice cost the developer a step and bought nothing.
-test("no skill sends the developer off to install something", () => {
-  for (const name of SKILLS) {
-    const skill = fs.readFileSync(path.join(__dirname, `../skills/${name}/SKILL.md`), "utf8");
+test("no command sends the developer off to install something", () => {
+  for (const name of COMMANDS) {
+    const skill = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8");
     assert.doesNotMatch(skill, /ln -s/);
     assert.doesNotMatch(skill, /install line/i);
     assert.ok(skill.includes("never suggest installing anything"), `${name} may send them to install`);

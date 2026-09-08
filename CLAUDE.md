@@ -279,6 +279,13 @@ and still runs; what it can lose is how the agent phrases the answer. So an asse
 weak evidence on a machine with other plugins installed, and an assertion about what Smith did —
 which calls ran, what the verdict was — is strong evidence anywhere.
 
+**A change to `plugin/` bumps the version in all three manifests.** `plugin.json`,
+`.cursor-plugin/plugin.json` and `.claude-plugin/plugin.json` must agree, and the suite checks that
+they do. It shipped six phases of changes as `0.1.0` and a developer who had installed it could not
+get an update by any documented means — Cursor's plugin reference does not describe the update flow
+at all, which is exactly why the one thing under our control has to be right. Bumping costs nothing;
+not bumping leaves people on an old plugin with no way to tell.
+
 `bin/smith` uses the Node standard library only. Adding a dependency means every user needs an
 install step; a few lines of `http`/`child_process` do not.
 

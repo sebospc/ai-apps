@@ -1,7 +1,7 @@
 {
   "name": "smith",
   "description": "Code review against your team's rules. The Smith server runs the deterministic checks and decides the verdict; your agent does the reasoning here, on your own model.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Smith"
   }

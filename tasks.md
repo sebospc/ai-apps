@@ -4107,6 +4107,16 @@ What breaks for a developer if this does not exist: the review checks the code a
 never against the reason the code was written, which is the half a human reviewer actually does.
 
 ## Notes and decisions log
+- 2026-09-08 — the plugin shipped every phase from A to AA as **version `0.1.0`**, unchanged since
+  the first commit. A developer asked how they are supposed to update, which is the right question:
+  `marketplace update` fetches nothing, `remove` and `add` move only the index, and the copy Cursor
+  actually loads sits in `~/.cursor/plugins/cache/<marketplace>/<plugin>/<sha>/` and stayed on the
+  old commit through all of it. Cursor's plugin reference documents a `version` field and **does not
+  document the update flow at all**, so whether it dedupes on version is not established — but a
+  plugin that never bumps cannot be updated by any mechanism that reads one, and that part is ours.
+  Bumped to `0.2.0` and written into `CLAUDE.md` as a rule. Deleting the cache directory works and is
+  safe — it holds a 116K plain copy with a `.cache-complete` marker, no git, no configuration — but
+  telling developers to `rm -rf` inside their editor's config is not a release process.
 - 2026-09-08 — Cursor keeps **two** copies of a plugin and the docs named the wrong one. The index
   lives under `~/.cursor/plugins/marketplaces/`, the plugin that actually loads under
   `~/.cursor/plugins/cache/<marketplace>/<plugin>/<sha>/`. `remove` then `add` moves the index only:

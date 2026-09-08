@@ -378,6 +378,16 @@ def test_a_finding_keeps_its_fingerprint_when_the_code_moves(client) -> None:
     assert first.fingerprint == moved.fingerprint
 
 
+def _review_the_props_diff(api: TestClient, auth: dict) -> int:
+    """Plan and submit, which is what makes a review a review: only a verdict gets it listed."""
+    plan = _plan_the_props_diff(api, auth)
+    verdict = api.post(
+        f"/v1/reviews/{plan['review_id']}/findings", headers=auth, json={"findings": []}
+    )
+    assert verdict.status_code == 200, verdict.text
+    return plan["review_id"]
+
+
 def _plan_the_props_diff(api: TestClient, auth: dict) -> dict:
     plan = api.post(
         "/v1/reviews",
@@ -983,12 +993,8 @@ def test_a_lead_sees_every_review_and_a_developer_only_their_own(lead_session) -
     ).json()["key"]
     lead_key = api.post("/projects/acme/keys", json={"name": "lead"}).json()["key"]
 
-    dev_review = api.post(
-        "/v1/reviews", headers={"Authorization": f"Bearer {dev_key}"}, json={"diff": PROPS_DIFF}
-    ).json()["review_id"]
-    api.post(
-        "/v1/reviews", headers={"Authorization": f"Bearer {lead_key}"}, json={"diff": PROPS_DIFF}
-    )
+    dev_review = _review_the_props_diff(api, {"Authorization": f"Bearer {dev_key}"})
+    _review_the_props_diff(api, {"Authorization": f"Bearer {lead_key}"})
 
     # The lead sees both, attributed to the right people.
     listed = api.get("/projects/acme/reviews").json()
@@ -997,7 +1003,7 @@ def test_a_lead_sees_every_review_and_a_developer_only_their_own(lead_session) -
 
     detail = api.get(f"/projects/acme/reviews/{dev_review}").json()
     assert detail["author"] == "dev@co.com"
-    assert [s["kind"] for s in detail["steps"]] == ["plan"]
+    assert [s["kind"] for s in detail["steps"]] == ["plan", "findings", "verdict"]
     assert any(f["rule_id"] == "properties-hardcoded-secret" for f in detail["findings"])
 
 
@@ -1016,9 +1022,7 @@ def test_a_lead_filters_the_list_by_author_and_a_developer_cannot(client) -> Non
     ).json()["key"]
     lead_key = api.post("/projects/acme/keys", json={"name": "lead"}).json()["key"]
     for key in (dev_key, lead_key):
-        api.post(
-            "/v1/reviews", headers={"Authorization": f"Bearer {key}"}, json={"diff": PROPS_DIFF}
-        )
+        _review_the_props_diff(api, {"Authorization": f"Bearer {key}"})
 
     filtered = api.get("/projects/acme/reviews", params={"author": "Dev@Co.com "}).json()
     assert filtered["author"] == "dev@co.com"
@@ -1507,3 +1511,38 @@ def test_a_credential_is_never_stored_in_a_quote_whichever_check_found_it(
     quoted = stored[0]["quoted_line"]
     assert "Hf83kdmZq19xPl" not in quoted, f"the credential reached storage in the clear: {quoted!r}"
     assert quoted == "<hardcoded client_secret redacted>"
+
+
+def test_a_plan_nobody_finished_is_not_a_review_yet(lead_session) -> None:
+    """Reported 2026-09-08: a review in the lead's list with six warnings, from a session that was
+    cancelled before it ever reasoned about the code.
+
+    `plan` writes a row because `submit` needs one — it scopes the agent's findings against the
+    diff's added lines, which only the server holds. That is a mechanism, not a review. What makes
+    a review is a verdict, so a row without one is not listed and does not count anywhere a lead
+    reads: it would otherwise report on a change nobody looked at, and inflate the fired count of
+    every rule that happened to match.
+    """
+    api = lead_session
+    key = api.post("/projects/acme/keys", json={"name": "dev"}).json()["key"]
+    auth = {"Authorization": f"Bearer {key}"}
+
+    abandoned = _plan_the_props_diff(api, auth)
+    assert abandoned["deterministic_findings"], "the fixture must produce something to hide"
+
+    assert api.get("/projects/acme/reviews").json()["reviews"] == []
+    assert api.get("/projects/acme/rules/health").json()["rules"] == []
+
+    # The agent can still reach it by id: a conversation that lost its plan has to be able to
+    # resume, and that is not the lead's list.
+    resumed = api.get(f"/v1/reviews/{abandoned['review_id']}", headers=auth)
+    assert resumed.status_code == 200, resumed.text
+
+    verdict = api.post(
+        f"/v1/reviews/{abandoned['review_id']}/findings", headers=auth, json={"findings": []}
+    )
+    assert verdict.status_code == 200, verdict.text
+
+    listed = api.get("/projects/acme/reviews").json()["reviews"]
+    assert [r["id"] for r in listed] == [abandoned["review_id"]]
+    assert [r["rule_id"] for r in api.get("/projects/acme/rules/health").json()["rules"]]

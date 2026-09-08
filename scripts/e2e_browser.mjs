@@ -165,8 +165,17 @@ function seedReview(apiKey) {
   const plan = JSON.parse(
     smithCli(apiKey, ["plan", "--title", "e2e seeded review"], "", repo)
   );
+  // Submitting is what makes it a review. A row that only ever got a plan is a mechanism `submit`
+  // needs, and a lead never sees one — so seeding without this would seed something invisible.
+  smithCli(apiKey, ["submit", String(plan.review_id)], JSON.stringify({ findings: [] }));
+
+  // A second plan, abandoned the way a cancelled session abandons one. It exists, it has the same
+  // deterministic findings, and it must not reach the screens below.
+  const abandoned = JSON.parse(
+    smithCli(apiKey, ["plan", "--title", "e2e abandoned plan"], "", repo)
+  );
   rmSync(repo, { recursive: true, force: true });
-  return plan;
+  return { ...plan, abandoned_id: abandoned.review_id };
 }
 
 async function main() {
@@ -244,6 +253,13 @@ async function main() {
     await page.waitForText("e2e seeded review");
     const list = await page.text();
     check("the review is listed under the developer who ran it", list.includes("dev@acme.com"));
+    // Reported 2026-09-08: a cancelled session left a review in the lead's list with six warnings
+    // on a change nobody had read. A plan is not a review until it has a verdict.
+    check(
+      "a plan nobody finished is not in the list",
+      !list.includes("e2e abandoned plan"),
+      list.slice(0, 400)
+    );
     await auditScreen(page, "reviews");
 
     // --- one developer's reviews ------------------------------------------------------------------

@@ -46,7 +46,12 @@ class ReviewRow(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     branch: Mapped[str] = mapped_column(String(255), default="")
     title: Mapped[str] = mapped_column(String(500), default="")
-    status: Mapped[str] = mapped_column(String(20), default="planned")  # planned | completed
+    # planned | completed. `plan` writes the row because `submit` needs it — the agent's findings
+    # are scoped against this diff's added lines, which only the server holds. A review is the
+    # verdict, though, so a row still `planned` is a mechanism and not something anybody reviewed:
+    # every query a lead reads filters it out. Reported 2026-09-08 as six warnings in a list, from
+    # a session that was cancelled before it read a line of the code.
+    status: Mapped[str] = mapped_column(String(20), default="planned")
     files_changed: Mapped[int] = mapped_column(Integer, default=0)
     # The diff's added lines, kept so a later submit can be scoped without resending the diff.
     # The diff itself is deliberately not stored: we hold the developer's code no longer than needed.
@@ -156,7 +161,7 @@ class SqlReviewStore:
         fired = self._s.execute(
             select(FindingRow.rule_id, FindingRow.fingerprint)
             .join(ReviewRow, ReviewRow.id == FindingRow.review_id)
-            .where(ReviewRow.project_id == project_id)
+            .where(ReviewRow.project_id == project_id, ReviewRow.status == "completed")
         ).all()
         dismissals = self._s.execute(
             select(FindingDispositionRow.fingerprint, FindingDispositionRow.reason)
@@ -268,7 +273,7 @@ class SqlReviewStore:
         query = (
             select(ReviewRow, UserRow.email)
             .join(UserRow, UserRow.id == ReviewRow.user_id)
-            .where(ReviewRow.project_id == project_id)
+            .where(ReviewRow.project_id == project_id, ReviewRow.status == "completed")
             .order_by(ReviewRow.created_at.desc())
             .limit(limit)
         )

@@ -4293,7 +4293,83 @@ a blocked verdict with three findings. `scripts/walk_skill.mjs review-confirm` i
 a corpus, which this machine does not have, so what was run was the same session shape by hand.
 
 
+## Phase AE — a plan is not a review
+
+### [x] AE1. A review nobody finished does not reach the lead
+
+Reported 2026-09-08: review #9 in a project's list, six warnings, on a branch whose only change was
+a one-line `z-index`. The same command had answered "nothing here to review" minutes earlier, which
+looked like a contradiction and was not: `is_trivial` raises before anything is written
+(`service.py:233`), so the skip created nothing. #9 came from an earlier session that was cancelled
+after `plan` and before the agent read a line of code, and its findings belonged to that other diff.
+
+`plan` writes the row because `submit` needs it: the agent's findings are scoped against the diff's
+added lines, and the server is the only side that holds them. That is a mechanism. A review is a
+verdict, and `list_for_project` returned every row regardless of `status`, so the mechanism was
+showing up on a lead's screen as work somebody had done.
+
+Acceptance:
+
+- A row still `planned` is absent from the project's review list and from rule health. Counting it
+  in rule health was the quieter half of the same defect: a rule's `fired` grew on changes nobody
+  reviewed, and those firings could never be dismissed, so precision measured better than it was.
+- Reading one by id still works. A conversation that lost its plan has to be able to resume, and
+  that is not the lead's list.
+- The browser suite seeds a review the way a developer produces one — plan *and* submit — and
+  asserts an abandoned plan beside it does not appear.
+
+Done: `postgres.py`, both queries. `uv run pytest` 157 green,
+`SMITH_CDP_PORT=9333 node scripts/e2e_browser.mjs` 97 green including the new assertion. Both
+filters were shown to be load-bearing by reverting each on its own and watching the new test fail on
+that line. Two older tests listed reviews they had only planned; they now submit, which is what they
+meant.
+
+### [ ] AE2. `/v2`: plan writes nothing at all
+
+AE1 hides a row that should not exist. This removes it.
+
+`plan` becomes pure — rules, analyzers, the plan, no writes — and `submit` carries the diff with the
+agent's findings, so the server recomputes the added lines it needs, re-runs the deterministic half
+and creates the review with a verdict already attached. Nothing is stored until a review exists.
+
+Two costs, both real and both accepted knowingly:
+
+- **The deterministic half runs twice per review**, once for the agent to read and once for the row.
+  PMD is in the production image (`Dockerfile:5`), so this is a JVM start on submit, not free.
+  Recomputing is what makes it safe: findings that arrive from a plugin are untrusted, and a plan
+  handed back for the server to store would be a client deciding what the server found.
+- **`/v1` cannot do this**, because a plugin already installed calls `plan` and expects a
+  `review_id` in the response. Every developer on an old plugin would break, and this repository has
+  just measured how hard those are to update. So `/v2` alongside `/v1`, and `/v1` keeps writing its
+  row until nobody is on it.
+
+Acceptance:
+
+- `POST /v2/reviews` returns the plan with no `review_id` and writes nothing. A test asserts the
+  table is empty after it.
+- `POST /v2/reviews/findings` takes the diff, the files and the agent's findings, and returns the
+  verdict with the `review_id` it created.
+- `/v1` behaves exactly as it does today, with a test that pins it.
+- The plugin uses `/v2` and falls back to `/v1` on a 404, so a new plugin works against an old
+  server. The version is not a question a developer can be asked.
+
+Do not start this while the plugin is still being chased across machines. AE1 is what the lead sees;
+this is what the database holds, and it can wait for a week when an update is not in flight.
+
+
 ## Notes and decisions log
+- 2026-09-08 — the choice between hiding a `planned` review and never writing one was put to the
+  person paying for it, with the costs rather than as a preference: hiding is twenty lines and
+  breaks nothing, not writing is the honest model and breaks `/v1` for every installed plugin plus a
+  second PMD run per review. The answer was both, in that order, which is now AE1 and AE2. Worth
+  recording that the second option was described as "what you asked for, literally" and still lost
+  on timing — a plugin that is being chased across machines is not the week to change its contract.
+- 2026-09-08 — `scripts/e2e_browser.mjs` seeded its review with `plan` alone, so AE1 would have
+  turned the whole browser suite red on a screen that was working. It now plans and submits, and
+  seeds an abandoned plan next to it to assert the absence. The suite also needs `SMITH_CDP_PORT`
+  set when a browser is already on 9222: two runs failed at "timed out waiting for Sign in" because
+  it attached to the developer's own browser, which `scripts/cdp.mjs` documents and this session
+  still walked into.
 - 2026-09-08 — `smith update` reads the commit from the directory it is installed in, and that made
   a second defect visible immediately: on a machine with an old `smith` symlink on PATH, the session
   ran the symlink and was told it was current while the plugin the editor had loaded was 65 commits

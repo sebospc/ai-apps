@@ -4106,7 +4106,101 @@ Acceptance:
 What breaks for a developer if this does not exist: the review checks the code against the rules and
 never against the reason the code was written, which is the half a human reviewer actually does.
 
+## Phase AB — a developer cannot update this plugin, and the fix is a second adapter
+
+Measured on 2026-09-08, after a developer installed on a second machine and could not move forward:
+
+- A marketplace added with `cursor-agent plugin marketplace add` is **pinned to the commit it had when
+  it was added**. Cursor's docs say so plainly. Nothing was broken; this is the design.
+- `marketplace update` fetches nothing at all. `remove` then `add` moves only the index under
+  `~/.cursor/plugins/marketplaces/`.
+- **A terminal session reads neither of those.** It loads
+  `~/.cursor/plugins/cache/<marketplace>/<plugin>/<sha>/`, which a session named back when asked. So
+  the CLI's own marketplace commands move a copy the agent does not read.
+- Deleting that cache does not fall back to the index and does not re-download: the plugin simply
+  disappears. Measured — the same probe answered "smith-review is not available".
+
+So today, every update costs each developer a remove, an add, an interactive `/plugins` reinstall,
+and a directory listing to prove it took. That is not a release process.
+
+Two routes out, and the second is the one this phase takes.
+
+**Team Marketplace with Auto Refresh** is the official answer and it works: Dashboard → Plugins →
+Team Marketplaces → Import from Repo, plus the Cursor GitHub App, re-indexing on push. It is one
+setup for the whole team and developers never run anything. It is also entirely a dashboard flow,
+and this product's install has been one terminal command since the beginning.
+
+**Agent Skills** is how the plugins that update cleanly actually ship. `npx skills add <repo> -a
+cursor -g` installs into `~/.cursor/skills/`, and `npx skills update` compares a hash of the skill's
+file tree against the remote and re-materialises when it differs. Terminal, one command, no cache to
+reason about.
+
+The thing that makes this possible, and that Z1 did not know: **`disable-model-invocation: true`**.
+A skill carrying it "is only included when explicitly invoked via `/skill-name`. The agent will not
+automatically apply it based on context." Z1 deleted the skills because a skill in "Agent Decides"
+answers developers who never asked — that was a real defect and the flag is the direct fix for it.
+Cursor's own `/migrate-to-skills` writes exactly this flag when it converts a slash command.
+
+Both surfaces stay. Claude Code keeps `plugin/commands/`, which is explicit there and installs
+cleanly; Cursor gets `skills/`. That is the shape caveman uses — one behaviour, one adapter per
+agent — and it is why its Cursor install updates and ours does not.
+
+### [ ] AB1. A Cursor skill surface that only runs when it is asked for
+
+Acceptance:
+
+- `skills/smith-review/` and `skills/smith-apply/`, each with a `SKILL.md` carrying
+  `disable-model-invocation: true`, installable with `npx skills add sebospc/ai-apps -a cursor -g`.
+- **The instructions are not duplicated.** `plugin/commands/*.md` and `skills/*/SKILL.md` carry the
+  same procedure, and two copies of a 300-line procedure will drift within a phase. Generate one from
+  the other, or share a file both read, and have `plugin/test` fail when they disagree — the
+  mechanism matters less than the check.
+- The CLI is reachable from a skill. `bin/smith` is found relative to the plugin today and a skill
+  installs somewhere else, so whatever the skill tells the agent has to be true from
+  `~/.cursor/skills/`, and a walk has to prove it rather than a path being reasoned about.
+- **`npx skills` needs Node 20.** It fails on Node 18 with `does not provide an export named
+  'styleText'`, and 18 is the system default on the machine this was measured on. The README says so
+  next to the command, because that error names nothing a developer could act on.
+- Measured before it is called done: install it the way a developer would, on a machine where the
+  plugin is not already present, and run a review. Then push a change and run `npx skills update`
+  and prove the new one is what runs.
+
+What breaks for a developer if this does not exist: they are three commits behind and the only way
+forward is a directory listing and an interactive reinstall.
+
+### [ ] AB2. The explicit-invocation claim, verified rather than trusted
+
+`disable-model-invocation: true` is documented. It is not measured here, and Z1 exists because a
+skill answered developers who never asked for it — the exact failure this flag claims to prevent.
+
+Acceptance:
+
+- The `review-unasked` walk runs against the **skill** install: a session that talks about a code
+  review without typing the command gets nothing from Smith. Same assertion, new surface.
+- If the flag does not hold, that is the finding and it settles the phase: the skill surface does not
+  ship, the README keeps the plugin route with its update cost written down, and the notes log says
+  what was observed. Do not weaken the walk to let it through.
+- Run it in both states — with the flag and with it removed — so the check is known to be able to
+  fail, and record both.
+
+What breaks for a developer if this does not exist: the plugin that was made quiet in Z1 gets loud
+again through a second door, and the first person to notice is a developer it interrupted.
+
 ## Notes and decisions log
+- 2026-09-08 — **Z1's premise had a gap, and it is worth writing down rather than defending.** Z1
+  deleted `plugin/skills/` because a skill sits in Cursor's "Agent Decides" list and gets matched
+  against whatever a developer types. That was true and the defect was real. What was missed is
+  `disable-model-invocation: true`, a documented SKILL.md field: a skill carrying it "is only
+  included when explicitly invoked via `/skill-name`" and is never applied from context. Cursor's own
+  `/migrate-to-skills` writes that flag when converting a slash command. So the choice was never
+  "skills auto-fire, commands do not" — it was between two explicit surfaces, and commands were
+  picked without knowing the other existed. The outcome still holds (both are explicit) but the
+  reasoning in `CLAUDE.md` was too strong and is corrected there.
+- 2026-09-08 — a terminal session loads `~/.cursor/plugins/cache/…`, not the marketplace index. Asked
+  directly, one answered with the path and `5fc015f` while the index sat at `0086812`. That is why
+  `marketplace remove` and `add` changed nothing a developer could see: they move a copy the agent
+  does not read. Removing the cache does not fall back to the index and does not re-download either —
+  the same probe then answered "smith-review is not available".
 - 2026-09-08 — the update problem has an official answer and it is not the route this repository
   documented. Cursor's plugin docs: a plugin added from GitHub without going through the Marketplace
   "stays pinned to the commit it had when you added it and won't pull new commits or releases from

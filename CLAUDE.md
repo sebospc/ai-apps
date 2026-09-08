@@ -264,9 +264,11 @@ line, no background monitors, no state files**. The previous version wired a sta
 line and the plugin had to be uninstalled. Nothing in this plugin may run between reviews. If a
 feature seems to need one, it does not.
 
-**Commands, never skills.** A skill sits in Cursor's "Agent Decides" list and is matched against
-whatever a developer types, so the review skill's description — which ended "or mentions Smith" —
-answered people who never asked for it. The two entry points are `/smith-review` and `/smith-apply`,
+**Whatever the surface, it only runs when it is typed.** A skill sits in Cursor's "Agent Decides"
+list and is matched against whatever a developer types, so the review skill's description — which
+ended "or mentions Smith" — answered people who never asked for it. Commands fixed that. A skill
+carrying `disable-model-invocation: true` fixes it too, which Z1 did not know and phase AB uses, so
+the rule is the behaviour and not the file type. The two entry points are `/smith-review` and `/smith-apply`,
 they are typed, and when nobody types one this plugin does nothing at all. `plugin/skills/` coming
 back is a regression, and `plugin/test/smith.test.js` fails if the directory exists.
 

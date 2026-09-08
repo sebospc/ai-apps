@@ -683,6 +683,14 @@ function contentsOf(repo, path) {
 function reviewChecks({ repo, text, commands }) {
   const ran = (verb) => commands.some((c) => new RegExp(`smith(["\']?\\s|\\s)[^|]*\\b${verb}\\b`).test(c));
   check("the agent asked the server for a plan", ran("plan"), commands.join(" ; ").slice(0, 300));
+  // Looked before it started. This fixture is uncommitted work, so the preview is all that is
+  // needed — a whole branch is the case that also has to be confirmed, and a single-shot session
+  // has nobody to confirm with, so that half is read by `review-branch`.
+  check(
+    "the agent looked at what it would review before opening one",
+    commands.some((c) => /--preview\b/.test(c)),
+    commands.join(" ; ").slice(0, 300)
+  );
 
   // AA1: the plugin picks what to compare without asking, and the developer cannot see the choice.
   // "uncommitted" is what this fixture produces — working changes on a fresh branch.
@@ -1045,6 +1053,35 @@ async function applyChecks({ repo, text, commands, key }) {
  * session is handed the same plugin, the same repository and a request that would have matched the
  * old skill's description word for word.
  */
+/**
+ * The branch case, where the command has to ask rather than assume.
+ *
+ * The developer has nothing uncommitted, so `smith plan --preview` reports the whole branch. That is
+ * a bigger thing to review than they may have meant, and a review of the wrong range lands on their
+ * lead's screen. A single-shot session cannot answer a question, so an agent that opened a review
+ * anyway chose not to ask.
+ */
+function reviewBranchChecks({ text, commands }) {
+  check(
+    "the agent looked before it started",
+    commands.some((c) => /--preview\b/.test(c)),
+    commands.join(" ; ").slice(0, 300)
+  );
+  const opened = commands.some((c) => /\bplan\b/.test(c) && !/--preview\b/.test(c));
+  check("no review was opened without asking first", !opened, commands.join(" ; ").slice(0, 300));
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  check(
+    "the session ended by asking the developer whether that is the range",
+    /\?/.test(paragraphs.slice(-2).join("\n\n")),
+    paragraphs.slice(-1)[0]?.slice(-300) ?? ""
+  );
+  check(
+    "the branch it would review is named, so the answer is informed",
+    /ACME-42|feature\//i.test(text),
+    firstMatch(text, /^.*(ACME-42|feature\/).*$/im) || "the branch is never named"
+  );
+}
+
 function reviewUnaskedChecks({ text, commands }) {
   const reached = commands.filter((c) => /\bsmith\b/.test(c) && !/smithers/i.test(c));
   check("no smith command ran when the developer did not type one", reached.length === 0, reached.join(" ; ").slice(0, 300));
@@ -1194,6 +1231,25 @@ const WALKS = {
     },
     forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
     checks: reviewChecks,
+  },
+  "review-branch": {
+    // Nothing uncommitted, so the whole branch is what there is — the case the command must confirm
+    // rather than assume. A single-shot session has nobody to answer, which is the point: an agent
+    // that reviews anyway had every chance to ask.
+    prompts: { claude: "/smith-review", cursor: "/smith-review" },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-branch",
+    setup: () => {
+      const { repo, target } = buildRepo("smith-walk-repo-");
+      const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+      git("checkout", "-q", "-b", "feature/ACME-42-fix-the-constants");
+      introduceProblems(repo, target);
+      git("add", "-A");
+      git("commit", "-q", "-m", "ACME-42 tidy the constants");
+      return { repo, about: `committed change in ${target}` };
+    },
+    forbidden: FORBIDDEN,
+    checks: reviewBranchChecks,
   },
   "review-unasked": {
     // The words the deleted skill's description matched on, typed as a developer would type them.

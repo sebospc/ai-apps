@@ -4107,6 +4107,16 @@ What breaks for a developer if this does not exist: the review checks the code a
 never against the reason the code was written, which is the half a human reviewer actually does.
 
 ## Notes and decisions log
+- 2026-09-08 — AA1 shipped "derive and state, never ask" and a developer using it said that was
+  wrong for the case that matters: they had nothing uncommitted, typed the command, and it reviewed
+  their whole branch without a word. Stating it after the fact does not help — the review is already
+  open and already on their lead's screen. Split by consequence instead: **`uncommitted` states and
+  goes, `branch` asks and waits.** Asking about working changes would be noise; asking about a range
+  they did not choose is the one question this command earns.
+  This needed `smith plan --preview`, because `plan` opens a review the moment it is called, so there
+  was no way to look before committing to one. Same code path as `plan`, no HTTP, no credentials,
+  no row. New walk `review-branch` reads it: a single-shot session has nobody to answer, so an agent
+  that opened a review anyway chose not to ask. 7/7 on Claude Code.
 - 2026-09-08 — **every Cursor walk number taken on this machine is suspect, and Z4's is the one that
   matters.** A `cursor review` walk was caught reading `caveman/skills/caveman-review/SKILL.md`, a
   plugin on this account that exists to compress output. Removing it moved the same walk from 8/10 to

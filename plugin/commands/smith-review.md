@@ -13,11 +13,12 @@ JSON. Everything below is yours to run and yours to translate.
 
 ## The loop
 
-1. `smith plan` → the rules and what the server already found. Not the code; you fetch that.
-2. Reason over the diff, `smith submit` your findings.
-3. Give the verdict, then the findings, numbered.
-4. Ask one question and listen.
-5. `smith respond` with what they said. Fixes go back to step 1.
+1. `smith plan --preview` → what would be reviewed. Confirm it if it is a whole branch.
+2. `smith plan` → the rules and what the server already found. Not the code; you fetch that.
+3. Reason over the diff, `smith submit` your findings.
+4. Say what you reviewed, the verdict, then the findings, numbered.
+5. Ask one question and listen.
+6. `smith respond` with what they said. Fixes go back to step 2.
 
 ## 0. Credentials, once
 
@@ -53,7 +54,32 @@ When a later command answers that the key **may have been revoked** or that it *
 different project**, say so in one sentence and ask whether they have a new one. If they do, run
 `smith auth` again with it. Do not retry the old key.
 
-## 1. Get the plan
+## 1. Look before you start
+
+```bash
+smith plan --preview
+```
+
+Costs nothing and creates nothing: no server call, no review, no credentials needed. It answers with
+`kind`, `base`, `files`, `branch`, `ticket` and `freshness` — what a review *would* be taken against.
+
+**`kind: "uncommitted"`** — their working changes. Obvious, cheap to redo, and asking would be noise.
+Say what you are reviewing in one line at step 3 and go straight on to the plan.
+
+**`kind: "branch"`** — they have nothing uncommitted, so the whole branch against `base` is what
+there is. **Ask before you review it**, in one sentence, and wait:
+
+> Nothing uncommitted here. Review the whole `feature/ABC-77-thing` branch against `main` — 7 files?
+
+They may have meant a different base, or work they have not committed yet, or nothing at all. A
+review of the wrong range wastes their time and puts a review on their lead's screen that is not the
+one they asked for. This is the only question this command asks unprompted, so it is worth it.
+
+If they name a different base, pass it: `smith plan --base <ref>`.
+
+**`empty: true`** — nothing to review either way. Say so and stop; do not call `plan`.
+
+## 2. Get the plan
 
 ```bash
 smith plan
@@ -82,7 +108,7 @@ Mention it only if the developer asks why a rule fired or did not.
 ### What `compared` holds
 
 `compared` is what the plugin chose without asking: `kind` (`uncommitted` or `branch`), `base`,
-`files`, `ticket` and `freshness`. Step 3 is where you say it. Two things to do here:
+`files`, `ticket` and `freshness`. Step 5 is where you say it. Two things to do here:
 
 If `compared.ticket` is empty, ask **once** whether this belongs to a ticket, take whatever they
 answer including no, and never raise it again in this session. Do not stop the review over it.
@@ -110,7 +136,7 @@ have one:
 If the conversation resumed and you no longer have the plan, `smith review <review_id>` fetches the
 review back.
 
-## 1b. Read the ticket, if you can reach one
+## 3. Read the ticket, if you can reach one
 
 Optional, and worth trying: the acceptance criteria say what the change was *supposed* to do, and
 that is the one thing no rule will ever check. Code can be clean and not do the job.
@@ -136,10 +162,10 @@ Then review the change against it as well as against the rules, with two limits:
   "The ticket asks for X and nothing here does it" is **one** finding on the change, not a checklist
   of criteria with ticks.
 - A change that does two of three criteria is not incomplete. The third is usually another ticket,
-  another branch, or already there. Say what you observed and let them answer — that is what step 4
+  another branch, or already there. Say what you observed and let them answer — that is what step 6
   is for. Do not turn the ticket into a list of things to accuse them of.
 
-## 2. Review the change
+## 4. Review the change
 
 The plan carries the rules, not the code. Get the change yourself — `git diff` for uncommitted
 work, `git diff <base>...HEAD` when you passed `--base` — and then read the changed files in full,
@@ -178,7 +204,7 @@ Each finding:
 Write the JSON to a temp file and pipe it in if it is large. `smith submit` exits non-zero when the
 verdict blocks — that is expected, not a failure of the command.
 
-## 3. Report the verdict, then the findings
+## 5. Report the verdict, then the findings
 
 **One line first saying what you reviewed**, from `compared` in the plan: uncommitted work or this
 branch against its base, the file count, the project from `project`, and the ticket if there is one.
@@ -233,7 +259,7 @@ When that list is empty nothing was hidden, so there is no closing line and the 
 are the whole answer. Never close by saying nothing was ruled out: that reports the absence of a
 thing the developer was never told about.
 
-## 4. Ask, once
+## 6. Ask, once
 
 Only when there is something to answer. A clean change and a skipped one both end at step 3: asking
 "want me to fix any of these?" when you just said there is nothing to fix reads like you did not
@@ -245,7 +271,7 @@ With findings on the table, ask exactly one question:
 
 Then stop talking. Do not pre-empt the answer, do not suggest which ones they should rule out.
 
-## 5. Turn the answer into one `smith respond`
+## 7. Turn the answer into one `smith respond`
 
 ```bash
 echo '{"responses": [{"finding": 3, "disposition": "dismissed", "note": "we do that on purpose"}]}' \
@@ -300,7 +326,7 @@ the command you ran, its exit code, or its raw output.
 
 Two results look like failures and are not. Never report either one as a failure:
 
-- **`"skipped": true`** — step 1 covers it. Nothing was opened and nothing went wrong.
+- **`"skipped": true`** — step 2 covers it. Nothing was opened and nothing went wrong.
 - **no findings at all** — an empty finding list exits 0 and the verdict says nothing is blocking.
   Tell them the change looks clean, in one line, and stop. That is the best result a review has.
 

@@ -856,3 +856,33 @@ test("the ticket comes off the branch, then off the branch's own commits", () =>
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("preview says what would be reviewed and creates nothing", () => {
+  const { root, run } = initRepo();
+  try {
+    // The branch case is the one worth confirming with a developer, and `plan` cannot be used to
+    // look: calling it opens a review. Preview answers the same question with no server and no key.
+    run("checkout", "-q", "-b", "feature/ABC-77-thing");
+    fs.writeFileSync(path.join(root, "b.txt"), "b\n");
+    run("add", ".");
+    run("commit", "-q", "-m", "work");
+
+    const branch = smith.previewOf(root, null);
+    assert.equal(branch.kind, "branch");
+    assert.equal(branch.base, "main");
+    assert.equal(branch.ticket, "ABC-77");
+    assert.equal(branch.empty, false);
+    assert.equal(branch.branch, "feature/ABC-77-thing");
+
+    // Uncommitted work wins, and that case is not worth a question.
+    fs.writeFileSync(path.join(root, "b.txt"), "changed\n");
+    assert.equal(smith.previewOf(root, null).kind, "uncommitted");
+
+    // Nothing to review is said here rather than discovered after a review row exists.
+    run("checkout", "-q", "--", ".");
+    run("checkout", "-q", "main");
+    assert.equal(smith.previewOf(root, null).empty, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

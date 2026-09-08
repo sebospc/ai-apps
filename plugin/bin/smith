@@ -474,10 +474,36 @@ async function cmdAuth(flags) {
   console.log(`saved ${file} (mode 600), server reachable`);
 }
 
+/**
+ * What a review would be taken against, worked out without asking the server for anything.
+ *
+ * `plan` creates a review the moment it is called, so an agent that wants to confirm the choice with
+ * the developer first has to be able to look before it commits to one. Same code path as `plan`, so
+ * the two cannot drift; no HTTP, no review row, no side effect of any kind.
+ */
+function previewOf(root, base) {
+  const { diff, spec, names } = collectDiff(root, base);
+  const compared = {
+    spec,
+    files: names.length,
+    kind: spec === "HEAD" ? "uncommitted" : "branch",
+    base: spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""),
+    ticket: ticketFromRepository(root, spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, "")),
+    empty: !diff.trim(),
+  };
+  compared.freshness = compared.base ? baseFreshness(root, compared.base) : { state: "local" };
+  compared.branch = branchName(root);
+  return compared;
+}
+
 async function cmdPlan(flags) {
-  const config = requireConfig();
   const root = repoRoot(process.cwd());
   const base = typeof flags.base === "string" ? flags.base : null;
+  if (flags.preview) {
+    console.log(JSON.stringify(previewOf(root, base), null, 2));
+    return;
+  }
+  const config = requireConfig();
   const { diff, spec, names } = collectDiff(root, base);
   if (!diff.trim()) throw new Error(`no changes to review (compared against ${spec})`);
   const ticket = ticketFromRepository(root, spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""));
@@ -637,6 +663,7 @@ const USAGE = `smith — Smith client
 
   smith auth --url <server> --key <api key>   save credentials (~/.smith/config.json, mode 600)
   smith plan [--base <ref>] [--title <text>]  send the diff, print the review plan
+  smith plan --preview                        what would be reviewed, without creating one
   smith submit <review_id>                    send findings from stdin, print the verdict
   smith respond <review_id>                   send the developer's answers from stdin, print the verdict
   smith review <review_id>                    print a review the conversation lost track of
@@ -686,6 +713,7 @@ module.exports = {
   writeConfig,
   configPath,
   collectDiff,
+  previewOf,
   defaultBase,
   baseFreshness,
   ticketFromRepository,

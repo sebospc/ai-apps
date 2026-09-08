@@ -3915,6 +3915,16 @@ the person who follows it concludes the product is what the page describes.
 
 ### [ ] Z4. Cursor follows a command worse than it followed a skill, and apply pays for it
 
+> **Read this first: the measurement below is not safe.** On 2026-09-08 a `cursor review` walk was
+> found reading `caveman/skills/caveman-review/SKILL.md` — a plugin installed on this account, whose
+> whole purpose is to compress output. Removing it took the same walk from **8/10 to 15/3** in one
+> run. Its findings came back in caveman's own format, `L25: 🔴 bug:`, which is the shape the failing
+> assertions were reading for. Every number in the table below was taken with that plugin installed
+> and none of them separate "Cursor follows a command worse" from "another plugin won". Removing it
+> does not stick either: it is a user-scope plugin and Cursor restored it from the account within
+> minutes. **Re-measure before acting on any of this, and find a way to isolate the walk first — that
+> is now this task's first acceptance criterion.**
+
 Z1 moved the instructions from `skills/` to `commands/` so that nothing answers a developer who did
 not type a command. That is the right product decision and it is not in question here. It cost
 something, measured rather than suspected:
@@ -3995,7 +4005,7 @@ acceptance criteria, so the body stays on the machine and only the ticket's key 
 That is worth having on its own terms. "Does this change do what was asked" is the one question no
 deterministic rule will ever answer, and it is where the reasoning half earns its place.
 
-### [ ] AA1. Say what is being reviewed, before reviewing it
+### [x] AA1. Say what is being reviewed, before reviewing it
 
 Acceptance:
 
@@ -4012,7 +4022,7 @@ Acceptance:
 What breaks for a developer if this does not exist: they get a verdict and cannot tell whether it
 covers the change they meant.
 
-### [ ] AA2. The base is whatever was last fetched, and nobody is told
+### [x] AA2. The base is whatever was last fetched, and nobody is told
 
 Acceptance:
 
@@ -4033,7 +4043,7 @@ What breaks for a developer if this does not exist: they are shown findings on c
 write, and the rules that fire on it are correct — which is worse, because there is nothing to
 argue with.
 
-### [ ] AA3. The ticket, found rather than asked for
+### [x] AA3. The ticket, found rather than asked for
 
 Acceptance:
 
@@ -4053,7 +4063,7 @@ Acceptance:
 What breaks for a developer if this does not exist: a lead reads a list of untitled reviews and
 cannot tell which piece of work each one was.
 
-### [ ] AA4. Read the ticket, and review against what was asked
+### [x] AA4. Read the ticket, and review against what was asked
 
 AA3 gets a label. This is the part that makes the review better: the acceptance criteria, the
 description and the comments are what the change was supposed to do, and a review that has them can
@@ -4089,6 +4099,20 @@ What breaks for a developer if this does not exist: the review checks the code a
 never against the reason the code was written, which is the half a human reviewer actually does.
 
 ## Notes and decisions log
+- 2026-09-08 — **every Cursor walk number taken on this machine is suspect, and Z4's is the one that
+  matters.** A `cursor review` walk was caught reading `caveman/skills/caveman-review/SKILL.md`, a
+  plugin on this account that exists to compress output. Removing it moved the same walk from 8/10 to
+  15/3 in one run, and the failing assertions were reading for exactly what it does — terse bullets,
+  no file paths, its own `L25: 🔴 bug:` format. It cannot be removed for the duration of a walk: it
+  is user-scope and Cursor restored it from the account within minutes, mid-session. The walk's own
+  header says it inherits the host's configuration deliberately, "so the walk is read as evidence
+  about the skill, not about a laboratory" — that was a reasonable call and it stops being one when
+  another plugin is answering. AA's Cursor numbers were not used for that reason; AA is verified on
+  Claude Code (18/18) and on 37 unit tests, four of them proven to fail against the old behaviour.
+- 2026-09-08 — AA1's line went in step 1 first and Cursor skipped it while Claude Code did it. Moved
+  into step 3, which is the section Cursor follows to the letter — it reproduces the verdict format
+  and the numbered list exactly. Where an instruction lives matters more than how firmly it is
+  worded. Not re-verified on Cursor, per the entry above.
 - 2026-09-08 — AA3 was first written with "an integration with Jira is out of scope", and that was
   wrong. The constraint that matters is that **the plugin holds no ticket credential and the ticket's
   text never reaches the server**, and neither one requires giving up the ticket. The agent already

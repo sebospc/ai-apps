@@ -759,3 +759,100 @@ test("submit quotes the line each finding points at, and never reads outside the
     fs.rmSync(outside, { force: true });
   }
 });
+
+// --------------------------------------------------------------------------------------------
+// AA2 / AA3 — what the review is compared against, and what it is called
+// --------------------------------------------------------------------------------------------
+
+/** A repository with a real remote on disk, so `ls-remote` answers without a network. */
+function repoWithRemote() {
+  const remote = tempDir("smith-remote-");
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote], { stdio: "ignore" });
+  const { root, run } = initRepo();
+  run("remote", "add", "origin", remote);
+  run("push", "-q", "-u", "origin", "main");
+  return { root, run, remote };
+}
+
+test("the base is the branch's own upstream, not a guess", () => {
+  const { root, run } = repoWithRemote();
+  try {
+    // A developer who branched from `develop` must not be reviewed against `main`. The old list
+    // walked origin/main first and would have compared them to it.
+    run("checkout", "-q", "-b", "develop");
+    run("push", "-q", "-u", "origin", "develop");
+    run("checkout", "-q", "-b", "feature");
+    run("push", "-q", "-u", "origin", "feature");
+    execFileSync("git", ["branch", "--set-upstream-to=origin/develop"], { cwd: root, stdio: "ignore" });
+    assert.equal(smith.defaultBase(root), "origin/develop");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a base the remote has moved past is reported stale, with how far", () => {
+  const { root, run, remote } = repoWithRemote();
+  const other = tempDir("smith-other-");
+  try {
+    // Somebody else pushes two commits. This machine never fetches, so `origin/main` here is two
+    // behind — which is exactly the state that made a review carry other people's work.
+    execFileSync("git", ["clone", "-q", remote, other], { stdio: "ignore" });
+    const there = (...args) => execFileSync("git", args, { cwd: other, stdio: "ignore" });
+    there("config", "user.email", "other@example.com");
+    there("config", "user.name", "Other");
+    for (const n of [1, 2]) {
+      fs.writeFileSync(path.join(other, `theirs-${n}.txt`), "x\n");
+      there("add", ".");
+      there("commit", "-q", "-m", `theirs ${n}`);
+    }
+    there("push", "-q", "origin", "main");
+
+    const stale = smith.baseFreshness(root, "origin/main");
+    assert.equal(stale.state, "stale");
+    assert.equal(stale.remote, "origin");
+
+    run("fetch", "-q", "origin");
+    assert.equal(smith.baseFreshness(root, "origin/main").state, "current");
+  } finally {
+    for (const dir of [root, other, remote]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unreachable remote is unknown, never a failure", () => {
+  const { root, run } = initRepo();
+  try {
+    // A remote that cannot be contacted must not stop a review. The developer is told the base may
+    // be stale; they are not refused.
+    run("remote", "add", "origin", path.join(root, "does-not-exist.git"));
+    const answer = smith.baseFreshness(root, "origin/main");
+    assert.equal(answer.state, "unknown");
+    // And a ref with no remote behind it is local, not unknown: there is nothing to be stale about.
+    assert.equal(smith.baseFreshness(root, "main").state, "local");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the ticket comes off the branch, then off the branch's own commits", () => {
+  const { root, run } = initRepo();
+  try {
+    run("checkout", "-q", "-b", "feature/ABC-123-add-a-thing");
+    assert.equal(smith.ticketFromRepository(root, "main"), "ABC-123");
+
+    run("checkout", "-q", "-b", "no-ticket-here");
+    fs.writeFileSync(path.join(root, "x.txt"), "x\n");
+    run("add", ".");
+    run("commit", "-q", "-m", "DEF-9 make it work");
+    assert.equal(smith.ticketFromRepository(root, "main"), "DEF-9");
+
+    // Nothing to find is empty, not a guess. A review titled with a number that is not a ticket is
+    // worse than an untitled one.
+    run("checkout", "-q", "-b", "plain");
+    fs.writeFileSync(path.join(root, "y.txt"), "y\n");
+    run("add", ".");
+    run("commit", "-q", "-m", "tidy up");
+    assert.equal(smith.ticketFromRepository(root, "no-ticket-here"), "");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

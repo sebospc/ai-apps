@@ -83,16 +83,67 @@ function repoRoot(cwd) {
   }
 }
 
+/**
+ * A git call that is allowed to fail. Used for everything about the remote: a developer offline, on
+ * a repository with no remote, or without credentials for it, still gets a review.
+ */
+function gitOrNull(args, root) {
+  try {
+    return git(args, root).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The base this branch is actually on.
+ *
+ * The branch's own upstream first, because a developer who branched from `develop` is reviewed
+ * against `develop` and the guessed list would have compared them to `main`. The list is the
+ * fallback for a branch that was never pushed and has no upstream set.
+ */
 function defaultBase(root) {
+  const upstream = gitOrNull(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], root);
+  if (upstream) return upstream;
   for (const ref of ["origin/main", "origin/master", "main", "master"]) {
-    try {
-      git(["rev-parse", "--verify", "--quiet", ref], root);
-      return ref;
-    } catch {
-      /* try the next one */
-    }
+    if (gitOrNull(["rev-parse", "--verify", "--quiet", ref], root) !== null) return ref;
   }
   return null;
+}
+
+/**
+ * Whether the remote-tracking ref this review compares against is the one the remote holds.
+ *
+ * This is the difference between a review of somebody's change and a review of a week of everybody
+ * else's. `origin/main` is only as current as the last `git fetch`, and nothing here used to run
+ * one, so a machine that had not fetched in a week diffed against a week-old base and the developer
+ * was shown findings on merges that were not theirs.
+ *
+ * `ls-remote` rather than `fetch`: it asks the remote what it has and writes nothing at all — no
+ * ref moves, no object is downloaded, the working tree is untouched. A `--dry-run` fetch would also
+ * work and is slower on a large repository.
+ *
+ * Every failure path returns `unknown`. No remote, no network, no credentials and no permission all
+ * mean the same thing here: the review runs, and the developer is told the base may be stale rather
+ * than being stopped.
+ */
+function baseFreshness(root, base) {
+  const match = /^([^/]+)\/(.+)$/.exec(base ?? "");
+  if (!match) return { state: "local" };
+  const [, remote, branch] = match;
+  if (gitOrNull(["remote", "get-url", remote], root) === null) return { state: "local" };
+
+  const local = gitOrNull(["rev-parse", base], root);
+  const listed = gitOrNull(["ls-remote", "--heads", remote, branch], root);
+  if (local === null || listed === null) return { state: "unknown", remote };
+  const head = listed.split("\n")[0]?.split(/\s+/)[0] ?? "";
+  if (!head) return { state: "unknown", remote };
+  if (head === local) return { state: "current", remote };
+
+  // How far behind, when it can be worked out locally. A ref the remote has moved to and this
+  // machine has never fetched is not in the object database, so the count is not always available.
+  const behind = gitOrNull(["rev-list", "--count", `${base}..${head}`], root);
+  return { state: "stale", remote, behind: behind === null ? null : Number(behind) };
 }
 
 /**
@@ -225,6 +276,30 @@ function branchName(root) {
   } catch {
     return "";
   }
+}
+
+/**
+ * The ticket this work belongs to, read off the branch and then off the branch's commits.
+ *
+ * It becomes the review's title, which is what a lead reads in a list. Nothing is asked and nothing
+ * is fetched: this is a label, and the ticket's contents are the agent's business, on the
+ * developer's machine, with the developer's own access.
+ *
+ * ponytail: one pattern, Jira's, which is what `ABC-123` is. A project whose tracker numbers work
+ * differently needs this to come from `projects.config`, and that is a round trip the plugin does
+ * not have yet — the title is sent in the same request whose answer would carry the pattern.
+ */
+const TICKET = /\b([A-Z][A-Z0-9]*-\d+)\b/;
+
+function ticketFromRepository(root, base) {
+  const fromBranch = TICKET.exec(branchName(root).toUpperCase());
+  if (fromBranch) return fromBranch[1];
+  // Only this branch's own commits. Walking further back would label the review with whatever
+  // ticket happened to come before it.
+  const range = base ? `${base}..HEAD` : "-20";
+  const log = gitOrNull(["log", "--format=%s%n%b", range], root);
+  const fromCommits = log ? TICKET.exec(log.toUpperCase()) : null;
+  return fromCommits ? fromCommits[1] : "";
 }
 
 // --------------------------------------------------------------------------------------------
@@ -405,15 +480,27 @@ async function cmdPlan(flags) {
   const base = typeof flags.base === "string" ? flags.base : null;
   const { diff, spec, names } = collectDiff(root, base);
   if (!diff.trim()) throw new Error(`no changes to review (compared against ${spec})`);
+  const ticket = ticketFromRepository(root, spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""));
 
   const plan = await request(config, "POST", "/v1/reviews", {
     diff,
     branch: branchName(root),
-    title: typeof flags.title === "string" ? flags.title : "",
+    title: typeof flags.title === "string" && flags.title ? flags.title : ticket,
     platform_version: platformVersion(root),
     files: readChangedFiles(root, names),
   });
-  console.log(JSON.stringify({ ...plan, compared_against: spec }, null, 2));
+  // What was compared, and whether the thing it was compared against is current. Both are for the
+  // agent to say out loud: a developer who is not told cannot tell a review of their change from a
+  // review of everything merged since this machine last fetched.
+  const compared = {
+    spec,
+    files: names.length,
+    kind: spec === "HEAD" ? "uncommitted" : "branch",
+    base: spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""),
+  };
+  compared.freshness = compared.base ? baseFreshness(root, compared.base) : { state: "local" };
+  compared.ticket = ticket;
+  console.log(JSON.stringify({ ...plan, compared_against: spec, compared }, null, 2));
 }
 
 async function cmdSubmit(positional) {
@@ -599,6 +686,9 @@ module.exports = {
   writeConfig,
   configPath,
   collectDiff,
+  defaultBase,
+  baseFreshness,
+  ticketFromRepository,
   readChangedFiles,
   quoteFindings,
   nameStatus,

@@ -48,6 +48,10 @@ class Principal:
     project_id: int | None = None
     role: Role | None = None
     via: Literal["session", "api_key"] = "session"
+    # The project's slug, so a plugin caller can be told which project their key belongs to. A key
+    # is bound to one project and never chooses it, so this is the only way a developer handed the
+    # wrong key finds out before their first blocked review.
+    project_slug: str = ""
 
     @property
     def is_lead(self) -> bool:

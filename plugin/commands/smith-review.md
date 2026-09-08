@@ -74,13 +74,70 @@ Other outcomes:
 - `not configured` — you skipped step 0. Go and do it, then run `smith plan` again.
 - `no changes to review` — say so and stop. Do not invent a change to review.
 
-The plan carries `review_id`, `guidelines`, `policy`, `conventions`, `deterministic_findings`,
-`suppressed_findings` and `platform_version`. The rules were filtered to that platform release; an
-empty `platform_version` means none was detected and every rule applied. Mention it only if the
-developer asks why a rule fired or did not.
+The plan carries `review_id`, `project`, `compared`, `guidelines`, `policy`, `conventions`,
+`deterministic_findings`, `suppressed_findings` and `platform_version`. The rules were filtered to
+that platform release; an empty `platform_version` means none was detected and every rule applied.
+Mention it only if the developer asks why a rule fired or did not.
+
+### What `compared` holds
+
+`compared` is what the plugin chose without asking: `kind` (`uncommitted` or `branch`), `base`,
+`files`, `ticket` and `freshness`. Step 3 is where you say it. Two things to do here:
+
+If `compared.ticket` is empty, ask **once** whether this belongs to a ticket, take whatever they
+answer including no, and never raise it again in this session. Do not stop the review over it.
+
+They can redirect what is being reviewed in words — "no, the whole branch" — and you re-run with
+`--base <ref>`. They never type a ref unless they want to.
+
+### `freshness` — the base may not be the base
+
+`compared.freshness.state` is about the ref the diff was taken against, and only `branch` reviews
+have one:
+
+- `current` — the remote has what this machine has. Say nothing; this is the normal case and it is
+  not news.
+- `stale` — **say it before the findings, not after.** This machine has not fetched, so the diff
+  carries whatever was merged since, and some of what you are about to review belongs to other
+  people. *"Heads up: origin/main here is behind the remote, so this diff includes work that is not
+  yours. Run `git fetch` and ask me again for a clean read."* `behind` is the count when it could be
+  worked out locally, and is null when it could not — say "behind" without a number rather than
+  inventing one.
+- `unknown` — the remote could not be reached: offline, no credentials, no remote. One short line
+  saying the base could not be checked, then review normally. Never treat this as an error.
+- `local` — nothing to check. Say nothing.
 
 If the conversation resumed and you no longer have the plan, `smith review <review_id>` fetches the
 review back.
+
+## 1b. Read the ticket, if you can reach one
+
+Optional, and worth trying: the acceptance criteria say what the change was *supposed* to do, and
+that is the one thing no rule will ever check. Code can be clean and not do the job.
+
+Reach it with what the developer already has, in this order, and stop at the first that works:
+
+1. A ticket tool their editor exposes to you.
+2. A CLI on their PATH — `jira`, `gh`. Try it; if it is not there or not authenticated, move on.
+3. Ask them, once, for a link or a paste. If they say no or ignore it, drop it for the session.
+
+**Never** ask for a token, a password or an API key for a ticket system. This plugin stores no
+ticket credential and you do not collect one. If none of the three reach a ticket, say in one short
+line that you are reviewing without it and carry on — a review without the ticket is the normal
+review, not a broken one.
+
+What you read stays on this machine. **Nothing from the ticket goes into `smith submit`** — not in a
+finding's `message`, not quoted, not paraphrased into one. The server holds code review, not
+somebody's business requirements. Use it to think; do not send it.
+
+Then review the change against it as well as against the rules, with two limits:
+
+- A finding from the ticket still points at a file and a line in the diff, like every other finding.
+  "The ticket asks for X and nothing here does it" is **one** finding on the change, not a checklist
+  of criteria with ticks.
+- A change that does two of three criteria is not incomplete. The third is usually another ticket,
+  another branch, or already there. Say what you observed and let them answer — that is what step 4
+  is for. Do not turn the ticket into a list of things to accuse them of.
 
 ## 2. Review the change
 
@@ -123,12 +180,21 @@ verdict blocks — that is expected, not a failure of the command.
 
 ## 3. Report the verdict, then the findings
 
-**The verdict comes first**, in one line: blocked or clear, and the server's reason. The developer
+**One line first saying what you reviewed**, from `compared` in the plan: uncommitted work or this
+branch against its base, the file count, the project from `project`, and the ticket if there is one.
+The developer never chose any of it and cannot see it. Then the verdict.
+
+If `compared.freshness.state` is `stale`, that line comes before the verdict too — the diff carries
+work that is not theirs and the findings are about to reflect it.
+
+**The verdict is second**, in one line: blocked or clear, and the server's reason. The developer
 needs to know whether they can push before they read anything else.
 
 Then the findings as a numbered list, blocking ones first, one line each:
 
 ```
+Reviewing your 2 uncommitted files in acme, ticket ABC-123.
+
 Blocked: 1 critical finding.
 
 1. config/local.properties:2 — password in a properties file; move it to the vault.

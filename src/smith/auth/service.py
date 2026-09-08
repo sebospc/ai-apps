@@ -222,12 +222,14 @@ class AuthService:
         user = self._users.by_id(user_id)
         self._keys.touch(key_id)
         role = self._projects.role_of(user_id, project_id)
+        project = self._projects.by_id(project_id)
         return Principal(
             user_id=user_id,
             email=user.email if user else "",
             project_id=project_id,
             role=role,
             via="api_key",
+            project_slug=project.slug if project else "",
         )
 
     def revoke_key(self, actor: Principal, project_slug: str, key_id: int) -> None:

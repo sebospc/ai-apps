@@ -683,6 +683,27 @@ function contentsOf(repo, path) {
 function reviewChecks({ repo, text, commands }) {
   const ran = (verb) => commands.some((c) => new RegExp(`smith(["\']?\\s|\\s)[^|]*\\b${verb}\\b`).test(c));
   check("the agent asked the server for a plan", ran("plan"), commands.join(" ; ").slice(0, 300));
+
+  // AA1: the plugin picks what to compare without asking, and the developer cannot see the choice.
+  // "uncommitted" is what this fixture produces — working changes on a fresh branch.
+  check(
+    "the developer was told what was being reviewed",
+    /\buncommitted\b|\bworking (changes|tree)\b/i.test(text),
+    firstMatch(text, /^.*(uncommitted|working (changes|tree)).*$/im) || "nothing says what was compared"
+  );
+  // The project comes from their key and they never chose it. A developer holding the wrong key has
+  // no other way to find out before a blocked review.
+  check(
+    "the developer was told which project the key belongs to",
+    /\bwalk-[a-z0-9]+\b/i.test(text),
+    firstMatch(text, /^.*walk-[a-z0-9]+.*$/im) || "the project is never named"
+  );
+  // AA3: the branch is named for a ticket, so the review has a title and the developer is told it.
+  check(
+    "the ticket on the branch reached the developer",
+    /ACME-42/i.test(text),
+    firstMatch(text, /^.*ACME-42.*$/im) || "the ticket is never mentioned"
+  );
   check("the agent submitted its own findings", ran("submit"), commands.join(" ; ").slice(0, 300));
   // The plan carries no code, so the agent has to fetch the change itself. The first walk piped the
   // diff through `head -80`: a review of part of a change, with nothing saying which part was lost.
@@ -1162,6 +1183,12 @@ const WALKS = {
     transcript: "rehearsal",
     setup: () => {
       const { repo, target } = buildRepo("smith-walk-repo-");
+      // A ticket-shaped branch, because that is what a developer is on and it is where the review's
+      // title comes from. `main` would exercise only the half where there is nothing to find.
+      execFileSync("git", ["checkout", "-q", "-b", "feature/ACME-42-fix-the-constants"], {
+        cwd: repo,
+        stdio: "ignore",
+      });
       introduceProblems(repo, target);
       return { repo, about: `change in ${target}` };
     },

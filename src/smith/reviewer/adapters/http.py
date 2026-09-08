@@ -138,6 +138,9 @@ def build_router() -> APIRouter:
         request.state.review_id = plan.review_id
         return {
             "review_id": plan.review_id,
+            # A key is bound to one project and never chooses it, so this is not a setting — it is
+            # the answer to "which project am I reviewing into", which nothing else tells anybody.
+            "project": actor.project_slug,
             "instructions": plan.instructions,
             "policy": plan.policy,
             "conventions": plan.conventions,

@@ -3955,6 +3955,13 @@ What breaks for a developer if this does not exist: they type `/smith-apply` in 
 works, and no way to tell what was written or what it collided with.
 
 ## Notes and decisions log
+- 2026-09-08 — `cursor-agent plugin marketplace update <name>` **does not fetch**. It answered
+  `✓ Updated marketplace smith: 1 plugin indexed` and left the cached checkout on the commit it
+  already had, which still carried the `skills/` directory Z1 deleted — so an agent kept reading the
+  old plugin while the command said it was current. `remove` then `add` moved it to the new commit.
+  `README.md` said `update` was the way to upgrade, written the same day and never tested; it now
+  says the opposite and names the directory listing that settles it. A command that prints a tick is
+  not a measurement.
 - 2026-09-08 — Z1 shipped with a **measured regression**, recorded rather than discovered later. The
   full table is in Z4. Short version: `cursor apply` fell from 27/0 to 14/13 when the instructions
   moved from `skills/` to `commands/`, reproduced twice, with the baseline re-run on a worktree at

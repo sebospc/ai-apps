@@ -28,19 +28,28 @@ cursor-agent plugin marketplace add https://github.com/sebospc/ai-apps
 
 Then in Cursor, type `/plugins` and install **smith** from the list.
 
-To update later, re-index and Cursor picks up the new version:
-
-```bash
-cursor-agent plugin marketplace update smith
-```
-
-If a `smith` marketplace already exists pointing somewhere else, the name collides and the old one
-wins silently — `marketplace list` still shows the old URL after an `add` that printed a tick.
-Remove it first:
+To update later, remove the marketplace and add it again:
 
 ```bash
 cursor-agent plugin marketplace remove smith
+cursor-agent plugin marketplace add https://github.com/sebospc/ai-apps
 ```
+
+Then `/plugins` and install **smith** again.
+
+**`marketplace update` does not fetch anything**, whatever it prints. Measured 2026-09-08: it
+answered `✓ Updated marketplace smith: 1 plugin indexed` and the cached checkout stayed on the
+commit it already had — an old plugin, with the directory this version deleted still in it. Remove
+and add moved it to the current commit. A tick from that command is not evidence you are up to date;
+this is:
+
+```bash
+ls ~/.cursor/plugins/marketplaces/github.com/<owner>/<repo>/*/plugin
+```
+
+The same collision bites on `add`: if a `smith` marketplace already exists pointing somewhere else,
+the name collides, the old one wins silently, and `marketplace list` still shows the old URL after an
+`add` that printed a tick. Removing first is what makes both cases behave.
 
 #### From a checkout instead
 
@@ -97,12 +106,14 @@ If `/smith-review` is not in the list, the install did not land. Check its shape
 ls ~/.cursor/plugins/local/smith     # a checkout install
 ```
 
-You should see `bin`, `commands`, `plugin.json`. If you also see `plugin`, the nested copy happened:
-run the three install lines again, all of them. On a marketplace install, re-index instead:
+You should see `bin`, `commands`, `plugin.json`. If you see `skills`, you are on a version from
+before 2026-09-08 and the update did not land — remove the marketplace and add it again, per
+[Install](#1-install). If you also see `plugin`, the nested copy happened: run the three install
+lines again, all of them.
 
-```bash
-cursor-agent plugin marketplace update smith
-```
+A checkout install shadows a marketplace one, and Cursor loads both. That cost a walk an hour here:
+a copy left in `~/.cursor/plugins/local/smith` from an earlier install was read instead of the
+current plugin, and the session behaved like the old version because it was the old version.
 
 This plugin ships **commands and no skills**, on purpose. A skill sits in Cursor's "Agent Decides"
 list and is matched against what a developer types, which is how a review plugin ends up answering

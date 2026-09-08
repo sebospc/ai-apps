@@ -4170,8 +4170,21 @@ forward is a directory listing and an interactive reinstall.
 
 ### [ ] AB2. The explicit-invocation claim, verified rather than trusted
 
-`disable-model-invocation: true` is documented. It is not measured here, and Z1 exists because a
-skill answered developers who never asked for it — the exact failure this flag claims to prevent.
+**Already measured on 2026-09-08, before the phase was started, because the whole phase depends on
+it.** A probe skill in `~/.cursor/skills/` was invoked from a terminal session, ran its own script by
+a path relative to the skill, and the script made a real HTTPS request to the production server —
+`status=200 {"status":"ok"}`. So a skill can carry a CLI and reach the API; that half is settled.
+
+Then the flag, run both ways against a prompt copying the skill's own description almost word for
+word — *"I need a probe that proves a skill can run its own script"*:
+
+| SKILL.md | what happened |
+|---|---|
+| `disable-model-invocation: true` | the skill did **not** run; the agent wrote its own answer |
+| the same file, that line deleted | the skill ran, and its script printed its marker |
+
+One line, opposite outcomes, so the flag holds and a check on it is known to be able to fail. What
+remains below is running the real walk against the real skill rather than a probe.
 
 Acceptance:
 
@@ -4187,6 +4200,15 @@ What breaks for a developer if this does not exist: the plugin that was made qui
 again through a second door, and the first person to notice is a developer it interrupted.
 
 ## Notes and decisions log
+- 2026-09-08 — phase AB's two open questions were measured before the phase was started, with a
+  throwaway skill in `~/.cursor/skills/` rather than by reading documentation. **A skill can carry a
+  CLI and reach the network**: invoked as `/smith-probe` from a terminal session, it ran a script by a
+  path relative to its own directory and that script got `status=200 {"status":"ok"}` from the
+  production server. **And `disable-model-invocation: true` holds**: against a prompt copying the
+  skill's description almost word for word, the flagged skill did not run and the agent answered on
+  its own; deleting that single line from the same file made it run. Both directions observed, so the
+  assertion AB2 will make is known to be able to fail. The probe was removed from the user's config
+  afterwards.
 - 2026-09-08 — **Z1's premise had a gap, and it is worth writing down rather than defending.** Z1
   deleted `plugin/skills/` because a skill sits in Cursor's "Agent Decides" list and gets matched
   against whatever a developer types. That was true and the defect was real. What was missed is

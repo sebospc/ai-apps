@@ -4484,7 +4484,7 @@ never been a number.
 Two budgets are set to zero and are claims this repository makes about itself: no guideline without
 a scope, no check id without a fixture. Both were shown to fail by breaking them on purpose.
 
-### [ ] AG2. Rewrite the review command tighter, and prove it did not get worse
+### [x] AG2. Rewrite the review command tighter, and prove it did not get worse
 
 Not started until AH1 exists. Rewriting prose that steers an agent is the one change here that can
 degrade the product silently, and taste is not a measurement.
@@ -4501,6 +4501,31 @@ referenced file at all.
 
 Acceptance: every review walk passes at the same or better numbers, the token measurement drops, and
 the diff is reviewed sentence by sentence against what each one was there to prevent.
+
+Done. 4756 → 4569 tokens, and the 187 saved is the least interesting part: an `Inputs` section was
+*added*, so the reorganisation paid for itself and then some.
+
+What changed in shape, all three borrowed:
+
+- **`## Inputs`**, separating what a review cannot run without from what merely improves it, and one
+  stated rule for a missing optional input — say a line, review with what you have, move on. That
+  rule used to be repeated in the ticket step, in `freshness: unknown`, and in the failure table,
+  with different wording each time.
+- **A closed shape for the report**: four parts, named and numbered, instead of four paragraphs each
+  introducing its own idea of what comes first.
+- **Tables where the text was a list of cases** — what the developer answers at step 1, what each
+  `freshness` state means.
+
+Behaviour was measured, not assumed. Bare `/smith-review` asked and stopped with no review opened.
+The same command with the range in the prompt carried the whole loop to a blocked verdict, said in
+one line that it could not reach the ticket, and filed the defect no guideline covered as
+`rule_id: "bug"` — AF1's escape hatch used correctly in a session nobody prompted for it. The scope
+walk stayed 9 green.
+
+A sentence-level diff of what did not survive verbatim was read line by line; one tone instruction
+had genuinely been dropped ("do not turn the ticket into a list of things to accuse them of") and
+was put back.
+
 
 ## Phase AH — measure the thing, not the intention
 

@@ -672,7 +672,14 @@ test("no command sends the developer off to install something", () => {
     const skill = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8");
     assert.doesNotMatch(skill, /ln -s/);
     assert.doesNotMatch(skill, /install line/i);
-    assert.ok(skill.includes("never suggest installing anything"), `${name} may send them to install`);
+    // Whitespace-insensitive, because the claim is that the instruction is there and not that it
+    // fits on one line. Matching the raw text failed twice on a sentence that wrapped, which sends
+    // whoever hits it looking for a missing rule that was never missing.
+    const prose = skill.replace(/\s+/g, " ");
+    assert.ok(
+      prose.includes("never suggest installing anything"),
+      `${name} may send them to install`,
+    );
   }
 });
 

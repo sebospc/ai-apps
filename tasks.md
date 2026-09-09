@@ -4416,7 +4416,128 @@ asserted guidelines came back. That change legitimately matches none now, so the
 well, and the empty case has a test of its own rather than being an accident nobody wrote down.
 
 
+## Phase AG — what a review costs, measured
+
+Measured 2026-09-09, one review of a Java + properties change:
+
+```
+plugin/commands/smith-review.md   ~4600 tokens   loaded on every invocation
+plan response                     ~2200 tokens
+  guidelines (19 of 33)            1567   text 30% · fix 27% · why 25% · id 9% · scope 4%
+  instructions                      416
+  deterministic findings            102
+plugin/commands/smith-update.md    ~900 tokens
+```
+
+The command file costs more than the server's answer, and it is also where the behaviour lives.
+That is the whole tension of this phase: the cheapest tokens to cut are the ones holding the review
+together. So the order is deliberate — take what is free first, build the measurement, and only then
+touch a sentence that makes an agent behave.
+
+### [x] AG1. The four cuts that change no behaviour
+
+None of these touches an instruction. Each was measured before it was proposed.
+
+- **`/smith-update` is 70 lines for a command that usually answers in one.** Half of it is
+  justification the agent does not act on, and a block of commands duplicating what the CLI already
+  prints. ~450 tokens.
+- **`scope` still travels to the agent in every guideline.** Since AF1 the server filters, so the
+  field is dead weight — and it is the field that spent months being a hint nobody applied. ~56
+  tokens, and one less thing that can be misread.
+- **`smith status` runs on every review.** Step 0 says never ask twice and to check with `status`,
+  so a configured machine pays for a call that always answers the same. Invert it: go straight to
+  `plan --preview`, and set credentials up only when something says it is not configured. ~150
+  tokens and a round trip.
+- **The agent hunts for the CLI.** Measured in a real session: `find /Users/... -path '*smith*'`,
+  32 seconds, a wall of paths into the context. It happens because the command says "the directory
+  above this file" and the agent does not know where this file is. One deterministic line instead:
+
+  ```bash
+  SMITH=$(command -v smith || ls -d ~/.cursor/plugins/cache/*/smith/*/bin/smith 2>/dev/null | tail -1)
+  ```
+
+  300–800 tokens and half a minute per review. `/smith-update` keeps its own rule: it must read the
+  copy it was loaded from, and the newest sha is not necessarily that.
+
+Acceptance: the same walks pass, `scripts/sanity.mjs` reports the new numbers, and no sentence about
+what the agent must do was changed.
+
+Done. Measured before and after, same fixed change:
+
+```
+                     before      after
+smith-update.md      904 tok     635 tok
+plan guidelines     1567 tok    1458 tok      (`scope` no longer sent)
+review, step 0      find over $HOME + `smith status` + `plan --preview`
+                    → `command -v smith || ls -d …` + `plan --preview`
+```
+
+The review command grew by 149 tokens and that is the right trade: the file says once, cheaply, how
+to reach the CLI, instead of the agent working it out with a filesystem search. Measured in a real
+session before and after — `find /Users/… -path '*smith*'`, 32 seconds and a wall of paths, became
+two commands and no search.
+
+`scripts/sanity.py` reports all of it, plus the thing nobody was looking at: **8 of 10 walks need a
+corpus, so 2 run on a machine without one.** That is the functional layer's real coverage and it had
+never been a number.
+
+Two budgets are set to zero and are claims this repository makes about itself: no guideline without
+a scope, no check id without a fixture. Both were shown to fail by breaking them on purpose.
+
+### [ ] AG2. Rewrite the review command tighter, and prove it did not get worse
+
+Not started until AH1 exists. Rewriting prose that steers an agent is the one change here that can
+degrade the product silently, and taste is not a measurement.
+
+The structure worth borrowing, from a set of SAP Commerce skills read as reference on 2026-09-09:
+explicit `Inputs` and `Output Format` sections, a closed vocabulary for the result, one declarative
+sentence per line, and a stated rule for what to do when context is missing. Those make a prompt
+shorter per unit of instruction because they stop it repeating itself. What is not worth borrowing
+is the length: those skills run 483 to 748 lines against this one's 355.
+
+What must not be tried again: splitting the command into a thin file plus `instructions/*.md`. It
+was measured in phase Z and came out worse — 15/12 against 27/0 — with the agent not reading the
+referenced file at all.
+
+Acceptance: every review walk passes at the same or better numbers, the token measurement drops, and
+the diff is reviewed sentence by sentence against what each one was there to prevent.
+
+## Phase AH — measure the thing, not the intention
+
+### [x] AH1. One command that reports what everything costs and whether it holds
+
+Asked for on 2026-09-09, and the reason is in this file: every phase since AA fixed something that a
+green suite had been reporting as fine. A test says a thing works. Nothing here says how well, how
+much it costs, or whether it drifted.
+
+`scripts/sanity.mjs` prints one table and exits non-zero when a budget is broken:
+
+- **Token cost.** Each command file, and a plan for a fixed diff — total and per section. A budget
+  per number, so a command that grows 40% in a phase is a failure rather than a surprise.
+- **Ruleset health.** Guidelines without a scope, rule ids with no fixture, checks with no fixture,
+  guidelines whose `why` or `fix` is missing. All of these are silent today.
+- **Prompt shape.** Every command file has the sections it must have, says how to reach the CLI in
+  both editors, names no editor-only variable, and carries no sentence that only makes sense to
+  whoever wrote it. The existing checks of this kind live in `plugin/test/smith.test.js` and stay
+  there; what this adds is the measurements they cannot express as pass or fail.
+- **Coverage of the functional layer.** Which walks exist, which need a corpus, and which ran today.
+  A walk nobody can run has to be visible as zero, not as absence.
+
+Acceptance: it runs with no server and no corpus, reporting what it cannot measure rather than
+skipping it silently. `uv run pytest`, `node --test plugin/test` and this are the three commands the
+working agreement names.
+
+
 ## Notes and decisions log
+- 2026-09-09 — three things were considered and turned down, so they do not get proposed again.
+  **Auto-updating the plugin**: measured — a full copy placed by hand in `~/.cursor/plugins/cache/`
+  at the right sha, with `.cache-complete`, did not load, and Cursor then swept the stale sha that
+  was already there. `cursor-agent plugin marketplace list` reports scopes of `user` and `team`, so
+  installation state lives on the Cursor account and there is no local registry to write; the CLI
+  has no `install` verb. `/smith-update` stays a command that tells you, not one that acts.
+  **Lead-authored guidelines**: the catalog of rules is ours to offer and theirs to switch on or
+  off. **A third per-project text box** for what the project is about: the reviewer prompt is that
+  box, and a third one is a lead guessing which of three to write in.
 - 2026-09-09 — the coverage in this repository was called out as too thin, and the reading that
   followed says it was. Three findings from one afternoon: the browser suite seeded its review with
   `plan` alone and would have gone red on a fix rather than catching one; a walk asserted on what a

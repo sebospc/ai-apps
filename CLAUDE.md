@@ -46,6 +46,12 @@ node scripts/e2e_browser.mjs                    # green, then kill both
 
 then mark the task `[x]` with the commit sha and commit.
 
+**A green suite is not a measurement.** `uv run python scripts/sanity.py` prints what a review
+costs in tokens, how much of the ruleset is scoped and covered by fixtures, and how much of the
+functional layer can run on this machine at all. It fails when a budget breaks. Read it when you
+change a command file, a rule or the plan, and record the number that moved — every phase since AA
+fixed something a green suite had been calling fine.
+
 **Testing is your job, all of it.** Nobody is going to click through a screen, drive the plugin or
 judge whether an error message is useful. You have a real browser (`scripts/cdp.mjs`), the real CLI
 (`plugin/bin/smith`), a real database, and a real SAP Commerce corpus to measure against when
@@ -362,6 +368,7 @@ means repeating commands nobody wrote down. That is a task waiting to be written
 ```bash
 scripts/ensure_db.sh                            # postgres, starting the podman VM if needed
 uv run pytest                                   # server: unit + HTTP tests
+uv run python scripts/sanity.py                 # what everything costs, and whether it drifted
 SMITH_REFRESH_BASELINE=1 uv run pytest -k baseline -s   # re-pin what the ruleset catches
 SMITH_REFRESH_BASELINE=1 uv run pytest -k analyzer_precision -s  # re-pin what the analyzers catch
 node --test plugin/test                         # plugin CLI tests

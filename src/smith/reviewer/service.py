@@ -296,7 +296,10 @@ class ReviewService:
                 "severity": g.severity,
                 "why": g.why,
                 "fix": g.fix,
-                "scope": g.scope,
+                # `scope` is not sent. The server has already applied it — a guideline that reached
+                # this list matches a file in the change — so the field would be weight the agent
+                # reads and cannot act on. It spent months here as a hint nobody applied, which is
+                # how a guideline about Spring facades ended up on a jQuery file.
             }
             for g in ruleset.guidelines
             if g.id not in config.disabled_rules and g.applies_to(changed_paths)

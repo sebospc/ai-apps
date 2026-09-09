@@ -20,13 +20,28 @@ JSON. Everything below is yours to run and yours to translate.
 5. Ask one question and listen.
 6. `smith respond` with what they said. Fixes go back to step 2.
 
-## 0. Credentials, once
+## 0. Reaching the CLI, and credentials once
 
-`smith status` says what is configured. Nothing is configured on a fresh machine — there is no
-default server, no default key and no default user — so the first run of this command in a new
-install has to set that up before anything else.
+The CLI is `bin/smith` in this plugin — the directory one level above this file, the one holding
+`bin/` and `commands/`. Claude Code puts that `bin/` on PATH by itself; Cursor does not.
 
-Ask for what is missing, in the conversation, one question at a time:
+Resolve it once, at the start, and reuse what it gives you. Every command below is `$SMITH`:
+
+```bash
+SMITH=<plugin>/bin/smith                      # this file's directory, one level up
+command -v smith >/dev/null && SMITH=smith    # Claude Code already has it
+```
+
+If you truly cannot tell where this file is, `ls -d ~/.cursor/plugins/cache/*/smith/*/bin/smith`
+lists the installed copies and any of them will do — they all talk to the same server. What you must
+not do is search for it: a `find` over a home directory costs half a minute and fills this
+conversation with paths, and it was measured doing exactly that.
+
+**Do not run `smith status` to see whether you are configured.** Go straight to step 1: the CLI says
+`not configured` when it is not, and on every other run that check would cost a call to learn
+nothing. Credentials are set up when something says they are missing, and never again.
+
+When that happens, ask for what is missing, in the conversation, one question at a time:
 
 - the Smith server URL
 - their API key, which their project lead issues for them
@@ -34,7 +49,7 @@ Ask for what is missing, in the conversation, one question at a time:
 Then run it yourself and say nothing about the file it writes:
 
 ```bash
-smith auth --url <server> --key <api key>
+$SMITH auth --url <server> --key <api key>
 ```
 
 `auth` proves the credential against the server before it saves, so a typo fails here rather than
@@ -42,8 +57,9 @@ half way through their first review.
 
 Three rules that matter more than they look:
 
-- **Never ask twice.** Once saved, every later run finds the credentials and asks nothing. If you
-  are about to ask a developer for a URL they already gave you, run `smith status` instead.
+- **Never ask twice.** Once saved, every later run finds them and asks nothing. If you are about to
+  ask for a URL they already gave you, you have skipped that. `$SMITH status` prints what is
+  configured, for the one case where you genuinely do not know.
 - **Never echo the key back.** Not in a summary, not in a confirmation, not when something fails.
   It is a credential and this conversation gets pasted into bug reports.
 - **Never invent one.** If they do not have a key, the answer is that their project lead issues it,
@@ -57,7 +73,7 @@ different project**, say so in one sentence and ask whether they have a new one.
 ## 1. Look before you start
 
 ```bash
-smith plan --preview
+$SMITH plan --preview
 ```
 
 Costs nothing and creates nothing: no server call, no review, no credentials needed. It answers with
@@ -96,14 +112,11 @@ ask a question there is no useful answer to.
 ## 2. Get the plan
 
 ```bash
-smith plan
+$SMITH plan
 ```
 
-Claude Code puts this plugin's `bin/` on PATH by itself; Cursor does not. When the command is not
-found, run `node <plugin>/bin/smith plan` instead, where `<plugin>` is the directory one level
-above this file, the one holding `bin/` and `commands/`. That path always works, so it is the answer
-and not a workaround: say nothing about it and never suggest installing anything. Add `--base main`
-to review a whole branch instead of uncommitted work.
+`$SMITH` is what step 0 resolved. Say nothing about the path, and never suggest installing anything.
+Add `--base main` to review a whole branch instead of uncommitted work.
 
 **If the response has `"skipped": true`**, the change is not worth a review. Say so in one line,
 quoting the server's `reason` in your own words — "Nothing here to review: only documentation
@@ -199,7 +212,7 @@ rest, and neither you nor the developer can tell which findings it lost.
   and a good outcome.
 
 ```bash
-echo '{"findings": [...]}' | smith submit <review_id>
+echo '{"findings": [...]}' | $SMITH submit <review_id>
 ```
 
 Each finding:
@@ -289,7 +302,7 @@ Then stop talking. Do not pre-empt the answer, do not suggest which ones they sh
 
 ```bash
 echo '{"responses": [{"finding": 3, "disposition": "dismissed", "note": "we do that on purpose"}]}' \
-  | smith respond <review_id>
+  | $SMITH respond <review_id>
 ```
 
 `finding` is the number you showed them. Match what they said on the left and send the value in the

@@ -1683,3 +1683,44 @@ def test_a_change_no_guideline_is_about_still_gets_reviewed(client) -> None:
     assert plan["guidelines"] == []
     assert "properties-hardcoded-secret" in {f["rule_id"] for f in plan["deterministic_findings"]}
     assert '"rule_id": "bug"' in plan["instructions"]
+
+
+def test_the_sanity_report_runs_and_measures_something(tmp_path) -> None:
+    """`scripts/sanity.py` is the only thing that says how much a review costs and whether the
+    ruleset drifted, so it has to keep running when the things it reads move.
+
+    It is deliberately not asserted on its numbers — those change every phase and pinning them here
+    would make an improvement look like a regression. What is pinned is that it produced the
+    measurements at all, because a report that quietly stops measuring reads exactly like one where
+    everything is fine.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        [sys.executable, str(root / "scripts" / "sanity.py"), "--json"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=root,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+
+    measured = {f"{r['group']}·{r['name']}": r for r in report["rows"]}
+    for name in (
+        "command·smith-review",
+        "ruleset·guidelines",
+        "ruleset·guidelines with no scope",
+        "fixtures·check ids with no fixture",
+        "walks·defined",
+    ):
+        assert name in measured, sorted(measured)
+        assert measured[name]["value"] is not None, f"{name} stopped being measurable"
+
+    # Every budget holds on a clean tree, and the ones set to zero are the claims this repository
+    # made about itself: nothing unscoped, no check without a fixture.
+    assert report["failures"] == []
+    assert measured["ruleset·guidelines with no scope"]["value"] == 0

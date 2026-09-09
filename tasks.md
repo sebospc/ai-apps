@@ -4359,7 +4359,7 @@ this is what the database holds, and it can wait for a week when an update is no
 
 ## Phase AF — a guideline that cannot apply cannot be misapplied
 
-### [x] AF1. Scope the guidelines, and give a defect with no guideline somewhere to go — 705ec21
+### [x] AF1. Scope the guidelines, and give a defect with no guideline somewhere to go — 1a41a83 — 705ec21
 
 Reported 2026-09-09, from a real review: a jQuery file in a JSP storefront's webroot came back
 flagged `no-scattered-condition` — a guideline about repeating a business condition across Spring

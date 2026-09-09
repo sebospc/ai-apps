@@ -4529,6 +4529,20 @@ working agreement names.
 
 
 ## Notes and decisions log
+- 2026-09-09 — read eight SAP Commerce skills from another team as a style reference. What was worth
+  taking was not the skills but their `AGENTS.md`, which records scars: a markdown formatter rewrites
+  a closing `---` into a dash run and the file stops being a command (it hit them three times), and a
+  colon-space in an unquoted `description` fails to parse and takes the whole file down. Both are now
+  checks in `plugin/test/smith.test.js`, and the first was proved to fail by damaging a delimiter.
+  Three things of theirs are worth borrowing into AG2 and are written there: an `Inputs` section
+  separating what is required from what is merely expected, one stated rule for what to do when
+  context is missing rather than the same idea in four places, and a closed vocabulary for the
+  result. Three are not: their description **is** the trigger, which is the auto-firing this plugin
+  removed in Z1; they chain skills by name, and this surface is three calls that do not chain; and
+  they push bulky material into `references/` loaded on demand — the same idea measured worse here in
+  phase Z, 15/12 against 27/0, with the agent not reading the referenced file. Their conventions are
+  checked by hand ("no validation script or CI"); ours are executable, and that is the one place this
+  repository was already ahead.
 - 2026-09-09 — three things were considered and turned down, so they do not get proposed again.
   **Auto-updating the plugin**: measured — a full copy placed by hand in `~/.cursor/plugins/cache/`
   at the right sha, with `.cache-complete`, did not load, and Cursor then swept the stale sha that

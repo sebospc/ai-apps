@@ -951,3 +951,32 @@ test("update reads its own commit from where it is installed, not from a constan
     fs.rmSync(cache, { recursive: true, force: true });
   }
 });
+
+// Two traps recorded by another team shipping agent surfaces, and worth borrowing as checks rather
+// than as advice. Both take a command down whole and neither shows up as an error: the editor reads
+// no frontmatter, so the file is not a command, so nothing happens when the developer types it.
+//
+//   1. A markdown formatter reads `description: …` followed by `---` as a setext heading and
+//      rewrites the closing delimiter as a run of dashes padded to the line above. They report this
+//      hitting three files.
+//   2. A plain YAML scalar cannot hold colon-space, so a description containing `say: "do X"` fails
+//      to parse — taking the whole file down, not just that field.
+test("frontmatter survives a formatter and parses as YAML", () => {
+  for (const name of COMMANDS) {
+    const lines = fs.readFileSync(path.join(__dirname, `../commands/${name}.md`), "utf8").split("\n");
+    assert.equal(lines[0], "---", `${name} does not open with a bare ---`);
+
+    const close = lines.findIndex((line, i) => i > 0 && line.trimEnd().startsWith("---"));
+    assert.ok(close > 0, `${name} has no closing delimiter`);
+    assert.equal(lines[close], "---", `${name} closes with a dash run, which parses as no frontmatter`);
+
+    const frontmatter = lines.slice(1, close);
+    const description = frontmatter.find((line) => line.startsWith("description:"));
+    assert.ok(description, `${name} has no description, which is what an editor lists it by`);
+    assert.ok(
+      !description.slice("description:".length).includes(": "),
+      `${name}: colon-space in an unquoted scalar fails to parse and takes the command down`,
+    );
+    assert.ok(frontmatter.some((line) => line === `name: ${name}`), `${name}: name must match the file`);
+  }
+});

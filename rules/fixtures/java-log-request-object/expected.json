@@ -1,0 +1,10 @@
+{
+  "findings": [
+    {
+      "rule_id": "no-request-object-in-log",
+      "file": "core/src/PaymentCallbackController.java",
+      "line": 13,
+      "severity": "warning"
+    }
+  ]
+}

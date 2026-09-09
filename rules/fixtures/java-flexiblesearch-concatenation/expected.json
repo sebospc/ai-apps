@@ -1,0 +1,10 @@
+{
+  "findings": [
+    {
+      "rule_id": "flexiblesearch-parameterised",
+      "file": "core/src/OrderLookupDao.java",
+      "line": 14,
+      "severity": "critical"
+    }
+  ]
+}

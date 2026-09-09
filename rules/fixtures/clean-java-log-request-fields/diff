@@ -1,0 +1,26 @@
+diff --git a/core/src/PaymentCallbackController.java b/core/src/PaymentCallbackController.java
+new file mode 100644
+--- /dev/null
++++ b/core/src/PaymentCallbackController.java
+@@ -0,0 +1,20 @@
++package com.acme.core.controller;
++
++import javax.servlet.http.HttpServletRequest;
++
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++
++public class PaymentCallbackController {
++
++    private static final Logger LOG = LoggerFactory.getLogger(PaymentCallbackController.class);
++
++    public void handle(final HttpServletRequest request) {
++        final String orderCode = request.getParameter("orderCode");
++        LOG.info("payment callback for order {}", orderCode);
++        LOG.debug("bad request rejected for {}", orderCode);
++        process(request);
++    }
++
++    private void process(final HttpServletRequest request) {
++    }
++}

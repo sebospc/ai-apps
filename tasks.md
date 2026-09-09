@@ -4553,6 +4553,77 @@ skipping it silently. `uv run pytest`, `node --test plugin/test` and this are th
 working agreement names.
 
 
+## Phase AI — a guideline you cannot measure is a guess
+
+### [x] AI1. Measure a guideline before a developer pays for it
+
+A deterministic check ships with two fixtures: one where it fires, one of ordinary code where it
+stays quiet. A guideline ships with nothing at all. It is prose handed to a model, and the only
+thing that has ever measured one is rule health — which reports after developers have already been
+annoyed. That is why `no-scattered-condition` could be wrong about a jQuery file for months.
+
+`scripts/guideline_probe.mjs <guideline-id>` runs a real review over a set of ordinary changes and
+counts how many come back citing it. A guideline that fires on ordinary code is noise, and the
+number says so before anybody ships it.
+
+It uses `SMITH_CORPUS` when one is there, because a guideline measured against invented code is
+measured against code written by the same kind of model that will review it. Without a corpus it
+falls back to a built-in set of six ordinary SAP Commerce changes and **says the reading is weaker**
+rather than presenting it as the same thing.
+
+First readings, on the built-in set:
+
+```
+no-scattered-condition               offered 2/3   fired 0   quiet on ordinary code
+items-xml-active-flag-unique-index   offered 1/5   fired 0   quiet, and only on items.xml
+```
+
+The second line is also AF1 visible in a measurement: the guideline was offered for the one file it
+is about and for nothing else.
+
+### [ ] AI2. The firing half, which is the half that is missing
+
+The probe answers "is it quiet". It does not answer "can it fire at all", and a guideline that never
+fires is worse than a noisy one because nothing reports it. A positive control needs a change that
+should trip the guideline and a session that reads it.
+
+One is already written and unrun — the `claude` session limit was reached mid-measurement on
+2026-09-09. The fixture is an `items.xml` adding an `AcmeLoyaltyCard` itemtype with an `active`
+attribute and a unique index over `cardNumber` alone, which is exactly the trap. Run it, and if the
+guideline fires, ship `items-xml-active-flag-unique-index`.
+
+Until then it is **not in the ruleset**. Half a measurement is not a measurement, and the doctrine
+in `CLAUDE.md` is that a rule ships with evidence in both directions.
+
+## Phase AJ — what another team's checklist was actually worth
+
+### [x] AJ1. Three rules out of a hundred, and the two that survived measurement
+
+Eight SAP Commerce skills and four Cursor rule files were read as a reference on 2026-09-09. Their
+review material runs to roughly a hundred checklist items. Crossed against the 33 guidelines here,
+most was already covered — layering, queries in loops, `System.out`, tests with mocks — or too vague
+to be a rule at all: *"consider caching"*, *"handle downstream failures explicitly"*, *"review
+existing OCC endpoints before creating one"*, which cannot be judged from a diff without the whole
+API surface.
+
+Three were specific and missing. Two shipped:
+
+- **`flexiblesearch-parameterised`** — a FlexibleSearch built by string concatenation. This is
+  injection, and it is deterministic, so it went in as a check with both fixtures rather than as
+  prose: `new FlexibleSearchQuery("…" + value)`. The pattern was tested against a parameterised
+  query, a query held in a constant and a plain string, and stays quiet on all three.
+- **`no-request-object-in-log`** — the whole request or response object reaching a log line. The
+  existing `java/log-cookie-value` covers the worst single case; this covers the object that carries
+  every header it was given. The pattern takes the object and not a field of it, and was tested
+  against seven quiet lines including `request.getParameter(...)`, a local named `request`, and
+  `LOG.error("request", exception)` where the word is inside a string.
+- **`items-xml-active-flag-unique-index`** — held back, see AI2.
+
+The lesson worth more than the rules: a checklist is not a ruleset. Ninety-seven of those items are
+good advice for a person and would be noise as a rule, and the difference is whether the thing can
+be pointed at in a diff.
+
+
 ## Notes and decisions log
 - 2026-09-09 — read eight SAP Commerce skills from another team as a style reference. What was worth
   taking was not the skills but their `AGENTS.md`, which records scars: a markdown formatter rewrites

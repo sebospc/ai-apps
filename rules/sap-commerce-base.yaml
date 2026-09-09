@@ -63,6 +63,17 @@ rules:
     fix: "Use unique attributes or &references."
     default_issue_type: bug
 
+  - id: flexiblesearch-parameterised
+    text: >
+      FlexibleSearch queries must name their values as ?parameters and pass them with
+      addQueryParameter. A query assembled by string concatenation takes whatever the caller was
+      given straight into the statement.
+    severity: critical
+    scope: "*.java"
+    why: "A concatenated value is injection, and in Commerce it reaches the type system: a crafted value can widen a query past the restrictions the caller relies on."
+    fix: "Replace the concatenated value with ?name in the query string and call query.addQueryParameter(\"name\", value)."
+    default_issue_type: security
+
   - id: extension-dependency-direction
     text: "Custom extensions must not create circular dependencies."
     severity: warning
@@ -151,6 +162,16 @@ rules:
         <targetElement type="OrderEntry" cardinality="many" .../>
         → No deployment. This is correct as-is.
     default_issue_type: bug
+
+  - id: no-request-object-in-log
+    text: >
+      Do not log a whole request or response object. Log the one field that identifies it — an id,
+      an order code — and nothing else.
+    severity: warning
+    scope: "*.java"
+    why: "The object carries every header, parameter and body it was given, and a log has a different audience and a longer life than the code that wrote it."
+    fix: "Replace the object with the single field the line is actually about."
+    default_issue_type: security
 
   - id: no-system-out
     text: "Do not use System.out.println or System.err. Use LOG."
@@ -386,6 +407,21 @@ checks:
     message: "This call reaches the Jalo layer through JaloSession or SessionContext."
     suggestion: "Replace it with the ServiceLayer API for what this call does; which one that is depends on the call."
 
+  - id: java/flexiblesearch-concatenation
+    rule_id: flexiblesearch-parameterised
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: critical
+    issue_type: security
+    # A query literal concatenated where the query is built. A parameterised query never does this:
+    # it names `?param` and calls `addQueryParameter`, so the `"` immediately followed by `+` is the
+    # whole signal and it does not appear in correct code.
+    pattern: 'new\s+FlexibleSearchQuery\s*\(\s*"[^"]*"\s*\+'
+    match_on: added
+    message: FlexibleSearch query built by string concatenation.
+    suggestion: Name the value as ?param in the query and pass it with addQueryParameter.
+
   - id: java/raw-jdbc
     rule_id: dao-uses-flexible-search
     file_pattern: "*.java"
@@ -486,6 +522,21 @@ checks:
     match_on: added
     message: "String.format has no % placeholder, so every argument after the format string is discarded and never printed."
     suggestion: "Add the %s/%d placeholders those arguments belong in, or drop String.format and pass them to the logger directly."
+
+  - id: java/log-request-object
+    rule_id: no-request-object-in-log
+    file_pattern: "*.java"
+    exclude_file_pattern: "*[Tt]est*"
+    output: finding
+    severity: warning
+    issue_type: security
+    # The object itself, never a field of it. `request.getParameter("code")` is ordinary and common;
+    # what this catches is the whole request or response reaching a log line, which puts every header
+    # and parameter it carried into a file with a different audience than the code had.
+    pattern: '(?i:[\w$]*log(?:ger)?)\s*\.\s*(?:info|debug|warn|warning|error|trace)\s*\([^)]*(?<![\w.])(?:request|response|httpRequest|httpResponse|servletRequest|servletResponse)\s*(?:[,)]|\s*\+)'
+    match_on: added
+    message: A whole request or response object is written to the log.
+    suggestion: Log the one field you need — an id or a code — instead of the object.
 
   - id: java/log-cookie-value
     rule_id: log-cookie-value

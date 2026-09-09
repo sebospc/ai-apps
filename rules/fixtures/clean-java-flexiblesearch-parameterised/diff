@@ -1,0 +1,29 @@
+diff --git a/core/src/OrderLookupDao.java b/core/src/OrderLookupDao.java
+new file mode 100644
+--- /dev/null
++++ b/core/src/OrderLookupDao.java
+@@ -0,0 +1,21 @@
++package com.acme.core.dao;
++
++import java.util.List;
++
++import de.hybris.platform.core.model.order.OrderModel;
++import de.hybris.platform.servicelayer.search.FlexibleSearchQuery;
++import de.hybris.platform.servicelayer.search.FlexibleSearchService;
++
++public class OrderLookupDao {
++
++    private static final String FIND_BY_CODE = "SELECT {pk} FROM {Order} WHERE {code} = ?code";
++
++    private FlexibleSearchService flexibleSearchService;
++
++    public List<OrderModel> findByCode(final String code) {
++        final FlexibleSearchQuery query = new FlexibleSearchQuery(FIND_BY_CODE);
++        query.addQueryParameter("code", code);
++        return flexibleSearchService.<OrderModel>search(query).getResult();
++    }
++
++    public void setFlexibleSearchService(final FlexibleSearchService service) {
++        this.flexibleSearchService = service;
++    }
++}

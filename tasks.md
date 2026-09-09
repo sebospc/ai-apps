@@ -4434,7 +4434,7 @@ That is the whole tension of this phase: the cheapest tokens to cut are the ones
 together. So the order is deliberate — take what is free first, build the measurement, and only then
 touch a sentence that makes an agent behave.
 
-### [x] AG1. The four cuts that change no behaviour
+### [x] AG1. The four cuts that change no behaviour — d696107
 
 None of these touches an instruction. Each was measured before it was proposed.
 
@@ -4504,7 +4504,7 @@ the diff is reviewed sentence by sentence against what each one was there to pre
 
 ## Phase AH — measure the thing, not the intention
 
-### [x] AH1. One command that reports what everything costs and whether it holds
+### [x] AH1. One command that reports what everything costs and whether it holds — d696107
 
 Asked for on 2026-09-09, and the reason is in this file: every phase since AA fixed something that a
 green suite had been reporting as fine. A test says a thing works. Nothing here says how well, how

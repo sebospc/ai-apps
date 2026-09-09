@@ -4484,7 +4484,7 @@ never been a number.
 Two budgets are set to zero and are claims this repository makes about itself: no guideline without
 a scope, no check id without a fixture. Both were shown to fail by breaking them on purpose.
 
-### [x] AG2. Rewrite the review command tighter, and prove it did not get worse
+### [x] AG2. Rewrite the review command tighter, and prove it did not get worse — 73f3112
 
 Not started until AH1 exists. Rewriting prose that steers an agent is the one change here that can
 degrade the product silently, and taste is not a measurement.
@@ -4555,7 +4555,7 @@ working agreement names.
 
 ## Phase AI — a guideline you cannot measure is a guess
 
-### [x] AI1. Measure a guideline before a developer pays for it
+### [x] AI1. Measure a guideline before a developer pays for it — 4bd7fe7
 
 A deterministic check ships with two fixtures: one where it fires, one of ordinary code where it
 stays quiet. A guideline ships with nothing at all. It is prose handed to a model, and the only
@@ -4597,7 +4597,7 @@ in `CLAUDE.md` is that a rule ships with evidence in both directions.
 
 ## Phase AJ — what another team's checklist was actually worth
 
-### [x] AJ1. Three rules out of a hundred, and the two that survived measurement
+### [x] AJ1. Three rules out of a hundred, and the two that survived measurement — 4bd7fe7
 
 Eight SAP Commerce skills and four Cursor rule files were read as a reference on 2026-09-09. Their
 review material runs to roughly a hundred checklist items. Crossed against the 33 guidelines here,

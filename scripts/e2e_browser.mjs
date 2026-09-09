@@ -458,6 +458,17 @@ async function main() {
       !ruleIds.includes("no-system-out")
     );
 
+    // A guideline is sent to the agent only for the files it can apply to, which is why a jQuery
+    // file stopped being reviewed against Spring rules. The lead's screen is the opposite job: it
+    // lists what this project *has*, so a rule can be switched off before the change that would
+    // trip it exists. Filtering this list by scope would take that away.
+    const rulesOnScreen = await page.text();
+    check(
+      "the settings screen lists a guideline the last review had no files for",
+      rulesOnScreen.includes("rxjs-takeuntil") && rulesOnScreen.includes("impex-missing-macros"),
+      rulesOnScreen.slice(rulesOnScreen.indexOf("Unchecked rules"), rulesOnScreen.indexOf("Unchecked rules") + 300)
+    );
+
     // --- the catalog on screen, read-only ---------------------------------------------------------
     // The entries are in the database because `bootstrap.py` seeded them, which is also how the
     // production stack gets them. Nothing here writes.

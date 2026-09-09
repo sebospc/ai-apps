@@ -2,7 +2,8 @@
 # `sap-commerce-base+acme` reads the base first, then this file.
 #
 #   disabled:   base rule ids this client switches off — the guideline and every check reporting it
-#   rules:      extra guidelines, same shape as the base
+#   rules:      extra guidelines, same shape as the base — `scope:` names the files they can
+#               apply to, and a guideline without one is sent for every change
 #   checks:     extra checks, same shape as the base
 
 disabled:
@@ -14,6 +15,9 @@ rules:
   - id: acme-outbound-via-gateway
     text: "Outbound HTTP must go through IntegrationGateway, never a hand-built client."
     severity: critical
+    # Same files the check below looks at. Without a scope a guideline is offered for every file in
+    # the change, which is how one about Spring facades reached a jQuery file.
+    scope: "*.java"
     why: "The gateway carries this client's mTLS setup, retries and audit trail. A direct client has none of it."
     fix: "Inject IntegrationGateway and call it instead of building a REST client."
     default_issue_type: bug

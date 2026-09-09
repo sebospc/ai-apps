@@ -10,6 +10,7 @@ rules:
   - id: facades-no-dao
     text: "Facades must never call DAOs directly. Always go through a Service."
     severity: critical
+    scope: "*.java"
     why: "Bypasses service-layer validation and transaction management."
     fix: "Inject and call the corresponding Service instead."
     default_issue_type: logic
@@ -17,6 +18,7 @@ rules:
   - id: no-model-in-facade
     text: "Facades must not expose Model classes to their callers. Return DTOs/Data objects."
     severity: critical
+    scope: "*.java"
     why: "Leaks persistence layer into API layer."
     fix: "Use Populator/Converter to map Model → Data."
     default_issue_type: logic
@@ -24,6 +26,7 @@ rules:
   - id: service-no-session
     text: "Services must not access JaloSession or SessionContext directly."
     severity: critical
+    scope: "*.java"
     why: "Jalo layer is deprecated. Use ServiceLayer APIs."
     fix: "Use modelService, userService, etc."
     default_issue_type: bug
@@ -31,6 +34,7 @@ rules:
   - id: dao-uses-flexible-search
     text: "DAOs must use FlexibleSearchService, not raw JDBC or JaloSession queries."
     severity: warning
+    scope: "*.java"
     why: "FlexibleSearch is type-safe and cache-aware."
     fix: "Inject FlexibleSearchService, use FlexibleSearchQuery."
     default_issue_type: bug
@@ -38,6 +42,7 @@ rules:
   - id: no-business-logic-in-controller
     text: "Controllers/OCC endpoints must not contain business logic. Delegate to facades."
     severity: critical
+    scope: "*.java"
     why: "Controllers are entry points only. Logic belongs in facade/service."
     fix: "Move logic to facade, call facade from controller."
     default_issue_type: logic
@@ -45,6 +50,7 @@ rules:
   - id: populator-null-check
     text: "Populators must null-check source fields before setting target."
     severity: warning
+    scope: "*.java"
     why: "NPE in populators crash the entire convert chain."
     fix: "Add if(source.getX() != null) before target.setX()."
     default_issue_type: bug
@@ -52,6 +58,7 @@ rules:
   - id: impex-no-hardcoded-pk
     text: "ImpEx must never use hardcoded PKs."
     severity: critical
+    scope: "*.impex"
     why: "PKs differ between environments."
     fix: "Use unique attributes or &references."
     default_issue_type: bug
@@ -59,6 +66,7 @@ rules:
   - id: extension-dependency-direction
     text: "Custom extensions must not create circular dependencies."
     severity: warning
+    scope: ["extensioninfo.xml", "*.java"]
     why: "Circular deps break build order and ant clean all."
     fix: "Extract shared code to a common extension."
     default_issue_type: logic
@@ -66,6 +74,7 @@ rules:
   - id: interceptor-must-be-registered
     text: "Interceptors must be registered in *-spring.xml with interceptorMapping."
     severity: warning
+    scope: ["*.java", "*-spring.xml"]
     why: "Unregistered interceptor does nothing silently."
     fix: "Add <bean> + <InterceptorMapping> in Spring config."
     default_issue_type: bug
@@ -73,6 +82,7 @@ rules:
   - id: cronjob-performable-no-transaction
     text: "CronJob Performables should not manage transactions manually."
     severity: warning
+    scope: "*.java"
     why: "Platform handles tx per-cronjob. Manual tx causes nested issues."
     fix: "Remove manual Transaction.begin()/commit(). Let platform manage."
     default_issue_type: bug
@@ -83,6 +93,7 @@ rules:
       eligibility checks) across multiple facades or controllers. Use a Spring filter,
       interceptor, BeforeViewHandler, or a centralized eligibility service injected automatically.
     severity: warning
+    scope: "*.java"
     why: "Scattered conditions are fragile — one missed check = security/logic bug. Cross-cutting concerns belong in filters/interceptors, not per-method if-blocks."
     fix: "Extract the condition into a Spring filter or BeforeViewHandler that applies automatically. If a service is used, ensure it is injected globally via AOP or interceptor — not manually in each facade."
     default_issue_type: logic
@@ -98,6 +109,7 @@ rules:
   - id: populator-no-duplicate-fields
     text: "Populators must not set the same target field more than once."
     severity: warning
+    scope: "*.java"
     why: "Duplicate setters silently overwrite — usually a copy-paste bug."
     fix: "Remove the duplicate setter call."
     default_issue_type: bug
@@ -105,6 +117,7 @@ rules:
   - id: validator-no-db-query
     text: "Validators (implementing org.springframework.validation.Validator) must not query the database directly."
     severity: warning
+    scope: "*.java"
     why: "Validators run per-request, often multiple times. DB queries here cause N+1 performance issues."
     fix: "Move DB lookups to the service/facade layer and pass results to the validator."
     default_issue_type: performance
@@ -112,6 +125,7 @@ rules:
   - id: solr-indexed-property-must-exist
     text: "SOLR indexed properties must reference existing attributes in items.xml."
     severity: critical
+    scope: ["*.impex", "*items.xml"]
     why: "Missing attribute causes full indexing failure."
     fix: "Verify attribute exists in type system before indexing."
     default_issue_type: bug
@@ -122,6 +136,7 @@ rules:
       CRITICAL: This rule ONLY applies when BOTH sourceElement AND targetElement have cardinality="many".
       If either end has cardinality="one", it is a 1:N relation — do NOT flag it, do NOT suggest adding a deployment.
     severity: warning
+    scope: "*items.xml"
     why: "Auto-assigned typecodes can collide across extensions. Only M:N relations need a junction table. 1:N relations use a FK on the child — adding a deployment to 1:N is WRONG."
     fix: |
       Add <deployment table='...' typecode='NNNNN'/> ONLY when BOTH ends are cardinality="many".
@@ -140,6 +155,7 @@ rules:
   - id: no-system-out
     text: "Do not use System.out.println or System.err. Use LOG."
     severity: warning
+    scope: "*.java"
     why: "stdout is not captured by platform logging."
     fix: "Use private static final Logger LOG = LoggerFactory.getLogger(...)."
     default_issue_type: style
@@ -211,36 +227,42 @@ rules:
   - id: flexiblesearch-in-loop
     text: "Do not run FlexibleSearch queries inside a loop."
     severity: critical
+    scope: "*.java"
     why: "One query per iteration is an N+1 that hammers the DB."
     fix: "Fetch the set in a single query before the loop, or batch the lookups."
     default_issue_type: performance
   - id: modelservice-save-in-loop
     text: "Do not call modelService.save() inside a loop."
     severity: warning
+    scope: "*.java"
     why: "Per-iteration saves multiply DB round-trips and transaction overhead."
     fix: "Collect the models and call modelService.saveAll(models) once, or move the save out of the loop when every iteration saves the same model."
     default_issue_type: performance
   - id: cronjob-idempotent
     text: "CronJob perform() must be idempotent and return a PerformResult."
     severity: warning
+    scope: "*.java"
     why: "A non-idempotent job double-applies effects on retry/abort; a missing result hides failures."
     fix: "Make the job re-runnable and return new PerformResult(Result.SUCCESS, Status.FINISHED)."
     default_issue_type: logic
   - id: searchrestriction-bypass
     text: "Do not disable SearchRestrictions (catalog/visibility) without an explicit, justified reason."
     severity: warning
+    scope: "*.java"
     why: "Bypassing restrictions can leak staged/unauthorized data into responses."
     fix: "Scope the query to the right CatalogVersion instead of disabling restrictions."
     default_issue_type: security
   - id: cluster-unsafe-static-state
     text: "Do not hold mutable business state in static fields — it is not cluster-safe."
     severity: warning
+    scope: "*.java"
     why: "Static state diverges across cluster nodes and is lost on restart."
     fix: "Use a Service bean, the cache, or persisted models instead of static mutable state."
     default_issue_type: bug
   - id: missing-transaction-boundary
     text: "Multi-step model mutations that must be atomic need a transaction boundary."
     severity: warning
+    scope: "*.java"
     why: "A partial failure leaves the DB half-updated."
     fix: "Wrap the steps in Transaction.current().execute(...)."
     default_issue_type: logic

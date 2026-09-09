@@ -1293,7 +1293,140 @@ function updateCurrentChecks({ text, commands }) {
   check("the session did not move the install itself", ran.length === 0, ran.join(" ; ").slice(0, 300));
 }
 
+/**
+ * A repository with no client code in it, for the walks that are about what the *plan* contains
+ * rather than about reasoning over real SAP Commerce.
+ *
+ * `buildRepo` reads `SMITH_CORPUS`, so every walk needed a client checkout to run — including ones
+ * that only need a file with a particular extension. This one runs anywhere, which is the point:
+ * a walk nobody can run is not coverage.
+ */
+function buildPlainRepo(prefix, files) {
+  const repo = mkdtempSync(join(tmpdir(), prefix));
+  const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "dev@acme.com");
+  git("config", "user.name", "Walk");
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(join(repo, dirname(path)), { recursive: true });
+    writeFileSync(join(repo, path), content.before);
+  }
+  git("add", ".");
+  git("commit", "-q", "-m", "baseline");
+  for (const [path, content] of Object.entries(files)) {
+    writeFileSync(join(repo, path), content.after);
+  }
+  return repo;
+}
+
+// A jQuery file in a JSP-era storefront's webroot. Nothing in the base ruleset is about it, which
+// is what the walk below reads for.
+const WEBROOT_JS = "storefront/web/webroot/js/cart-widget.js";
+const WEBROOT_JS_BEFORE = `function refreshLoyalty(response) {
+  var banners = document.querySelectorAll('.loyalty-banner');
+}
+`;
+const WEBROOT_JS_AFTER = `function refreshLoyalty(response) {
+  var banners = document.querySelectorAll('.loyalty-banner');
+  banners.forEach(function (banner) {
+    if (typeof response.rewardPoints === 'number') {
+      banner.textContent = response.rewardPoints + ' points';
+    } else {
+      banner.style.display = 'none';
+    }
+  });
+}
+`;
+
+/**
+ * What the agent is allowed to cite, on a change no guideline is about.
+ *
+ * Reported 2026-09-09: a developer was shown `no-scattered-condition` — repeating a condition
+ * across Spring facades — on this exact kind of file. Every Java guideline was being sent for every
+ * file, and the agent used the nearest label it had. The plan now sends only the guidelines that
+ * can apply, and the contract says where a defect none of them covers goes.
+ */
+const JAVA_ONLY_GUIDELINES = [
+  "no-scattered-condition",
+  "facades-no-dao",
+  "no-business-logic-in-controller",
+  "modelservice-save-in-loop",
+  "flexiblesearch-in-loop",
+  "no-model-in-facade",
+];
+
+function scopeChecks({ repo, text, commands, key }) {
+  const planned = commands.filter((c) => /\bplan\b/.test(c) && !/--preview\b/.test(c));
+  check("the session opened a review", planned.length > 0, commands.join(" ; ").slice(0, 300));
+
+  const submitted = commands.some((c) => /\bsubmit\b/.test(c));
+  check("the agent reported through the plugin rather than in prose", submitted, commands.join(" ; ").slice(0, 300));
+
+  // Whether the agent takes the bait is a coin toss — the run that reported this defect did, and a
+  // rerun on the same unfixed server did not. So the reading that decides this walk is what the
+  // server *offered*, taken from a plan through the same CLI the session used. That fails whenever
+  // the scoping does, which is what makes it a check rather than a sighting.
+  const plan = planThrough(repo, key);
+  const offered = new Set((plan.guidelines ?? []).map((g) => g.id));
+  const wrong = JAVA_ONLY_GUIDELINES.filter((id) => offered.has(id));
+  check("no Java guideline was offered for a change with no Java in it", wrong.length === 0, wrong.join(", "));
+  check("the change still got guidelines of its own or none at all", offered.size >= 0, `${offered.size} offered`);
+
+  // And the contract has to say where a defect none of them covers goes, or the agent invents an id
+  // from the list it was given — which is the defect, one layer down.
+  check(
+    "the contract names where a finding with no guideline goes",
+    (plan.instructions ?? "").includes('"rule_id": "bug"'),
+    (plan.instructions ?? "").slice(0, 200)
+  );
+
+  const cited = JAVA_ONLY_GUIDELINES.filter((id) => text.includes(id));
+  check("no Java guideline reached the developer", cited.length === 0, cited.join(", "));
+}
+
+/** One plan through the plugin binary, so a check reads what the session was actually handed. */
+function planThrough(repo, key) {
+  const home = mkdtempSync(join(tmpdir(), "smith-scope-home-"));
+  const plugin = join(PLUGIN_DIR, "bin", "smith");
+  const run = (args) => {
+    try {
+      return execFileSync("node", [plugin, ...args], {
+        cwd: repo,
+        encoding: "utf8",
+        env: { ...process.env, SMITH_HOME: home },
+      });
+    } catch (err) {
+      if (err.stdout) return err.stdout;
+      throw new Error(`smith ${args.join(" ")} failed: ${err.stderr || err.message}`);
+    }
+  };
+  try {
+    run(["auth", "--url", API, "--key", key]);
+    return JSON.parse(run(["plan"]));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const WALKS = {
+  scope: {
+    // The range is in the prompt for the same reason the `review` walk carries it: the command
+    // confirms first, and a single-shot session has nobody to confirm with.
+    prompts: {
+      claude: "/smith-review my uncommitted changes",
+      cursor: "/smith-review my uncommitted changes",
+    },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "scope-walk",
+    setup: () => {
+      const repo = buildPlainRepo("smith-walk-js-", {
+        [WEBROOT_JS]: { before: WEBROOT_JS_BEFORE, after: WEBROOT_JS_AFTER },
+      });
+      return { repo, about: `a change in ${WEBROOT_JS} and nothing else` };
+    },
+    forbidden: FORBIDDEN,
+    checks: scopeChecks,
+  },
   update: {
     // An install two hundred commits behind, which is the state a developer cannot see. What is read
     // is whether the session hands the commands over, or runs them — `marketplace remove` uninstalls

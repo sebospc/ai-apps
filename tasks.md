@@ -4357,7 +4357,73 @@ Do not start this while the plugin is still being chased across machines. AE1 is
 this is what the database holds, and it can wait for a week when an update is not in flight.
 
 
+## Phase AF — a guideline that cannot apply cannot be misapplied
+
+### [x] AF1. Scope the guidelines, and give a defect with no guideline somewhere to go — 705ec21
+
+Reported 2026-09-09, from a real review: a jQuery file in a JSP storefront's webroot came back
+flagged `no-scattered-condition` — a guideline about repeating a business condition across Spring
+facades. The message under it was not about that at all; it described a cart endpoint whose
+response was missing a field, which is a plausible defect and has nothing to do with the rule.
+
+Two causes, both in this repository:
+
+- **`scope` was never applied.** It reached the agent in the plan as a field (`service.py:286`) and
+  the server filtered nothing. Of 33 guidelines, 11 carried a scope and 22 did not — and the 22 were
+  every Java and platform one. Somebody scoped Angular to `*.ts` and ImpEx to `*.impex` and left
+  Java unscoped, which is invisible in a Hybris project until a `.js` file shows up in a webroot.
+- **The contract left no way out.** "Cite the guideline id you are applying in `rule_id`" with no
+  escape, so an agent that finds a real defect no guideline covers has to bend one.
+
+The second cost is quieter than the first: a wrong id counts against a real rule in rule health, and
+this repository's doctrine is to delete a rule that gets dismissed. A sound rule would have been
+deleted for findings that were never its own.
+
+Acceptance:
+
+- The plan sends only the guidelines whose scope matches a file the change touched. A guideline with
+  no scope still goes everywhere, which is what one about the change as a whole wants.
+- All 33 carry a scope, and so does the client overlay's. Java to `*.java`, ImpEx to `*.impex`,
+  `items.xml` and `*-spring.xml` where the thing described lives in one.
+- Scoping narrows per file, not per review: a commit touching Java and ImpEx gets both sets.
+- A change no guideline is about gets an empty list and is still reviewed. The deterministic half
+  does not depend on guidelines.
+- The contract says where a defect no guideline covers goes — `"rule_id": "bug"` — and says the list
+  it was given is partial, so "none of these fit" reads as expected rather than as its own failure.
+- The lead's settings screen still lists every guideline. Scoping is about what the agent is asked;
+  a lead switches a rule off before the change that would trip it exists.
+
+Done: `models.py::Guideline.applies_to`, the filter in `service.py`, scopes in
+`rules/sap-commerce-base.yaml` and `rules/clients/acme.yaml`, the contract in `_INSTRUCTIONS`.
+160 pytest, 40 plugin, 98 browser, and `node scripts/walk_skill.mjs claude scope` 9 green.
+
+Two things learned while measuring, both worth keeping:
+
+- **The first version of the walk was not a check.** It read whether the agent *cited* a Java
+  guideline, and against the unfixed server the agent simply did not take the bait — 6 passed, 0
+  failed, on code with the defect in it. The run that reported this from production did take it. So
+  the walk now reads what the server *offered*, through a plan fetched with the same CLI the session
+  used, and that fails whenever the scoping does: `FAIL no Java guideline was offered … —
+  no-scattered-condition, facades-no-dao, no-business-logic-in-controller, modelservice-save-in-loop,
+  flexiblesearch-in-loop, no-model-in-facade`. An assertion about what a model said is a sighting.
+  An assertion about what the server sent is a check.
+- **Walks needed a client checkout to run at all**, because `buildRepo` reads `SMITH_CORPUS`. A walk
+  about which guidelines a `.js` file gets does not need real client code, so `walk_skill.mjs` grew
+  `buildPlainRepo`. A walk nobody can run is not coverage.
+
+Two existing tests turned red and were right to: they planned a `.properties`-only change and
+asserted guidelines came back. That change legitimately matches none now, so they carry Java as
+well, and the empty case has a test of its own rather than being an accident nobody wrote down.
+
+
 ## Notes and decisions log
+- 2026-09-09 — the coverage in this repository was called out as too thin, and the reading that
+  followed says it was. Three findings from one afternoon: the browser suite seeded its review with
+  `plan` alone and would have gone red on a fix rather than catching one; a walk asserted on what a
+  model said and passed against code with the defect in it; and every walk needed a client corpus,
+  so on most machines the functional layer did not run at all. Each is now different. The rule that
+  comes out of it: an assertion about what the server sent survives a rerun, an assertion about what
+  the model answered does not, and the second is only worth writing next to the first.
 - 2026-09-08 — the choice between hiding a `planned` review and never writing one was put to the
   person paying for it, with the costs rather than as a preference: hiding is twenty lines and
   breaks nothing, not writing is the honest model and breaks `/v1` for every installed plugin plus a

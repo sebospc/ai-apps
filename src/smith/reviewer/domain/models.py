@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
+from fnmatch import fnmatch
 from itertools import takewhile
 from typing import Literal
 
@@ -111,6 +113,26 @@ class Guideline:
     issue_type: str = "logic"
     since: str | None = None
     until: str | None = None
+
+    def applies_to(self, paths: Iterable[str]) -> bool:
+        """Whether this guideline has anything to say about the files a change touched.
+
+        Reported 2026-09-09: a jQuery file in a storefront's webroot came back flagged
+        `no-scattered-condition`, a guideline about repeating a condition across Spring facades.
+        The scope was only ever handed to the agent as a hint and never applied, so every Java
+        guideline was offered for every file and the agent reached for the nearest label it had.
+        A guideline that cannot apply cannot be misapplied.
+
+        No scope means everywhere, which is what a guideline about the change as a whole wants.
+        """
+        if not self.scope:
+            return True
+        # Basename too, so `items.xml` matches a nested one without every ruleset writing `*/`.
+        return any(
+            fnmatch(path, pattern) or fnmatch(path.rsplit("/", 1)[-1], pattern)
+            for path in paths
+            for pattern in self.scope
+        )
 
 
 # Paths a change can touch without being able to introduce a bug. A ruleset overrides the whole

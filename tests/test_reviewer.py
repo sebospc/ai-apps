@@ -301,7 +301,10 @@ def test_plugin_flow_plans_reviews_and_gets_a_server_computed_verdict(client) ->
         "/v1/reviews",
         headers=auth,
         json={
-            "diff": PROPS_DIFF,
+            # Both file kinds on purpose: the properties half is what the deterministic rules catch,
+            # the Java half is what any guideline is about. A properties-only change now gets no
+            # guidelines at all, which is correct and would make this read as a regression.
+            "diff": PROPS_DIFF + JAVA_DIFF,
             "branch": "feature/x",
             "files": [
                 {
@@ -1060,8 +1063,12 @@ def test_disabling_a_rule_stops_it_firing_and_stops_reaching_the_agent(lead_sess
     key = api.post("/projects/acme/keys", json={"name": "k"}).json()["key"]
     auth = {"Authorization": f"Bearer {key}"}
 
-    before = api.post("/v1/reviews", headers=auth, json={"diff": PROPS_DIFF}).json()
+    # Java as well as properties: the rule switched off below is a guideline about facades, and a
+    # change with no Java in it is not offered that guideline in the first place.
+    both = PROPS_DIFF + JAVA_DIFF
+    before = api.post("/v1/reviews", headers=auth, json={"diff": both}).json()
     assert "properties-hardcoded-secret" in {f["rule_id"] for f in before["deterministic_findings"]}
+    assert "facades-no-dao" in {g["id"] for g in before["guidelines"]}
     guidelines_before = len(before["guidelines"])
 
     saved = api.put(
@@ -1075,7 +1082,7 @@ def test_disabling_a_rule_stops_it_firing_and_stops_reaching_the_agent(lead_sess
     )
     assert saved.status_code == 200
 
-    after = api.post("/v1/reviews", headers=auth, json={"diff": PROPS_DIFF}).json()
+    after = api.post("/v1/reviews", headers=auth, json={"diff": both}).json()
     # A disabled rule must vanish from both halves of the review: the deterministic findings the
     # server produces, and the guidelines the agent is asked to apply.
     assert "properties-hardcoded-secret" not in {f["rule_id"] for f in after["deterministic_findings"]}
@@ -1546,3 +1553,133 @@ def test_a_plan_nobody_finished_is_not_a_review_yet(lead_session) -> None:
     listed = api.get("/projects/acme/reviews").json()["reviews"]
     assert [r["id"] for r in listed] == [abandoned["review_id"]]
     assert [r["rule_id"] for r in api.get("/projects/acme/rules/health").json()["rules"]]
+
+
+IMPEX_DIFF = """\
+diff --git a/core/resources/impex/prices.impex b/core/resources/impex/prices.impex
+--- a/core/resources/impex/prices.impex
++++ b/core/resources/impex/prices.impex
+@@ -1,2 +1,4 @@
+ $productCatalog=acmeProductCatalog
++INSERT_UPDATE Product;code[unique=true];name[lang=en];unit(code)
++;ACME-1;An ordinary product name;pieces
+"""
+
+
+# A storefront's webroot in a JSP-era project is full of jQuery. Nothing in the base ruleset is about
+# it, which is the point of this fixture.
+WEBROOT_JS_DIFF = """\
+diff --git a/storefront/web/webroot/js/cart-widget.js b/storefront/web/webroot/js/cart-widget.js
+--- a/storefront/web/webroot/js/cart-widget.js
++++ b/storefront/web/webroot/js/cart-widget.js
+@@ -270,6 +270,10 @@
+   var banners = document.querySelectorAll('.loyalty-banner');
++  banners.forEach(function (banner) {
++    if (typeof response.rewardPoints === 'number') {
++      banner.textContent = response.rewardPoints + ' points';
++    }
++  });
+ }
+"""
+
+
+def _guideline_ids(plan: dict) -> set[str]:
+    return {g["id"] for g in plan["guidelines"]}
+
+
+def test_a_guideline_is_only_sent_for_files_it_could_apply_to(client) -> None:
+    """Reported 2026-09-09: a jQuery file in a storefront webroot came back flagged
+    `no-scattered-condition` — a guideline about repeating a condition across Spring facades.
+
+    Every Java guideline was being offered for every file. `scope` existed but travelled to the
+    agent as a hint nobody applied, so the agent reached for the nearest label it had been given and
+    a real defect was filed under a rule it has nothing to do with. That wrong id then counts
+    against the rule in rule health, where a dismissal reads as the rule being noisy.
+    """
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    js_plan = api.post("/v1/reviews", headers=auth, json={"diff": WEBROOT_JS_DIFF}).json()
+    java_plan = api.post("/v1/reviews", headers=auth, json={"diff": CLEAN_JAVA_DIFF}).json()
+
+    java_only = {"no-scattered-condition", "facades-no-dao", "no-business-logic-in-controller"}
+    assert java_only <= _guideline_ids(java_plan), "a Java change must still get the Java guidelines"
+    assert not (java_only & _guideline_ids(js_plan)), (
+        "a .js change was offered guidelines about Spring facades"
+    )
+
+    # Not an empty prompt either: what is dropped is what cannot apply, not the review.
+    assert java_plan["guidelines"], "a Java change lost every guideline"
+
+
+def test_a_change_touching_two_worlds_gets_both_sets(client) -> None:
+    """Scoping must narrow per file, not per review. A commit that touches Java and ImpEx is one
+    review, and dropping either half would hide real findings in the name of precision."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    both = CLEAN_JAVA_DIFF + IMPEX_DIFF
+    ids = _guideline_ids(api.post("/v1/reviews", headers=auth, json={"diff": both}).json())
+    assert "facades-no-dao" in ids
+    assert "impex-insert-vs-insert-update" in ids
+    # And still nothing from a world this change does not touch.
+    assert "rxjs-takeuntil" not in ids
+
+
+def test_the_contract_tells_the_agent_what_to_do_when_no_guideline_fits(client) -> None:
+    """The agent must cite a guideline id, and the ids it gets are now only the applicable ones. A
+    real defect that none of them describes needs somewhere to go, or the agent bends one to fit —
+    which is exactly the finding that started this."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+    plan = api.post("/v1/reviews", headers=auth, json={"diff": WEBROOT_JS_DIFF}).json()
+
+    instructions = plan["instructions"]
+    assert '"rule_id": "bug"' in instructions
+    assert "Never bend a guideline" in instructions
+    # The agent has to know the list is partial, or "none of these fit" reads as its own failure.
+    assert "there are others" in instructions
+
+
+def test_a_finding_with_no_guideline_is_stored_under_its_own_id(client) -> None:
+    """`rule_id: "bug"` is not a special case in the server — it is a rule id like any other. What
+    matters is that it does not land on a real rule's name, where it would count against it."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+    plan = api.post("/v1/reviews", headers=auth, json={"diff": WEBROOT_JS_DIFF}).json()
+
+    api.post(
+        f"/v1/reviews/{plan['review_id']}/findings",
+        headers=auth,
+        json={
+            "findings": [
+                {
+                    "file": "storefront/web/webroot/js/cart-widget.js",
+                    "line": 273,
+                    "severity": "warning",
+                    "rule_id": "bug",
+                    "message": "the response has no rewardPoints, so the banner is hidden",
+                    "issue_type": "bug",
+                }
+            ]
+        },
+    )
+    detail = api.get(f"/v1/reviews/{plan['review_id']}", headers=auth).json()
+    assert [f["rule_id"] for f in detail["findings"]] == ["bug"]
+
+
+def test_a_change_no_guideline_is_about_still_gets_reviewed(client) -> None:
+    """A `.properties` change matches no guideline in the base ruleset, and the honest answer is an
+    empty list rather than every Java rule offered on the off chance.
+
+    This is the state scoping created and it is worth pinning: the review still happens, the
+    deterministic half still fires, and the contract already tells the agent that nothing fitting is
+    the expected case rather than its own failure.
+    """
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+    plan = api.post("/v1/reviews", headers=auth, json={"diff": PROPS_DIFF}).json()
+
+    assert plan["guidelines"] == []
+    assert "properties-hardcoded-secret" in {f["rule_id"] for f in plan["deterministic_findings"]}
+    assert '"rule_id": "bug"' in plan["instructions"]

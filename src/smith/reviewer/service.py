@@ -132,6 +132,12 @@ findings are below — do not repeat them.
 Review the diff against the guidelines. For each real problem, report one finding with an exact file
 path and a line number that exists in the diff. Cite the guideline id you are applying in `rule_id`.
 
+The guidelines below are the ones that can apply to the files this change touched; there are others,
+and they were left out because they are about something this diff does not contain. So if none of
+them fits a defect you can point at, that is the expected case and not a gap to paper over: send it
+with `"rule_id": "bug"`. Never bend a guideline to cover something it does not describe — a wrong id
+is read by the developer as the rule they broke, and counts against that rule for everybody.
+
 Rules of engagement:
 - Only report what you can point at. No "consider maybe", no summaries of the change.
 - A finding on a line the developer did not touch will be discarded, so do not spend effort there.
@@ -276,6 +282,13 @@ class ReviewService:
             },
         )
 
+        # A guideline that cannot apply to any file in this change is not sent at all. It used to
+        # be, with its scope alongside as a hint, and an agent reviewing a jQuery file was offered
+        # every Spring guideline in the ruleset — it reported a real defect under
+        # `no-scattered-condition`, which is about repeating a condition across facades. The wrong
+        # id then counted against that rule in rule health, where a dismissal would have read as
+        # the rule being noisy.
+        changed_paths = [d.path for d in diffs]
         guidelines = [
             {
                 "id": g.id,
@@ -286,7 +299,7 @@ class ReviewService:
                 "scope": g.scope,
             }
             for g in ruleset.guidelines
-            if g.id not in config.disabled_rules
+            if g.id not in config.disabled_rules and g.applies_to(changed_paths)
         ]
         return ReviewPlan(
             review_id=review_id,

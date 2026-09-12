@@ -169,6 +169,16 @@ rules:
         → No deployment. This is correct as-is.
     default_issue_type: bug
 
+  - id: items-xml-active-flag-unique-index
+    text: >
+      An itemtype that carries an `active` flag must not declare a unique index over the business
+      key alone. Put the flag in the index too, or make the index non-unique.
+    severity: warning
+    scope: "*items.xml"
+    why: "The flag is there so a row can be retired and a replacement issued under the same key. A unique index over the key alone makes that replacement fail on insert, and by the time anyone reissues one the type is deployed and the fix is a migration."
+    fix: "Add the flag as a second key in the index, or drop unique=\"true\" and enforce one active row per key in the service that creates it."
+    default_issue_type: bug
+
   - id: no-request-object-in-log
     text: >
       Do not log a whole request or response object. Log the one field that identifies it — an id,

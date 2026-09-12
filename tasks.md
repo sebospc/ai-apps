@@ -4595,6 +4595,57 @@ guideline fires, ship `items-xml-active-flag-unique-index`.
 Until then it is **not in the ruleset**. Half a measurement is not a measurement, and the doctrine
 in `CLAUDE.md` is that a rule ships with evidence in both directions.
 
+Run on 2026-09-12. It fires, and it ships.
+
+The positive control is one repository holding the trap: an `items.xml` adding an `AcmeLoyaltyCard`
+itemtype with a `cardNumber`, an `active` flag, and `AcmeLoyaltyCardNumberIdx` unique over
+`cardNumber` alone. Reviewed by a real `claude` session through the plugin, three times:
+
+```
+items-xml-active-flag-unique-index   offered 3/3   fired 3/3
+```
+
+Every run produced exactly one finding, on the index line, and each one named the failure rather
+than the pattern — "a card cannot be retired and reissued under the same number". The other two
+guidelines offered for that file, `solr-indexed-property-must-exist` and `items-xml-deployment-table`,
+stayed quiet in all three.
+
+**The quiet half had to be run again, because AI1's reading of it was not a measurement either.**
+`guideline_probe.mjs` calls `smith plan` to read the offered guidelines, then starts a session — and
+the session runs its own `smith plan`, so it submits to a *different* review. The probe then reads
+back the review id from its own plan call, which never had an agent near it. A guideline is only
+ever cited by the agent, so the probe's `fired` column is zero by construction and would have
+reported zero for a guideline that fires on everything. This was found by the positive control
+returning `fired=false` on a review the database showed holding the finding.
+
+Re-measured against three ordinary `items.xml` changes, reading the review the session actually
+submitted to:
+
+```
+plain new itemtype, no flag and no index    offered   quiet
+active flag, no unique index                offered   quiet
+unique index, no active flag                offered   quiet
+```
+
+The last two are the interesting ones and are why they were written: each is one half of the trap on
+its own and both are ordinary, correct SAP Commerce. A guideline this loosely worded could easily
+have fired on either. Neither produced a finding at all.
+
+So: offered 3/3 and fired 3/3 where the trap is, offered 3/3 and fired 0/3 where it is not. Shipped
+in `rules/sap-commerce-base.yaml`, scoped to `*items.xml`, at `warning` — the row can be created and
+the type works; what fails is the reissue, later, and by the AK2 bar that is worth saying and is not
+worth holding a release for.
+
+Guidelines are prose for the model and carry no check, so no `rules/fixtures/` case applies to this
+one — the fixture harness asserts on rule ids that a *check* or a Python rule declares. The two
+readings above are its evidence, and they are the only evidence it can have.
+
+`uv run pytest` 165 passed, 9 skipped. `scripts/sanity.py` green: guidelines 35 → 36, every other
+number unchanged.
+
+Left for whoever owns `scripts/`: the probe's read-back is still wrong, and every guideline reading
+taken with it is worth exactly the `offered` column and nothing more.
+
 ## Phase AJ — what another team's checklist was actually worth
 
 ### [x] AJ1. Three rules out of a hundred, and the two that survived measurement — 4bd7fe7
@@ -6903,3 +6954,20 @@ Append here when a task forces a decision. One line each: what was decided and w
   architecture note compares two named client implementations; the comparison was carried, the names
   were not. A `grep -niE` over `catalog/` for every client, partner and demo name appearing in the
   sources returns nothing.
+- 2026-09-12 — AI2 found a defect in `scripts/guideline_probe.mjs` that makes every reading it has
+  produced worth only its `offered` column. It calls `smith plan` to collect the offered guidelines,
+  then starts a session which runs its own `smith plan` and therefore submits to a different review;
+  the probe reads back the id from its own call. That review holds deterministic findings and never
+  an agent one, and a guideline is only ever cited by the agent, so `fired` is zero whatever
+  happens. It surfaced because the positive control reported `fired=false` while the database held
+  the finding. Not fixed here — `scripts/` belongs to another task this iteration — and AI2's own
+  measurements read the review the session actually completed.
+- 2026-09-12 — `items-xml-active-flag-unique-index` shipped at `warning`, not `critical`. The trap
+  is real and the type deploys fine; what fails is the reissue, on some later day, and AK2's bar in
+  the same iteration is that `critical` is what holds a release. A team that disagrees sets
+  `policy.block_on` to `warning`, which is the whole point of that setting.
+- 2026-09-12 — `scripts/rehearse.mjs` was not run for AK2 or AI2. It refuses to start without
+  `SMITH_CORPUS` and there is no SAP Commerce checkout on this machine, which also skips the six
+  corpus tests (165 passed, 9 skipped). What replaced it: AK2 drove both fixtures through the real
+  API on postgres at both `block_on` settings, and AI2 drove six real `claude` sessions through the
+  plugin against the same API. Both exercise the plan and the verdict; neither reads client code.

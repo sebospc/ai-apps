@@ -664,6 +664,29 @@ test("the line naming what was hidden is conditional on something being hidden",
   assert.match(skill, /empty[\s\S]{0,80}no closing line/i);
 });
 
+// Measured on 2026-09-11: a real bugfix came back with one finding, and three defects that mattered
+// were missed — each one only visible from code the diff does not carry. Step 4 said "point at a
+// line the developer changed", which is right about where a finding lands and was being read as
+// where one may be found. Both halves are pinned here: the sentence that keeps the review precise,
+// word for word, and the pass that lets the agent look outside the diff to earn a finding.
+test("step 4 separates where a finding is found from where it lands", () => {
+  const command = fs
+    .readFileSync(path.join(__dirname, "../commands/smith-review.md"), "utf8")
+    .replace(/\s+/g, " ");
+  assert.ok(
+    command.includes(
+      "Only report what you can point at with a file and a line the developer changed.",
+    ),
+    "the sentence that keeps the review precise is gone",
+  );
+  assert.match(command, /discovered is not where it lands/i);
+  assert.match(command, /Prior art/);
+  assert.match(command, /Parallel implementations/);
+  // Unbounded, this is a repository audit charged to one developer, so the ceiling is part of the
+  // instruction rather than something the agent is left to judge.
+  assert.match(command, /handful of\s*searches|handful\b[^.]*searches/i);
+});
+
 // Measured on 2026-08-21: the skill used to tell the agent to recommend the PATH install line, and
 // a Cursor agent duly closed a "Clear. Nothing to fix." verdict with a shell command to run. The
 // review had already worked without it, so the advice cost the developer a step and bought nothing.

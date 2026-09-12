@@ -4714,7 +4714,7 @@ The client already holds the whole checkout — the plugin sends a diff, but the
 the repository. Nothing tells it to look around. Decision 2 stays intact: the server never touches
 git, and none of this moves to the server.
 
-### [ ] AK1. Discovery is unbounded; reporting is not
+### [x] AK1. Discovery is unbounded; reporting is not — 68afce7
 
 Step 4 gains a short investigation pass, run before findings are written, and only where it pays:
 
@@ -4742,6 +4742,47 @@ Acceptance:
   that passes before the change is a sighting, not a check — phase AF paid for that lesson already.
 - `scripts/sanity.py` still green, and the token cost of the command is recorded before and after.
   This adds instructions, so it will grow; the number goes in the phase either way.
+
+Done. Step 4 opens with "Where a finding is discovered is not where it lands", then three named
+searches — prior art, what the changed lines depend on, parallel implementations — skipped for a
+change that adds no rule and moves no logic, and capped at a handful. The sentence that keeps the
+review precise is unchanged, and `plugin/test/smith.test.js` now fails if either half goes.
+
+4569 → 4829 tokens, budget 5200. Walks 10 → 11, and runnable here 2 → 4: one is the new walk, the
+other is `scope`, which `sanity.py` had been counting as needing a corpus because its 1400-character
+window ran into the next entry's `buildRepo`. Inserting a walk between them moved the number without
+fixing anything, which is worth knowing before someone reads it as progress.
+
+`prior-art` runs on `buildPlainRepo`: 46 files of ordinary code, the rule in
+`core/.../pricing/AcmePricingRules.java` as `FREE_SHIPPING_MINIMUM` with a `shipsAtNoCost` helper,
+and a diff adding a second copy in a delivery facade as `FREE_DELIVERY_LIMIT` at a different number.
+The two share no identifier, on purpose.
+
+**Four runs, and the first two fixtures were wrong rather than the command.** With three files in
+the repository the session ran `find -name '*.java' | head -50` and read all four, so it found the
+duplicate against the *unfixed* command. With 46 files but a shared `FREE_DELIVERY` token it grepped
+that token and found it anyway. Both were sightings; the second is why the fixture now uses one
+team's words in core and another's in the facade.
+
+What the two commands did, on the fixture that separates them:
+
+```
+unfixed  grep "75|FREE_DELIVERY|freeDelivery|deliveryCost|DELIVERY"   0 hits
+         submit {"findings": []}                                      "Clear. Nothing to fix."
+unfixed  no search at all                                             "Clear. Nothing to fix."
+fixed    grep "(?i)free.?(delivery|shipping)|THRESHOLD|50\.00|75\.00" AcmePricingRules
+         submit 1 finding, rule_id "bug", on the line that added it   "Blocked: 1 critical finding."
+fixed    same shape                                                   blocked
+```
+
+The unfixed sessions searched for strings out of the diff; both times the answer was empty and both
+times the developer was told the change was clean. That is the whole defect in one line, and it is
+the reason the walk reads what reached the server rather than what the model said. What the checks
+read: a search of file *contents* happened (a `find` and a `cat` do not count), at most 12 of them,
+and an agent finding whose text names the first copy and whose `file` is the line the change added.
+
+Not run: `scripts/e2e_browser.mjs`. No screen changed, and the ports were held by another agent
+working the rest of this phase.
 
 ### [x] AK2. Nine criticals, and four of them are style — a2f8b3e
 
@@ -4857,6 +4898,15 @@ both were turned down on 2026-09-09.
 
 
 ## Notes and decisions log
+- 2026-09-12 — AK1 bumped the plugin to 0.3.1 in all three manifests. The task's paths did not
+  include them and phase AK is being worked by more than one agent, but a change to a command file
+  that ships under the version people already installed is the defect `CLAUDE.md` names, and a
+  version number is the cheapest merge conflict there is.
+- 2026-09-12 — AK1's walk asserts on the finding the server received, not on the answer's prose,
+  and `walk_skill.mjs` now hands `toolCalls` and `slug` to every walk's checks so it can. The
+  transcript also prints a search's pattern instead of the directory it ran in: three runs were read
+  as "it searched" when the useful question was what it searched *for*, and the two commands differ
+  in exactly that — one looked for tokens copied out of the diff, the other for the rule.
 - 2026-09-09 — read eight SAP Commerce skills from another team as a style reference. What was worth
   taking was not the skills but their `AGENTS.md`, which records scars: a markdown formatter rewrites
   a closing `---` into a dash run and the file stops being a command (it hit them three times), and a

@@ -205,6 +205,21 @@ The plan carries the rules, not the code. Get the change yourself — `git diff`
 diff alone hides context you need. Never truncate either one: a review of the first 80 lines is a
 review that missed the rest, and nobody can tell which findings it lost.
 
+**Where a finding is discovered is not where it lands.** You are standing in the whole repository,
+not only in the diff, and some defects can only be seen from outside it. So before you write any
+finding, run a few targeted searches — driven by what this change actually is:
+
+- **Prior art.** It adds or moves a rule, a threshold, a calculation, a constant: search for the
+  same thing already implemented somewhere else. Two live copies that can disagree is a finding, on
+  the line that added the second one.
+- **What the changed lines depend on.** It is about a number: read the code that produces the
+  inputs. Arithmetic is only wrong once you know what the values it works on can be.
+- **Parallel implementations.** The same block exists in a second storefront, controller or
+  extension: a fix applied to one and not to the other is a finding on the fix.
+
+Skip all of it for a change that adds no rule and moves no logic, and keep it to a handful of
+searches either way. Twenty greps is a repository audit charged to one developer.
+
 - Apply the `guidelines`. Each has an `id`; put it in `rule_id` when you report against it.
 - The guidelines you were given are the ones that can apply to these files. Others exist and were
   left out. If none of them fits a defect you can point at, send it with `"rule_id": "bug"` — never

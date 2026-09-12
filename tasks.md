@@ -4719,6 +4719,78 @@ Acceptance:
   it there. Moving a severity is not deciding for them.
 - No rule is deleted in this task. Deleting is a separate judgement with its own evidence.
 
+Re-read on 2026-09-12. Four guidelines moved, and the eight checks that report them moved with
+them. Nothing was deleted.
+
+```
+before   critical 9 · warning 21 · suggestion 5
+after    critical 5 · warning 25 · suggestion 5
+
+critical: impex-no-hardcoded-pk · flexiblesearch-parameterised ·
+          solr-indexed-property-must-exist · ngrx-effect-catcherror · flexiblesearch-in-loop
+```
+
+The judgement, one line each:
+
+- **`no-model-in-facade` → warning.** A Model in a facade signature is a shape, and the codebase it
+  blocked on 2026-09-11 already returned one from two other methods on the same interface. Nothing
+  is wrong at runtime; a lead who sees this in a release candidate ships it and fixes it after.
+- **`facades-no-dao` → warning.** Same kind of judgement one layer down. The stated cost — skipping
+  service-layer validation and transactions — is real and is a design argument, not a defect that
+  can be pointed at. A facade calling a DAO returns the right answer.
+- **`no-business-logic-in-controller` → warning.** "Business logic" has no edge a diff can find, and
+  the check behind it fires on a controller reaching a DAO, which is the same layering call as the
+  two above. Neither is a reason to hold a release.
+- **`service-no-session` → warning.** Jalo is deprecated, not broken; code that reaches it works and
+  keeps working. The one genuinely dangerous shape here — the session switched to admin and never
+  switched back — is `session-admin-no-restore` in `domain/rules.py`, and that stays critical.
+
+Kept critical, and why the question "would a lead hold a release" answers yes:
+
+- `flexiblesearch-parameterised` and its check — injection, and in Commerce it widens the query past
+  the caller's restrictions.
+- `impex-no-hardcoded-pk` and its check — a PK that means a different row in the next environment
+  writes over something real.
+- `solr-indexed-property-must-exist` — indexing fails whole, not partially.
+- `ngrx-effect-catcherror` — one unhandled error and the effect stops reacting to every future
+  action; the feature is dead until a reload.
+- `flexiblesearch-in-loop` — an N+1 against the platform database, which is how a release takes the
+  site down under load rather than merely being slow.
+
+The five in `domain/rules.py` were audited and none moved: `properties-hardcoded-secret`,
+`hardcoded-secret`, `spring-duplicate-bean-id` (the second definition silently replaces the first),
+`impex-no-unique-key` (re-running the script inserts a duplicate row) and `session-admin-no-restore`
+(the thread keeps admin rights). Secrets, silent overwrite, duplicated data, privilege escalation —
+correctness, security and data loss, all four of them.
+
+`acme-outbound-via-gateway` in the client overlay was audited and left critical. It reads as
+layering and is not: the gateway is where that client's mTLS lives, so a hand-built client is a
+connection made without it. An overlay is also the project's own decision to make.
+
+The `policy.block_on` claim was checked in the code before being relied on, then measured. It is a
+per-project select on the lead's settings screen, and `compute_verdict` blocks on every finding
+ranked at or above it. Driven through the real API on postgres, both fixtures, both settings:
+
+```
+block_on=critical   facade exposes a Model        warning    blocking=False
+block_on=critical   concatenated FlexibleSearch   critical   blocking=True
+block_on=warning    facade exposes a Model        warning    blocking=True
+block_on=warning    concatenated FlexibleSearch   critical   blocking=True
+```
+
+So a strict team loses nothing. What changed is the default: layering is now something a review
+says, and correctness is something it stops.
+
+`scripts/sanity.py` is unchanged and still green — which is itself a reading, because it counts
+guidelines, scopes and fixtures and has no opinion at all about severity. A ruleset that was nine
+tenths critical would pass every budget in it. `uv run pytest` 165 passed, 9 skipped; the fixture
+harness compares rule id, file and line and never severity, so no fixture needed editing and none
+would have caught this either.
+
+Not measured here: `scripts/rehearse.mjs` refuses to start without `SMITH_CORPUS`, and there is no
+SAP Commerce checkout on this machine. The API drive above covers the same ground for this change —
+the plan and the verdict, over HTTP, against postgres.
+
 ### [ ] AK3. `conventions` is the answer to the false positive and nobody fills it
 
 The field exists, reaches the agent, and step 4 says a pattern listed there is not a finding. On the

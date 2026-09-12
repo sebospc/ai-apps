@@ -6,10 +6,16 @@
 # releases — `until: "2211"` stops a rule firing on 2211 and later. The plugin detects the version
 # from the repository's manifest; when it detects nothing, every rule applies.
 
+# `critical` is what holds a release: a correctness bug, a security hole, or data that gets lost
+# or written to the wrong place. Layering and shape are `warning` — a facade returning a Model is
+# worth saying and is not worth blocking a merge, and one of those blocked a real merge for a
+# pattern the codebase used everywhere. A team that wants shape enforced sets `policy.block_on` to
+# `warning` on their project, which is a per-project select and blocks on everything at or above it.
+
 rules:
   - id: facades-no-dao
     text: "Facades must never call DAOs directly. Always go through a Service."
-    severity: critical
+    severity: warning
     scope: "*.java"
     why: "Bypasses service-layer validation and transaction management."
     fix: "Inject and call the corresponding Service instead."
@@ -17,7 +23,7 @@ rules:
 
   - id: no-model-in-facade
     text: "Facades must not expose Model classes to their callers. Return DTOs/Data objects."
-    severity: critical
+    severity: warning
     scope: "*.java"
     why: "Leaks persistence layer into API layer."
     fix: "Use Populator/Converter to map Model → Data."
@@ -25,7 +31,7 @@ rules:
 
   - id: service-no-session
     text: "Services must not access JaloSession or SessionContext directly."
-    severity: critical
+    severity: warning
     scope: "*.java"
     why: "Jalo layer is deprecated. Use ServiceLayer APIs."
     fix: "Use modelService, userService, etc."
@@ -41,7 +47,7 @@ rules:
 
   - id: no-business-logic-in-controller
     text: "Controllers/OCC endpoints must not contain business logic. Delegate to facades."
-    severity: critical
+    severity: warning
     scope: "*.java"
     why: "Controllers are entry points only. Logic belongs in facade/service."
     fix: "Move logic to facade, call facade from controller."
@@ -332,7 +338,7 @@ checks:
     file_pattern: "*.java"
     exclude_file_pattern: "*[Tt]est*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: bug
     pattern: "getCurrentSession\\(\\)\\.setUser\\("
     exclude_line_pattern: "^\\s*(\\*|//)"
@@ -345,7 +351,7 @@ checks:
     file_pattern: "*.java"
     exclude_file_pattern: "*[Tt]est*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: bug
     pattern: "getCurrentSession\\(\\)\\.getUser\\(\\)"
     exclude_line_pattern: "^\\s*(\\*|//)"
@@ -358,7 +364,7 @@ checks:
     file_pattern: "*.java"
     exclude_file_pattern: "*[Tt]est*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: bug
     # `getSessionContext()` returns the Jalo `SessionContext` wherever it is called from; there is
     # no ServiceLayer method of that name, so the local the context came from does not matter.
@@ -373,7 +379,7 @@ checks:
     file_pattern: "*.java"
     exclude_file_pattern: "*[Tt]est*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: bug
     # Anchored on `getCurrentSession()` because the replacement this finding asks for —
     # `sessionService.createLocalSessionContext()` — carries the same method name. A rule that
@@ -389,7 +395,7 @@ checks:
     file_pattern: "*.java"
     exclude_file_pattern: "*[Tt]est*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: bug
     pattern: "JaloSession\\.|SessionContext\\."
     # Four kinds of exclusion, in order:
@@ -449,7 +455,7 @@ checks:
     file_pattern: "*Facade*.java"
     exclude_file_pattern: "*Test*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: logic
     # A DAO field, a DAO parameter, or a call on one. An import is not a use.
     pattern: "\\b[A-Z]\\w*Dao\\s+\\w+|\\b\\w*[Dd]ao\\s*\\.\\s*\\w+\\s*\\("
@@ -465,7 +471,7 @@ checks:
     file_pattern: "*Facade*.java"
     exclude_file_pattern: "*Test*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: logic
     # A Model in the facade's public surface: the return type or a parameter of a `public` method,
     # or of an interface method (implicitly public, no body, the line ends in `;`). Everything
@@ -484,7 +490,7 @@ checks:
     file_pattern: "*Controller*.java"
     exclude_file_pattern: "*Test*"
     output: finding
-    severity: critical
+    severity: warning
     issue_type: logic
     # Only the persistence layer. Calling a *Service* from a controller is what every accelerator
     # controller does and flagging it buries the case that is never right: reaching past both the

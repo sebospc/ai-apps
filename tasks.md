@@ -4581,7 +4581,7 @@ items-xml-active-flag-unique-index   offered 1/5   fired 0   quiet, and only on 
 The second line is also AF1 visible in a measurement: the guideline was offered for the one file it
 is about and for nothing else.
 
-### [ ] AI2. The firing half, which is the half that is missing
+### [x] AI2. The firing half, which is the half that is missing — 3e0f4be
 
 The probe answers "is it quiet". It does not answer "can it fire at all", and a guideline that never
 fires is worse than a noisy one because nothing reports it. A positive control needs a change that
@@ -4743,7 +4743,7 @@ Acceptance:
 - `scripts/sanity.py` still green, and the token cost of the command is recorded before and after.
   This adds instructions, so it will grow; the number goes in the phase either way.
 
-### [ ] AK2. Nine criticals, and four of them are style
+### [x] AK2. Nine criticals, and four of them are style — a2f8b3e
 
 `critical` is what blocks a merge. Today:
 

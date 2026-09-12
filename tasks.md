@@ -4624,6 +4624,115 @@ good advice for a person and would be noise as a rule, and the difference is whe
 be pointed at in a diff.
 
 
+## Phase AK — the review only looks where the diff looks
+
+A real bugfix was reviewed on 2026-09-11. Smith returned **one** finding, marked it critical and
+blocked the merge: a facade method taking a persistence model in its signature. The same change,
+read by the same class of model with the whole checkout in front of it and no instructions, produced
+three defects that mattered — and judged the reported one a non-issue.
+
+What Smith missed, described by shape because the code is a client's:
+
+- **The rule being moved already existed in another module**, with its own constant and a comment
+  claiming to be the same rule. The change left two live implementations that now disagree, and made
+  that comment false.
+- **The arithmetic was a reconstruction, not the quantity.** It restored one discount to recover a
+  pre-discount figure, which holds for the case in the ticket and fails when the discount exceeds
+  what it was applied to. The correct figure was already available without reconstructing anything.
+- **A parallel storefront carries a copy of the same block**, untouched, so half the product keeps
+  the bug.
+
+And what it reported was contradicted by the codebase itself: the same interface already takes that
+model in two other methods, and the module already depends on the one being called. A house pattern
+was reported as a critical defect.
+
+**This is not the model being weaker.** It is what the command asks for. Measured:
+
+```
+mentions of searching the repository, prior art, other call sites,
+parallel implementations, in plugin/commands/smith-review.md         0
+guidelines of 35 that ask about anything outside the changed file    0
+```
+
+Step 4 says *"Only report what you can point at with a file and a line the developer changed."* That
+sentence is right about where a finding **lands** and is being read as where a finding may be
+**discovered**. Every one of the three real defects lands on a changed line. None of them could be
+found by looking only at changed lines.
+
+The client already holds the whole checkout — the plugin sends a diff, but the agent is standing in
+the repository. Nothing tells it to look around. Decision 2 stays intact: the server never touches
+git, and none of this moves to the server.
+
+### [ ] AK1. Discovery is unbounded; reporting is not
+
+Step 4 gains a short investigation pass, run before findings are written, and only where it pays:
+
+- **Prior art.** When the change adds or moves a rule, a calculation or a constant, search the
+  repository for the same thing already implemented. Two live copies of one rule is a finding, and
+  it lands on the line that added the second one.
+- **What the changed lines depend on.** When a change is about a number, read the code that produces
+  the inputs. The arithmetic above is only wrong if you know the discount is applied uncapped, which
+  lives in a file no diff would carry.
+- **Parallel implementations.** A block copied across two storefronts, two controllers, two
+  extensions — when a change fixes one, the others are the finding.
+
+Bounded on purpose, or it becomes a repository audit charged to one review. Suggested shape: at most
+a handful of targeted searches, driven by what the change actually is, skipped entirely for a change
+that adds no rule and moves no logic.
+
+Acceptance:
+
+- Step 4 distinguishes where a finding is discovered from where it lands, in a sentence, and the
+  existing "point at a changed line" rule survives verbatim — it is the reason the review is precise.
+- A walk with the shape of the case above: a repository holding an existing implementation of a rule,
+  and a diff that adds a second one somewhere else. The walk asserts the duplicate is found. It must
+  be built with `buildPlainRepo`, so it runs without a corpus.
+- The walk is run against the **unfixed** command first and shown to fail. An assertion about a model
+  that passes before the change is a sighting, not a check — phase AF paid for that lesson already.
+- `scripts/sanity.py` still green, and the token cost of the command is recorded before and after.
+  This adds instructions, so it will grow; the number goes in the phase either way.
+
+### [ ] AK2. Nine criticals, and four of them are style
+
+`critical` is what blocks a merge. Today:
+
+```
+critical 9 · warning 21 · suggestion 5
+
+critical: facades-no-dao · no-model-in-facade · service-no-session ·
+          no-business-logic-in-controller · impex-no-hardcoded-pk ·
+          flexiblesearch-parameterised · solr-indexed-property-must-exist ·
+          ngrx-effect-catcherror · flexiblesearch-in-loop
+```
+
+Four of those are layering opinions. `no-model-in-facade` blocked a merge on 2026-09-11 for a
+pattern the codebase uses everywhere. Injection, hardcoded PKs and a query in a loop are a different
+kind of thing from "this should have been a DTO", and the ruleset does not distinguish them.
+
+Acceptance:
+
+- Every guideline's severity is re-read against one question: **would a reasonable lead hold a
+  release for this?** Layering and shape move to `warning`; correctness, security and data loss stay
+  `critical`. The judgement for each one that moves is written down in a line.
+- Deterministic checks are audited the same way.
+- A project can still block on `warning` — `policy.block_on` is per project and a strict team sets
+  it there. Moving a severity is not deciding for them.
+- No rule is deleted in this task. Deleting is a separate judgement with its own evidence.
+
+### [ ] AK3. `conventions` is the answer to the false positive and nobody fills it
+
+The field exists, reaches the agent, and step 4 says a pattern listed there is not a finding. On the
+project this happened to it is **empty**, and everything the lead wanted to say went into the
+reviewer prompt instead. Both are free-text boxes on the same screen and nothing says which is which.
+
+The false positive above is exactly what `conventions` is for.
+
+Acceptance: whatever makes a lead fill it. The screen's hint is one candidate and the weakest;
+better is that a rule dismissed repeatedly on one project offers the lead the sentence that would
+stop it, since rule health already counts exactly that. No new text box, no lead-authored rules —
+both were turned down on 2026-09-09.
+
+
 ## Notes and decisions log
 - 2026-09-09 — read eight SAP Commerce skills from another team as a style reference. What was worth
   taking was not the skills but their `AGENTS.md`, which records scars: a markdown formatter rewrites

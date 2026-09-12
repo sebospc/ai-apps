@@ -10,10 +10,11 @@
  *   scripts/ensure_db.sh
  *   uv run uvicorn smith.main:app --port 8099 &
  *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
- *   node scripts/walk_skill.mjs [claude|cursor] [review|apply|apply-ask]
+ *   node scripts/walk_skill.mjs [claude|cursor] [review|prior-art|apply|apply-ask]
  *   node scripts/walk_skill.mjs --self-check      # the assertions that have to be able to fail
  *
- * `review` reasons over real code and argues about it. `apply` starts from a developer asking for a
+ * `review` reasons over real code and argues about it. `prior-art` reads whether it looks past the
+ * diff at all. `apply` starts from a developer asking for a
  * feature and ends with code in a project it had to read first. `apply-ask` is the same feature
  * asked for as a bare symptom, and it reads for the opposite ending: a question, and an untouched
  * checkout, because nothing in the prompt says what to build.
@@ -100,8 +101,11 @@ const SHELL_TOOL = "Bash";
  */
 function toolDetail(args) {
   if (!args || typeof args !== "object") return "";
+  // A search carries both what it looked for and where: the pattern is the half worth reading, and
+  // a transcript that prints the directory instead cannot say whether the agent went looking for
+  // the rule or for a string out of the diff.
   const named =
-    args.command ?? args.path ?? args.file_path ?? args.filePath ?? args.pattern ?? args.query;
+    args.command ?? args.pattern ?? args.query ?? args.path ?? args.file_path ?? args.filePath;
   return named === undefined ? JSON.stringify(args).slice(0, 400) : String(named);
 }
 
@@ -1179,17 +1183,21 @@ function applyAskChecks({ repo, text, commands }) {
  * The lead signs in here rather than at the top because this is the only thing in a walk that needs
  * a session — everything else the walk does, it does through the plugin's key.
  */
+/** The lead's session, for the readings a plugin key cannot take: what a project holds afterwards. */
+async function leadCookie() {
+  const signIn = await fetch(`${API}/auth/login`, {
+    method: "POST",
+    headers: { ...NO_KEEPALIVE, "content-type": "application/json" },
+    body: JSON.stringify({ email: LEAD_EMAIL, password: LEAD_PASSWORD }),
+  });
+  if (!signIn.ok) throw new Error(`signing in answered ${signIn.status}`);
+  const cookies = signIn.headers.getSetCookie?.() ?? [signIn.headers.get("set-cookie") ?? ""];
+  return cookies.filter(Boolean).map((one) => one.split(";")[0]).join("; ");
+}
+
 async function discardProject(slug) {
   try {
-    const signIn = await fetch(`${API}/auth/login`, {
-      method: "POST",
-      headers: { ...NO_KEEPALIVE, "content-type": "application/json" },
-      body: JSON.stringify({ email: LEAD_EMAIL, password: LEAD_PASSWORD }),
-    });
-    if (!signIn.ok) throw new Error(`signing in answered ${signIn.status}`);
-    const cookies = signIn.headers.getSetCookie?.() ?? [signIn.headers.get("set-cookie") ?? ""];
-    const cookie = cookies.filter(Boolean).map((one) => one.split(";")[0]).join("; ");
-
+    const cookie = await leadCookie();
     const removed = await fetch(`${API}/projects/${slug}`, {
       method: "DELETE",
       headers: { ...NO_KEEPALIVE, cookie },
@@ -1408,6 +1416,226 @@ function planThrough(repo, key) {
   }
 }
 
+// --------------------------------------------------------------------------------------------
+// the rule that already existed somewhere else
+// --------------------------------------------------------------------------------------------
+
+/**
+ * Ordinary code, in the quantity a checkout has it.
+ *
+ * The first version of this fixture was three files. The session found the rule by running
+ * `find -name '*.java' | head -50` and reading all four of them — against the *unfixed* command,
+ * which is what proved the fixture wrong rather than the command right. A repository has to be
+ * large enough that reading it whole is not a strategy, and the rule that already exists has to sit
+ * where guessing at file names does not reach it.
+ */
+function ordinaryCode() {
+  const areas = [
+    ["core/src/com/acme/core/order", "com.acme.core.order", ["OrderEntryPopulator", "OrderService", "OrderDao", "OrderStatusStrategy", "OrderCodeGenerator"]],
+    ["core/src/com/acme/core/customer", "com.acme.core.customer", ["CustomerAccountService", "CustomerDao", "CustomerNamePopulator", "CustomerGroupStrategy"]],
+    ["core/src/com/acme/core/product", "com.acme.core.product", ["ProductVariantService", "ProductDao", "ProductUrlResolver", "ProductFeaturePopulator"]],
+    ["core/src/com/acme/core/pricing", "com.acme.core.pricing", ["PriceRowService", "TaxValueConverter", "DiscountRowDao", "NetPriceStrategy"]],
+    ["core/src/com/acme/core/stock", "com.acme.core.stock", ["StockLevelService", "WarehouseSelector", "StockLevelDao"]],
+    ["facades/src/com/acme/facades/cart", "com.acme.facades.cart", ["CartFacadeImpl", "CartEntryPopulator", "CartValidator", "CartModificationConverter"]],
+    ["facades/src/com/acme/facades/customer", "com.acme.facades.customer", ["CustomerFacadeImpl", "AddressPopulator", "RegisterDataValidator"]],
+    ["facades/src/com/acme/facades/product", "com.acme.facades.product", ["ProductFacadeImpl", "ProductDataPopulator", "ImageFormatMapping"]],
+    ["b2bstorefront/src/com/acme/b2b/checkout", "com.acme.b2b.checkout", ["CheckoutStepController", "PlaceOrderController", "DeliveryAddressForm", "PaymentDetailsForm"]],
+    ["b2bstorefront/src/com/acme/b2b/cart", "com.acme.b2b.cart", ["CartPageController", "CartEntryForm", "SavedCartController"]],
+  ];
+  const files = {};
+  for (const [directory, pkg, names] of areas) {
+    for (const name of names) {
+      const source = `package ${pkg};\n\npublic class Acme${name} {\n\n  public String describe() {\n    return "${name}";\n  }\n}\n`;
+      files[`${directory}/Acme${name}.java`] = { before: source, after: source };
+    }
+  }
+  return files;
+}
+
+// The rule, with one home, committed and never touched by the change below. It is in the pricing
+// package rather than anywhere named after delivery, and it says the same thing in another team's
+// words: no identifier it declares appears anywhere in the diff. A search for a name taken out of
+// the changed lines answers nothing, which is the point — this is only found by an agent that went
+// looking for the rule rather than for a string.
+const PRIOR_ART = "core/src/com/acme/core/pricing/AcmePricingRules.java";
+const PRIOR_ART_SOURCE = `package com.acme.core.pricing;
+
+import java.math.BigDecimal;
+
+/** Thresholds the whole platform prices against. */
+public final class AcmePricingRules {
+
+  /** At or above this, the customer pays nothing to have the order sent. */
+  public static final BigDecimal FREE_SHIPPING_MINIMUM = new BigDecimal("50.00");
+  public static final BigDecimal MINIMUM_ORDER_VALUE = new BigDecimal("10.00");
+
+  private AcmePricingRules() {
+  }
+
+  public static boolean shipsAtNoCost(final BigDecimal subtotal) {
+    return subtotal != null && subtotal.compareTo(FREE_SHIPPING_MINIMUM) >= 0;
+  }
+}
+`;
+
+// Untouched too, and the reason a search has to be read rather than counted: it names the rule
+// without implementing it, so a grep answers with more than one hit.
+const PRIOR_ART_CALLER = "core/src/com/acme/core/order/AcmeOrderCostService.java";
+const PRIOR_ART_CALLER_SOURCE = `package com.acme.core.order;
+
+import java.math.BigDecimal;
+
+import com.acme.core.pricing.AcmePricingRules;
+
+public class AcmeOrderCostService {
+
+  public boolean shippingIsFree(final BigDecimal subtotal) {
+    return AcmePricingRules.shipsAtNoCost(subtotal);
+  }
+}
+`;
+
+// The interface the changed class implements, so the extension reads like one a developer works in.
+const SECOND_COPY_INTERFACE = "facades/src/com/acme/facades/delivery/DeliveryCostFacade.java";
+const SECOND_COPY_INTERFACE_SOURCE = `package com.acme.facades.delivery;
+
+import java.math.BigDecimal;
+
+public interface DeliveryCostFacade {
+
+  BigDecimal deliveryCostFor(BigDecimal subtotal);
+}
+`;
+
+// The change: a second live copy of that rule, in another extension, with another number. Read on
+// its own there is nothing wrong with it — the constant is named, documented and null-safe, which
+// is deliberate. A diff with a smell in it gets searched by any agent; this one has none, so the
+// only reason to go looking is being told to.
+const SECOND_COPY = "facades/src/com/acme/facades/delivery/DeliveryCostFacadeImpl.java";
+const SECOND_COPY_BEFORE = `package com.acme.facades.delivery;
+
+import java.math.BigDecimal;
+
+public class DeliveryCostFacadeImpl implements DeliveryCostFacade {
+
+  private static final BigDecimal STANDARD_DELIVERY_COST = new BigDecimal("4.99");
+
+  @Override
+  public BigDecimal deliveryCostFor(final BigDecimal subtotal) {
+    return STANDARD_DELIVERY_COST;
+  }
+}
+`;
+const SECOND_COPY_AFTER = `package com.acme.facades.delivery;
+
+import java.math.BigDecimal;
+
+public class DeliveryCostFacadeImpl implements DeliveryCostFacade {
+
+  private static final BigDecimal STANDARD_DELIVERY_COST = new BigDecimal("4.99");
+
+  /** Orders worth at least this much are delivered at no charge. */
+  private static final BigDecimal FREE_DELIVERY_LIMIT = new BigDecimal("75.00");
+
+  @Override
+  public BigDecimal deliveryCostFor(final BigDecimal subtotal) {
+    if (subtotal == null) {
+      return STANDARD_DELIVERY_COST;
+    }
+    return subtotal.compareTo(FREE_DELIVERY_LIMIT) >= 0 ? BigDecimal.ZERO : STANDARD_DELIVERY_COST;
+  }
+}
+`;
+
+/** Naming the first copy is the whole evidence: it appears nowhere the diff reaches. */
+const NAMES_THE_PRIOR_ART = /AcmePricingRules|FREE_SHIPPING_MINIMUM|shipsAtNoCost/;
+
+/**
+ * A search of what is inside the files, whichever tool the editor gave the session to do it with.
+ *
+ * Listing file names is not one. The run that proved this fixture wrong found the rule with `find`
+ * and a `cat`, and counting that as a search would have called the walk green for the behaviour it
+ * exists to catch.
+ */
+function searchesOf(toolCalls) {
+  return toolCalls.filter(({ name, detail }) =>
+    name === SHELL_TOOL
+      ? /\b(grep|rg|ag|ack)\b/.test(detail)
+      : /grep|search|codebase/i.test(name)
+  );
+}
+
+/** What the session actually sent, read back through the lead's own view of the project. */
+async function findingsInProject(slug) {
+  const cookie = await leadCookie();
+  const listed = await fetch(`${API}/projects/${slug}/reviews`, {
+    headers: { ...NO_KEEPALIVE, cookie },
+  });
+  if (!listed.ok) throw new Error(`listing the project's reviews answered ${listed.status}`);
+  const findings = [];
+  for (const review of (await listed.json()).reviews) {
+    const detail = await fetch(`${API}/projects/${slug}/reviews/${review.id}`, {
+      headers: { ...NO_KEEPALIVE, cookie },
+    });
+    if (!detail.ok) throw new Error(`review ${review.id} answered ${detail.status}`);
+    findings.push(...(await detail.json()).findings);
+  }
+  return findings;
+}
+
+/**
+ * The case from 2026-09-11, with the client's code replaced by code of the same shape.
+ *
+ * Every defect that review missed lands on a changed line and none of them can be seen from one.
+ * So what is read here is not whether the agent phrased anything well: it is whether a finding
+ * naming the first copy of the rule reached the server, which no session that read only the diff
+ * can produce — the name is not in it.
+ */
+async function priorArtChecks({ text, commands, toolCalls, slug }) {
+  // Case-insensitive: half the sessions resolve the CLI into `$SMITH` first, and a check that reads
+  // only the lowercase spelling calls that session one that never opened a review.
+  const ran = (verb) => commands.some((c) => new RegExp(`smith(["']?\\s|\\s)[^|]*\\b${verb}\\b`, "i").test(c));
+  check("the agent asked the server for a plan", ran("plan"), commands.join(" ; ").slice(0, 300));
+  check("the agent submitted its own findings", ran("submit"), commands.join(" ; ").slice(0, 300));
+
+  const searches = searchesOf(toolCalls);
+  check(
+    "the agent searched the repository, not only the diff",
+    searches.length > 0,
+    toolCalls.map(({ name }) => name).join(",").slice(0, 200)
+  );
+  // Bounded on purpose. An investigation with no ceiling is a repository audit charged to one
+  // developer, and the command says a handful.
+  check(
+    "the investigation stayed a handful of searches",
+    searches.length <= 12,
+    `${searches.length} searches: ${searches.map(({ detail }) => detail).join(" ; ").slice(0, 300)}`
+  );
+
+  const findings = await findingsInProject(slug);
+  const agent = findings.filter((f) => f.source === "agent");
+  check("something reached the server from the session", agent.length > 0, `${findings.length} findings in all`);
+
+  const named = agent.filter((f) => NAMES_THE_PRIOR_ART.test(`${f.message} ${f.suggestion ?? ""}`));
+  check(
+    "the rule that already existed elsewhere was found",
+    named.length > 0,
+    agent.map((f) => `${f.file}:${f.line} ${f.message}`).join(" / ").slice(0, 400) || "nothing was submitted"
+  );
+  // Discovery is unbounded, reporting is not: the finding is about a file nothing changed and it
+  // still has to land on the line that added the second copy, or the server discards it.
+  check(
+    "and it lands on the line the change added",
+    named.some((f) => f.file === SECOND_COPY),
+    named.map((f) => `${f.file}:${f.line}`).join(", ") || "no finding names it at all"
+  );
+  check(
+    "the developer was told about it",
+    /AcmePricingRules|FREE_SHIPPING_MINIMUM|shipsAtNoCost/.test(text),
+    firstMatch(text, /^.*(AcmePricingRules|duplicat).*$/im) || "the duplicate never reaches the developer"
+  );
+}
+
 const WALKS = {
   scope: {
     // The range is in the prompt for the same reason the `review` walk carries it: the command
@@ -1426,6 +1654,34 @@ const WALKS = {
     },
     forbidden: FORBIDDEN,
     checks: scopeChecks,
+  },
+  "prior-art": {
+    // A real bugfix reviewed on 2026-09-11 came back with one finding, and the three defects that
+    // mattered were all invisible from the diff — the first of them a rule that already had an
+    // implementation in another module. The range is in the prompt for the same reason as
+    // everywhere else here: the command confirms first and a single-shot session has nobody to
+    // confirm with.
+    prompts: {
+      claude: "/smith-review my uncommitted changes",
+      cursor: "/smith-review my uncommitted changes",
+    },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "prior-art-walk",
+    setup: () => {
+      const repo = buildPlainRepo("smith-walk-prior-art-", {
+        ...ordinaryCode(),
+        [PRIOR_ART]: { before: PRIOR_ART_SOURCE, after: PRIOR_ART_SOURCE },
+        [PRIOR_ART_CALLER]: { before: PRIOR_ART_CALLER_SOURCE, after: PRIOR_ART_CALLER_SOURCE },
+        [SECOND_COPY_INTERFACE]: {
+          before: SECOND_COPY_INTERFACE_SOURCE,
+          after: SECOND_COPY_INTERFACE_SOURCE,
+        },
+        [SECOND_COPY]: { before: SECOND_COPY_BEFORE, after: SECOND_COPY_AFTER },
+      });
+      return { repo, about: `a second copy of a rule, added in ${SECOND_COPY}` };
+    },
+    forbidden: FORBIDDEN,
+    checks: priorArtChecks,
   },
   update: {
     // An install two hundred commits behind, which is the state a developer cannot see. What is read
@@ -1971,7 +2227,7 @@ async function main() {
     check("the agent said something to the developer", text.length > 0);
     // The repository is read by the checks, so it outlives the session and is removed after them.
     try {
-      await walk.checks({ repo, text, commands, key, credentials });
+      await walk.checks({ repo, text, commands, toolCalls, key, credentials, slug });
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

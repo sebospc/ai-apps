@@ -4663,7 +4663,7 @@ The client already holds the whole checkout — the plugin sends a diff, but the
 the repository. Nothing tells it to look around. Decision 2 stays intact: the server never touches
 git, and none of this moves to the server.
 
-### [x] AK1. Discovery is unbounded; reporting is not — SHA
+### [x] AK1. Discovery is unbounded; reporting is not — 68afce7
 
 Step 4 gains a short investigation pass, run before findings are written, and only where it pays:
 

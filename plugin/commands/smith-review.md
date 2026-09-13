@@ -126,8 +126,10 @@ $SMITH plan
 Add `--base <ref>` to review a whole branch instead of uncommitted work. Say nothing about the path,
 and never suggest installing anything.
 
-The plan carries `review_id`, `project`, `compared`, `guidelines`, `policy`, `conventions`,
-`deterministic_findings`, `suppressed_findings` and `platform_version`. The rules were filtered to
+The plan carries `project`, `compared`, `guidelines`, `policy`, `conventions`,
+`deterministic_findings`, `suppressed_findings` and `platform_version`. **No review id, because the
+plan does not open one** — the review is created by the submit in step 4, and that is what hands the
+id back. The rules were filtered to
 that platform release; an empty `platform_version` means none was detected and every rule applied.
 Mention it only if the developer asks why a rule fired or did not.
 
@@ -232,8 +234,12 @@ searches either way. Twenty greps is a repository audit charged to one developer
 - Report nothing rather than padding. An empty list on a clean change is the correct answer.
 
 ```bash
-echo '{"findings": [...]}' | $SMITH submit <review_id>
+echo '{"findings": [...]}' | $SMITH submit
 ```
+
+No id: this call is what creates the review, and its answer carries the `review_id` that step 7
+needs. Run it from the same directory you planned in — it sends the change again, so the server
+computes its own half over the same diff rather than trusting yours.
 
 Each finding:
 
@@ -321,6 +327,8 @@ Then stop talking. Do not pre-empt the answer, do not suggest which ones they sh
 echo '{"responses": [{"finding": 3, "disposition": "dismissed", "note": "we do that on purpose"}]}' \
   | $SMITH respond <review_id>
 ```
+
+`<review_id>` is the one the submit in step 4 answered with, not something the plan gave you.
 
 `finding` is the number you showed them. Match what they said on the left and send the value in the
 middle:

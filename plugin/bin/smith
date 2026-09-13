@@ -10,7 +10,7 @@
  *
  *   smith auth --url https://smith.co --key smk_...
  *   smith plan [--base main]
- *   smith submit [review_id]      # findings JSON on stdin
+ *   smith submit                 # findings JSON on stdin; creates the review
  *   smith respond <review_id>     # responses JSON on stdin
  *   smith review <review_id>
  *   smith catalog [<entry_id>]
@@ -760,7 +760,10 @@ async function cmdSubmit(positional, flags) {
 
   if (verdict === null) {
     if (reviewId === null) {
-      throw new Error("usage: smith submit <review_id>   (findings JSON on stdin)");
+      throw new Error(
+        "usage: smith submit   (findings JSON on stdin, run from the repository) — " +
+          "an id is only needed against a server too old to answer /v2",
+      );
     }
     verdict = await request(config, "POST", `/v1/reviews/${reviewId}/findings`, {
       findings: quoteFindings(root, findings),

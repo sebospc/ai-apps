@@ -5012,7 +5012,7 @@ would catch the same thing happening again next month.
 Phase AK fixes the causes that reading exposed. It does not make the reading repeatable, and a fix
 whose regression nobody can detect is one refactor away from being undone.
 
-### [ ] AL1. A scored set, and a number that can go down
+### [x] AL1. A scored set, and a number that can go down
 
 A handful of repositories, each carrying planted defects of a known kind, reviewed end to end through
 a real session, scored on how many were reported and how much noise came with them.
@@ -5051,7 +5051,7 @@ Acceptance:
 - The first run is taken **before** anything else in this phase is tuned, and recorded whatever it
   says. A first number that flatters the product is a first number nobody checked.
 
-### [ ] AL2. The reading that started this, kept as a case
+### [x] AL2. The reading that started this, kept as a case
 
 The 2026-09-11 review is the only end-to-end reading of the agent half that exists, and it lives in
 a conversation. It belongs in the set — generalised, since the code is a client's, which phase AK
@@ -5063,7 +5063,67 @@ at all. If the set is built and this case still scores 1 of 4, phase AK did not 
 worth knowing in one command rather than the next time somebody opens a pull request.
 
 
+Done. `scripts/review_score.mjs` with the cases in `scripts/lib/review_cases.mjs`: four
+repositories of about fifty ordinary files each, three carrying one planted defect and the fourth
+carrying all three plus the non-defect that was reported instead.
+
+**What proves a defect was found is a name that exists nowhere the diff reaches** — `AcmePricingRules`,
+`getSubtotalBeforeDiscounts`, the second storefront's controller. A session that did not go looking
+cannot have written one, so a case cannot be passed by reading the diff harder. That is the trap the
+`prior-art` walk in phase AK threw two fixtures away over.
+
+**First reading, 13 September, two runs each:**
+
+```
+case                       runs  recall      noise  blocked
+duplicate-rule                2  1 of 1        0      1/2
+uncapped-reconstruction       2  1 of 1      0-2      0/2
+parallel-storefront           2  1 of 1      0-1      0/2
+first-reading                 2  2 of 3        0      1/2
+```
+
+**And the control, the same cases against the command as it was before AK1**, which is the only
+thing that makes the numbers above mean anything:
+
+```
+first-reading (control)       2  1-2 of 3      0      0/2
+    the free-shipping rule already exists in core          1/2   (2/2 with AK1)
+    the subtotal was rebuilt when the order stores it      2/2   (2/2 with AK1)
+    the other storefront still has the bug                 0/2   (varies, see below)
+```
+
+The middle row is the honest one: that defect is visible in the changed file and AK1 changes nothing
+about finding it. The first and third are the ones that need a search, and they are where the two
+commands separate.
+
+**The finding this produced, and it is a real one.** The parallel-storefront defect scores **2 of 2
+when it is the only thing planted** and **3 of 6 across every run where it is one of three**. The
+session finds two defects, spends its investigation there, and stops. Nothing is wrong with the
+lookup — a transcript of a run that missed it shows three searches, none of them for a second
+storefront. AK1 taught the review to look; it did not teach it how much looking is enough when the
+first thing it looks for pays off. Recorded, not fixed: tuning the command against this set is how
+the set stops measuring anything.
+
+**The score can go down**, which is checked two ways. `--self-check` scores seven hand-written
+outcomes with no session at all — a review that reports everything, one that reports nothing, the
+right defect on an untouched line, an unplanted fourth finding — and `--control` reruns any case
+against the command file at `ebc6330`, before AK1. Both were run.
+
+**Read the spread, never a run.** Six runs of `first-reading` today gave 2, 3, 3, 2, 2 and 3 of
+three. An earlier report in this session called it "3 of 3" from the first two runs, which was one
+sample presented as a result — exactly what the phase text warned about before the tool existed.
+
+
 ## Notes and decisions log
+- 2026-09-13 — **AE2 changed what the CLI takes and left the document that explains it behind**, and
+  a scored run caught it. `plugin/commands/smith-review.md` still said the plan carries a `review_id`
+  and that `submit` needs one, so a session fumbled: a shell construction that submitted nothing, a
+  `smith submit --help`, then a hand-typed id. The command file was another agent's this iteration
+  and correctly left alone; nothing else was watching the seam. The CLI's own usage line, which the
+  session went and read, was the old sentence too. Both now say the submit is what creates the review
+  and hands the id back. The test that pinned the old wording was rewritten to check the substance —
+  that the sentence names the command and says why an id would ever be needed — because pinning
+  prose is how a message gets stuck at whatever it said the day someone wrote a test.
 - 2026-09-13 — **AE2 broke three functional scripts and none of them went red.** `plan` no longer
   returns a `review_id`, and `e2e_browser.mjs`, `rehearse.mjs` and `walk_skill.mjs` all fed that id
   into `submit`; the CLI then reviewed whatever repository it was standing in and answered "no

@@ -515,12 +515,16 @@ test("submitting sends the change with the findings, and falls back to the revie
       assert.doesNotMatch(stdout, /\/v[12]\b/);
     });
 
-    // An older server and no id is the one case that cannot be worked out: the plan gave one.
+    // An older server and no id is the one case that cannot be worked out: on `/v1` the plan gave
+    // one, and on `/v2` there is none to give. The sentence has to say which of the two the reader
+    // is in, or it reads as the CLI being broken — asserting the exact wording pins the wrong thing,
+    // so what is checked is that it names the command and says why an id would be needed at all.
     const stranded = v1OnlyServer({});
     await withServer(stranded.server, async (url) => {
       const { stderr, status } = await runCli(["submit"], { url, cwd: root, input: findings });
       assert.equal(status, 1);
-      assert.match(stderr, /usage: smith submit <review_id>/);
+      assert.match(stderr, /smith submit/);
+      assert.match(stderr, /\/v2|older/i, `no reason given for needing an id: ${stderr}`);
       assertReadable(stderr);
     });
   } finally {

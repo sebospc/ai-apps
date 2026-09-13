@@ -4897,6 +4897,74 @@ stop it, since rule health already counts exactly that. No new text box, no lead
 both were turned down on 2026-09-09.
 
 
+## Phase AL — nobody measures whether a review is any good
+
+Everything this repository measures is about the **deterministic** half. Precision and recall against
+a corpus, a fixture that fires and a fixture that stays quiet for every check, a probe that says
+whether a guideline is noisy. All of it stops at the line where the agent starts reasoning.
+
+The agent half is the product. It is what a developer reads, and it is unmeasured.
+
+The one time it *was* measured was by hand, once, on 2026-09-11, and the score was **1 of 4**: Smith
+returned a single finding, blocked the merge on it, and that finding was the one a person judged not
+to be a defect at all. Three real defects went unreported. That reading did not come from the suite,
+it came from a developer noticing. Nothing in this repository would have caught it, and nothing in it
+would catch the same thing happening again next month.
+
+Phase AK fixes the causes that reading exposed. It does not make the reading repeatable, and a fix
+whose regression nobody can detect is one refactor away from being undone.
+
+### [ ] AL1. A scored set, and a number that can go down
+
+A handful of repositories, each carrying planted defects of a known kind, reviewed end to end through
+a real session, scored on how many were reported and how much noise came with them.
+
+What it must be:
+
+- **Corpus-free**, built with `buildPlainRepo`, so it runs on any machine. The functional layer was
+  invisible on machines without a corpus for months, which is how three defects in it went unseen.
+- **Made of defect shapes that were actually observed**, not invented ones. Three came from the
+  2026-09-11 reading and are already described in phase AK: a rule reimplemented in a second module
+  so two live copies disagree, an arithmetic reconstruction that holds for the reported case and
+  fails when the quantity it restores exceeds what it was applied to, and a block copied across two
+  storefronts where only one was fixed. Others get added as reviews find them, never before.
+- **Scored on both halves.** Recall: how many planted defects were reported. Noise: how many findings
+  were reported that were not planted. A run that finds everything and says nine other things is not
+  a good review, and a single number hides that.
+- **Read as a range, not a threshold.** The agent is a model and two runs differ, which the AK1 walk
+  already saw — the same command searched on one run and not on the next. So each case runs more than
+  once and the phase records the spread. A budget set to the best run is a budget that fails
+  randomly.
+
+What it must not be:
+
+- **Not a benchmark to optimise against.** The moment the command is tuned until the set passes, the
+  set measures the tuning. It is a regression detector: it answers "is this worse than last month",
+  never "is this good".
+- **Not proof.** Defects planted by a model and reviewed by a model share a blind spot, and no amount
+  of cases fixes that. The number is worth having and worth distrusting, and the phase says both.
+
+Acceptance:
+
+- One command runs it and prints recall and noise per case and overall.
+- `scripts/sanity.py` carries the score, so it sits next to the token costs and the ruleset health
+  where anybody changing a command file will see it move.
+- The budget is set from a measured spread, with the runs that produced it written down.
+- The first run is taken **before** anything else in this phase is tuned, and recorded whatever it
+  says. A first number that flatters the product is a first number nobody checked.
+
+### [ ] AL2. The reading that started this, kept as a case
+
+The 2026-09-11 review is the only end-to-end reading of the agent half that exists, and it lives in
+a conversation. It belongs in the set — generalised, since the code is a client's, which phase AK
+already did for its prose.
+
+Worth its own entry because it is the acceptance test for phase AK as a whole: AK1 gives the review
+the means to find all three, AK2 stops the fourth from blocking a merge, AK3 stops it being reported
+at all. If the set is built and this case still scores 1 of 4, phase AK did not work, and that is
+worth knowing in one command rather than the next time somebody opens a pull request.
+
+
 ## Notes and decisions log
 - 2026-09-13 — the probe now has to prove itself before anyone reads it. `--self-check` runs a change
   built to trip one named guideline and exits non-zero if no citation comes back, because the failure

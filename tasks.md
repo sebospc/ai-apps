@@ -5012,7 +5012,7 @@ would catch the same thing happening again next month.
 Phase AK fixes the causes that reading exposed. It does not make the reading repeatable, and a fix
 whose regression nobody can detect is one refactor away from being undone.
 
-### [x] AL1. A scored set, and a number that can go down
+### [x] AL1. A scored set, and a number that can go down — e7cea47
 
 A handful of repositories, each carrying planted defects of a known kind, reviewed end to end through
 a real session, scored on how many were reported and how much noise came with them.
@@ -5051,7 +5051,7 @@ Acceptance:
 - The first run is taken **before** anything else in this phase is tuned, and recorded whatever it
   says. A first number that flatters the product is a first number nobody checked.
 
-### [x] AL2. The reading that started this, kept as a case
+### [x] AL2. The reading that started this, kept as a case — e7cea47
 
 The 2026-09-11 review is the only end-to-end reading of the agent half that exists, and it lives in
 a conversation. It belongs in the set — generalised, since the code is a client's, which phase AK

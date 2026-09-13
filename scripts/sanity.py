@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -182,6 +183,48 @@ def measure_plan(report: Report) -> None:
         report.measure("plan", name, tokens(json.dumps(plan.get(name))), None, " tok")
 
 
+def measure_review_score(report: Report) -> None:
+    """How the agent half scored the last time anybody ran it.
+
+    Recorded rather than run: a reading costs one real session per case per run, which is minutes
+    and a session budget, and this command has to stay something you type without thinking. What it
+    guards against is the score going stale — a command file edited a month after the last reading
+    is a change nobody measured.
+    """
+    recorded = ROOT / "scripts" / "review_score.json"
+    try:
+        data = json.loads(recorded.read_text())
+    except (OSError, json.JSONDecodeError):
+        report.unmeasured("review", "score", "never recorded; run scripts/review_score.mjs --record")
+        return
+
+    taken = data.get("date", "unknown")
+    planted = missed = noise = 0
+    for runs in (data.get("cases") or {}).values():
+        # The worst run of each case, never the best: a range read at its top is a range nobody read.
+        planted += max((r.get("planted", 0) for r in runs), default=0)
+        missed += max((r.get("missed", 0) for r in runs), default=0)
+        noise += max((r.get("noise", 0) for r in runs), default=0)
+
+    report.measure("review", f"planted defects missed (worst run, {taken})", missed, planted)
+    report.measure("review", "findings nobody planted (worst run)", noise, None)
+
+    days = _days_since(taken)
+    if days is None:
+        report.unmeasured("review", "age", f"cannot read the date {taken!r}")
+    else:
+        # Sixty days is arbitrary and deliberately loose. It exists so a reading that stopped being
+        # true has to be noticed by the tool rather than by a developer opening a pull request.
+        report.measure("review", "days since that reading", days, 60)
+
+
+def _days_since(stamp: str) -> int | None:
+    try:
+        taken = date.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return (date.today() - taken).days
+
 def render(report: Report) -> None:
     group = ""
     for row in report.rows:
@@ -208,6 +251,7 @@ def main() -> int:
     measure_commands(report)
     measure_ruleset(report)
     measure_walks(report)
+    measure_review_score(report)
     measure_plan(report)
 
     if "--json" in sys.argv:

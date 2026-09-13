@@ -4324,7 +4324,7 @@ filters were shown to be load-bearing by reverting each on its own and watching 
 that line. Two older tests listed reviews they had only planned; they now submit, which is what they
 meant.
 
-### [ ] AE2. `/v2`: plan writes nothing at all
+### [x] AE2. `/v2`: plan writes nothing at all
 
 AE1 hides a row that should not exist. This removes it.
 
@@ -4355,6 +4355,46 @@ Acceptance:
 
 Do not start this while the plugin is still being chased across machines. AE1 is what the lead sees;
 this is what the database holds, and it can wait for a week when an update is not in flight.
+
+Done. `POST /v2/reviews` answers 200 with the plan and no `review_id`; `POST /v2/reviews/findings`
+takes the diff, the files and the agent's findings, runs the deterministic half again over that diff
+and answers 201 with the verdict and the `review_id` it created. `/v1` is untouched and pinned by
+`test_v1_still_opens_a_review_while_it_plans`. In the service, `_examine` is the shared half and
+writes nothing at all; `plan`, `plan_v1` and `create_review` are the three things that can be done
+with it. The plugin tries `/v2` and falls back on a 404, in both `plan` and `submit`, and no output
+or error names a version.
+
+Proved against real postgres, not sqlite, through the real CLI on :8095:
+
+```
+reviews before                                       2
+smith plan            → no review_id in the output,  2   (nothing written)
+smith submit (no id)  → review 777 completed         3   blocking=t, exit 1
+  findings 777        rules/no-system-out · rules/properties-hardcoded-secret · agent/…
+  steps    777        1 plan · 2 findings · 3 verdict
+POST /v1/reviews      → review 778 planned, 2 findings stored at plan time
+lead's list           775, 777 — the planned rows are still absent (AE1 holds)
+```
+
+The accepted cost, measured rather than assumed: on a one-file Java change with PMD on the machine,
+each deterministic pass is 0.80 s, so a `/v2` review pays 1.6 s against `/v1`'s 0.8 s. On a
+properties-only change both are 0.05 s — the doubling is a JVM start and nothing else.
+`scripts/sanity.py`: every budget holds, plan total 502 tok of which 410 is instructions, and the
+`/v2` contract is three tokens shorter because it names no review id for an agent to fill in.
+
+161 → 167 pytest, 40 → 42 plugin tests. Each new check was run against the behaviour it describes
+being wrong: the v2 plan settling a `fixed` claim, the v2 plan opening a row, the v2 review storing
+the agent's findings before the rules'. All three failed by name.
+
+**This breaks three functional scripts and they are not in this task's scope.** `smith plan` no
+longer prints a `review_id`, and `e2e_browser.mjs:170`, `rehearse.mjs:242` and `walk_skill.mjs:807`
+all pass `plan.review_id` to `submit`. Measured, not guessed: replaying `seedReview` against the
+changed CLI gives `plan.review_id = undefined`, and `submit undefined` then reviews whatever
+repository the script happens to be in — it answered "no blocking findings" for a seed whose whole
+point is a hardcoded secret. The fix is one line each (`["submit"]` with the plan's `cwd`, no id),
+plus the abandoned-plan assertion in the browser suite, which AE2 makes vacuous: a plan leaves
+nothing to hide from a lead any more. That assertion should become "a cancelled plan leaves the
+reviews table as it was".
 
 
 ## Phase AF — a guideline that cannot apply cannot be misapplied
@@ -4529,6 +4569,25 @@ working agreement names.
 
 
 ## Notes and decisions log
+- 2026-09-13 — AE2 decisions, all taken the simplest way that meets the acceptance. **`smith submit`
+  takes the review id as optional and tries `/v2` first regardless of it.** The alternative was to
+  route on the argument — an id means `/v1` — and it loses to a stale id an agent kept from an
+  earlier session, which would then be sent to a server that no longer has that row. **`submit`
+  re-collects the diff instead of remembering the plan's**, because this plugin writes no state
+  between commands; it grew `--base` so a caller that planned against a ref can submit against the
+  same one. Nothing passes `--base` to `submit` today, and a `--base` plan followed by a bare submit
+  scopes against the default base — for uncommitted work, which is the common review, the two are
+  the same diff. **The v2 plan does not settle `fixed` claims.** Confirming a fix is a judgement
+  about the project's history and a plan nobody finished has not earned it; `/v1` still settles at
+  plan time because that is when it opens the review. **A v2 review stores the deterministic
+  findings before the agent's**, matching the order `/v1` produces, because `respond` resolves "3"
+  by position and which endpoint made the review must not change what the developer pointed at.
+- 2026-09-13 — `scripts/rehearse.mjs` was not run for AE2: it builds its repository from
+  `SMITH_CORPUS` and there is no checkout on this machine, which `scripts/sanity.py` reports as 8 of
+  10 walks unrunnable. What replaced it is a drill of both endpoints through the real CLI against
+  real postgres, with the rows read back — recorded under AE2. `scripts/e2e_browser.mjs` could not
+  run either: `web/node_modules` does not exist in this worktree and `next build` fails before the
+  browser starts. Its seeding is broken by this change anyway, which is written up in AE2.
 - 2026-09-09 — three things were considered and turned down, so they do not get proposed again.
   **Auto-updating the plugin**: measured — a full copy placed by hand in `~/.cursor/plugins/cache/`
   at the right sha, with `.cache-complete`, did not load, and Cursor then swept the stale sha that

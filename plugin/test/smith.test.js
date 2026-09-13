@@ -390,7 +390,7 @@ test("a change not worth reviewing comes back as a skip, not as a failure", asyn
       assert.equal(plan.skipped, true);
       assert.equal(plan.reason, "only documentation or generated files changed: README.md");
       assert.equal(plan.review_id, undefined, "nothing was opened, so there is no review to report");
-      assert.equal(received[0].url, "/v1/reviews");
+      assert.equal(received[0].url, "/v2/reviews");
     });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -404,16 +404,128 @@ test("a change with nothing wrong exits clean, so it cannot read as a failure", 
     reason: "no blocking findings",
     counts: {},
   });
-  await withServer(server, async (url) => {
-    const { stdout, stderr, status } = await runCli(["submit", "5"], {
-      url,
-      input: '{"findings": []}',
+  const { root } = initRepo();
+  try {
+    fs.appendFileSync(path.join(root, "app.properties"), "one more line of real settings here\n");
+    await withServer(server, async (url) => {
+      const { stdout, stderr, status } = await runCli(["submit"], {
+        url,
+        cwd: root,
+        input: '{"findings": []}',
+      });
+      assert.equal(status, 0, "finding nothing is the best outcome and must exit 0");
+      assert.equal(stderr, "");
+      assert.deepEqual(received[0].body.findings, []);
+      assert.equal(JSON.parse(stdout).reason, "no blocking findings");
     });
-    assert.equal(status, 0, "finding nothing is the best outcome and must exit 0");
-    assert.equal(stderr, "");
-    assert.deepEqual(received[0].body.findings, []);
-    assert.equal(JSON.parse(stdout).reason, "no blocking findings");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** A server that has only `/v1`, the way one running a build from before `/v2` does. */
+function v1OnlyServer(reply) {
+  const received = [];
+  const server = require("http").createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => (raw += chunk));
+    req.on("end", () => {
+      received.push({ method: req.method, url: req.url, body: raw ? JSON.parse(raw) : null });
+      const missing = req.url.startsWith("/v2/");
+      res.writeHead(missing ? 404 : 200, { "content-type": "application/json" });
+      res.end(JSON.stringify(missing ? { detail: "Not Found" } : reply));
+    });
   });
+  return { server, received };
+}
+
+test("planning writes nothing on a server that has /v2, and still works on one that does not", async () => {
+  const { root } = initRepo();
+  try {
+    fs.appendFileSync(path.join(root, "app.properties"), "one more line of real settings here\n");
+
+    const current = stubServer({ project: "acme", guidelines: [], deterministic_findings: [] });
+    await withServer(current.server, async (url) => {
+      const { stdout, status } = await runCli(["plan"], { url, cwd: root });
+      assert.equal(status, 0);
+      assert.deepEqual(
+        current.received.map((r) => r.url),
+        ["/v2/reviews"],
+        "a current server is asked for a plan that opens no review"
+      );
+      assert.equal(JSON.parse(stdout).review_id, undefined);
+    });
+
+    const old = v1OnlyServer({ review_id: 9, project: "acme", guidelines: [] });
+    await withServer(old.server, async (url) => {
+      const { stdout, stderr, status } = await runCli(["plan"], { url, cwd: root });
+      assert.equal(status, 0, "an older server must not fail the review");
+      assert.equal(stderr, "", "the fallback is not something a developer is told about");
+      assert.deepEqual(
+        old.received.map((r) => r.url),
+        ["/v2/reviews", "/v1/reviews"],
+        "the older route is tried only after the current one is missing"
+      );
+      const plan = JSON.parse(stdout);
+      assert.equal(plan.review_id, 9, "the id an older server minted is what submit will need");
+      // Nothing a developer or their agent reads names a protocol version.
+      assert.doesNotMatch(stdout, /\/v[12]\b/);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("submitting sends the change with the findings, and falls back to the review id", async () => {
+  const { root } = initRepo();
+  const findings = '{"findings": [{"file": "app.properties", "line": 2, "message": "no"}]}';
+  try {
+    fs.appendFileSync(path.join(root, "app.properties"), "one more line of real settings here\n");
+
+    const current = stubServer({ review_id: 11, blocking: false, reason: "clean", counts: {} });
+    await withServer(current.server, async (url) => {
+      const { stdout, status } = await runCli(["submit"], { url, cwd: root, input: findings });
+      assert.equal(status, 0, "a current server takes the findings with no review id at all");
+      assert.equal(current.received[0].url, "/v2/reviews/findings");
+      const sent = current.received[0].body;
+      assert.match(sent.diff, /one more line of real settings here/, "the diff travels with the findings");
+      assert.equal(sent.findings.length, 1);
+      assert.equal(
+        sent.findings[0].quoted_line,
+        "one more line of real settings here",
+        "the offending line is still read from the working tree"
+      );
+      assert.equal(JSON.parse(stdout).review_id, 11);
+    });
+
+    const old = v1OnlyServer({ review_id: 9, blocking: true, reason: "one critical", counts: {} });
+    await withServer(old.server, async (url) => {
+      const { stdout, stderr, status } = await runCli(["submit", "9"], {
+        url,
+        cwd: root,
+        input: findings,
+      });
+      assert.equal(status, 1, "a blocking verdict is still a non-zero exit");
+      assert.equal(stderr, "");
+      assert.deepEqual(
+        old.received.map((r) => r.url),
+        ["/v2/reviews/findings", "/v1/reviews/9/findings"]
+      );
+      assert.equal(JSON.parse(stdout).reason, "one critical");
+      assert.doesNotMatch(stdout, /\/v[12]\b/);
+    });
+
+    // An older server and no id is the one case that cannot be worked out: the plan gave one.
+    const stranded = v1OnlyServer({});
+    await withServer(stranded.server, async (url) => {
+      const { stderr, status } = await runCli(["submit"], { url, cwd: root, input: findings });
+      assert.equal(status, 1);
+      assert.match(stderr, /usage: smith submit <review_id>/);
+      assertReadable(stderr);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("the sentences SKILL.md tells the agent to look for are the ones smith prints", () => {

@@ -18,7 +18,7 @@ from smith.reviewer.domain.models import (
     Policy,
     ReviewConfig,
 )
-from smith.reviewer.service import Response, ReviewError, ReviewSkipped
+from smith.reviewer.service import Response, ReviewError, ReviewPlan, ReviewSkipped
 
 _MAX_FILES = 400
 _MAX_FILE_CHARS = 400_000
@@ -65,6 +65,17 @@ class AgentFinding(BaseModel):
 
 
 class SubmitRequest(BaseModel):
+    findings: list[AgentFinding] = Field(default_factory=list, max_length=500)
+
+
+class ReviewRequest(PlanRequest):
+    """`/v2`: the change and the agent's findings in one call, because no review exists yet.
+
+    It carries the diff a second time on purpose. The server re-runs the deterministic half over
+    it rather than trusting a plan handed back by the plugin, so what is stored is always what the
+    server found.
+    """
+
     findings: list[AgentFinding] = Field(default_factory=list, max_length=500)
 
 
@@ -115,6 +126,59 @@ def build_router() -> APIRouter:
     # server, so there is nothing to keep compatible.
     router = APIRouter(tags=["reviewer"])
 
+    @router.post("/v2/reviews")
+    def plan_only(
+        body: PlanRequest,
+        actor: Annotated[Principal, Depends(plugin_principal)],
+        svc: Annotated[Services, Depends(get_services)],
+    ) -> dict:
+        """The plan, and nothing written. 200, not 201: this call creates nothing.
+
+        No `review_id` comes back because there is no review — a session cancelled here leaves the
+        database exactly as it found it. The findings arrive at `/v2/reviews/findings` with the
+        diff they were reasoned about, and that is what opens a review.
+        """
+        files = {f.path: f.content for f in body.files}
+        try:
+            plan = _guard(
+                lambda: svc.reviewer.plan(actor, body.diff, files, body.platform_version)
+            )
+        except ReviewSkipped as exc:
+            return {"skipped": True, "reason": str(exc)}
+        return _plan_json(plan, actor)
+
+    @router.post("/v2/reviews/findings", status_code=status.HTTP_201_CREATED)
+    def review_change(
+        body: ReviewRequest,
+        request: Request,
+        response: HttpResponse,
+        actor: Annotated[Principal, Depends(plugin_principal)],
+        svc: Annotated[Services, Depends(get_services)],
+    ) -> dict:
+        files = {f.path: f.content for f in body.files}
+        try:
+            review_id, verdict = _guard(
+                lambda: svc.reviewer.create_review(
+                    actor,
+                    body.diff,
+                    files,
+                    _agent_findings(body.findings),
+                    body.branch,
+                    body.title,
+                    body.platform_version,
+                )
+            )
+        except ReviewSkipped as exc:
+            response.status_code = status.HTTP_200_OK
+            return {"skipped": True, "reason": str(exc)}
+        request.state.review_id = review_id
+        return {
+            "review_id": review_id,
+            "blocking": verdict.blocking,
+            "reason": verdict.reason,
+            "counts": verdict.counts,
+        }
+
     @router.post("/v1/reviews", status_code=status.HTTP_201_CREATED)
     def plan_review(
         body: PlanRequest,
@@ -126,7 +190,7 @@ def build_router() -> APIRouter:
         files = {f.path: f.content for f in body.files}
         try:
             plan = _guard(
-                lambda: svc.reviewer.plan(
+                lambda: svc.reviewer.plan_v1(
                     actor, body.diff, files, body.branch, body.title, body.platform_version
                 )
             )
@@ -134,23 +198,8 @@ def build_router() -> APIRouter:
             # 200, not an error and not 201: nothing was created and nothing went wrong.
             response.status_code = status.HTTP_200_OK
             return {"skipped": True, "reason": str(exc)}
-        # The only route that mints a review id rather than being handed one in the URL.
         request.state.review_id = plan.review_id
-        return {
-            "review_id": plan.review_id,
-            # A key is bound to one project and never chooses it, so this is not a setting — it is
-            # the answer to "which project am I reviewing into", which nothing else tells anybody.
-            "project": actor.project_slug,
-            "instructions": plan.instructions,
-            "policy": plan.policy,
-            "conventions": plan.conventions,
-            "guidelines": plan.guidelines,
-            # Empty means no version was detected, and every rule applied. The developer has to be
-            # able to tell that apart from a version that filtered rules out.
-            "platform_version": plan.platform_version,
-            "deterministic_findings": _numbered(plan.findings),
-            "suppressed_findings": [_finding_json(f) for f in plan.suppressed],
-        }
+        return {"review_id": plan.review_id} | _plan_json(plan, actor)
 
     @router.get("/v1/reviews/{review_id}")
     def read_review(
@@ -182,20 +231,7 @@ def build_router() -> APIRouter:
         actor: Annotated[Principal, Depends(plugin_principal)],
         svc: Annotated[Services, Depends(get_services)],
     ) -> dict:
-        findings = [
-            Finding(
-                file=f.file,
-                line=f.line,
-                severity=f.severity,
-                rule_id=f.rule_id,
-                message=f.message,
-                source="agent",
-                issue_type=f.issue_type,
-                suggestion=f.suggestion,
-                quoted_line=f.quoted_line,
-            )
-            for f in body.findings
-        ]
+        findings = _agent_findings(body.findings)
         verdict = _guard(lambda: svc.reviewer.submit(actor, review_id, findings))
         return {
             "review_id": review_id,
@@ -344,6 +380,41 @@ def build_router() -> APIRouter:
 def _scoped(svc: Services, who: tuple[int, str], slug: str) -> Principal:
     uid, email = who
     return _guard(lambda: svc.auth.session_principal(uid, email, slug))
+
+
+def _plan_json(plan: ReviewPlan, actor: Principal) -> dict:
+    """The plan as both versions send it. `/v1` adds the `review_id` it opened; `/v2` has none."""
+    return {
+        # A key is bound to one project and never chooses it, so this is not a setting — it is the
+        # answer to "which project am I reviewing into", which nothing else tells anybody.
+        "project": actor.project_slug,
+        "instructions": plan.instructions,
+        "policy": plan.policy,
+        "conventions": plan.conventions,
+        "guidelines": plan.guidelines,
+        # Empty means no version was detected, and every rule applied. The developer has to be able
+        # to tell that apart from a version that filtered rules out.
+        "platform_version": plan.platform_version,
+        "deterministic_findings": _numbered(plan.findings),
+        "suppressed_findings": [_finding_json(f) for f in plan.suppressed],
+    }
+
+
+def _agent_findings(submitted: list[AgentFinding]) -> list[Finding]:
+    return [
+        Finding(
+            file=f.file,
+            line=f.line,
+            severity=f.severity,
+            rule_id=f.rule_id,
+            message=f.message,
+            source="agent",
+            issue_type=f.issue_type,
+            suggestion=f.suggestion,
+            quoted_line=f.quoted_line,
+        )
+        for f in submitted
+    ]
 
 
 def _numbered(findings: list[Finding]) -> list[dict]:

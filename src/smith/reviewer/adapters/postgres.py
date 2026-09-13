@@ -46,11 +46,10 @@ class ReviewRow(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     branch: Mapped[str] = mapped_column(String(255), default="")
     title: Mapped[str] = mapped_column(String(500), default="")
-    # planned | completed. `plan` writes the row because `submit` needs it — the agent's findings
-    # are scoped against this diff's added lines, which only the server holds. A review is the
-    # verdict, though, so a row still `planned` is a mechanism and not something anybody reviewed:
-    # every query a lead reads filters it out. Reported 2026-09-08 as six warnings in a list, from
-    # a session that was cancelled before it read a line of the code.
+    # planned | completed. Only `/v1` ever writes `planned`: there the plan opens the row because
+    # submit is handed nothing but an id, and a session cancelled in between leaves a review nobody
+    # asked for — reported 2026-09-08 as six warnings in a lead's list. Every query a lead reads
+    # filters those out. `/v2` carries the diff to submit instead, so its rows are born completed.
     status: Mapped[str] = mapped_column(String(20), default="planned")
     files_changed: Mapped[int] = mapped_column(Integer, default=0)
     # The diff's added lines, kept so a later submit can be scoped without resending the diff.

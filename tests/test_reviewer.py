@@ -9,6 +9,7 @@ import re
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from smith.auth.domain import Principal
 from smith.auth.postgres import SqlProjectRepository
@@ -16,7 +17,7 @@ from smith.container import Container
 from smith.db import Base
 from smith.logs import JsonFormatter
 from smith.main import create_app
-from smith.reviewer.adapters.postgres import SqlReviewStore
+from smith.reviewer.adapters.postgres import ReviewRow, SqlReviewStore
 from smith.reviewer.domain.dedup import merge
 from smith.reviewer.domain.diff import added_lines, parse_unified_diff, scope_to_diff
 from smith.reviewer.domain.findings import fingerprint
@@ -340,6 +341,163 @@ def test_plugin_flow_plans_reviews_and_gets_a_server_computed_verdict(client) ->
     assert verdict.status_code == 200, verdict.text
     # The hardcoded secret is critical, so the server blocks regardless of what the agent said.
     assert verdict.json()["blocking"] is True
+
+
+# --------------------------------------------------------------------------------------------------
+# /v2: a plan is not a review
+# --------------------------------------------------------------------------------------------------
+
+V2_BODY = {
+    "diff": PROPS_DIFF + JAVA_DIFF,
+    "branch": "feature/x",
+    "title": "SMITH-1 the change",
+    "files": [{"path": "config/local.properties", "content": PROPS_CONTENT}],
+}
+
+
+def _rows(api: TestClient) -> list[tuple[int, str, bool | None]]:
+    """Every review in the database, as (id, status, blocking). Read inside the session."""
+    container: Container = api.app.state.container
+    with container.transaction() as (session, _):
+        rows = session.scalars(select(ReviewRow).order_by(ReviewRow.id)).all()
+        return [(r.id, r.status, r.blocking) for r in rows]
+
+
+def test_v2_plans_without_writing_a_single_row(client) -> None:
+    """A cancelled session must leave the database exactly as it found it."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    plan = api.post("/v2/reviews", headers=auth, json=V2_BODY)
+    assert plan.status_code == 200, plan.text
+    body = plan.json()
+    assert "review_id" not in body, "there is no review yet, so there is no id to hand out"
+    assert _rows(api) == [], "planning created a review nobody asked for"
+
+    # Everything the agent needs is still there. A plan that writes nothing is not a plan that says
+    # less.
+    assert body["guidelines"]
+    assert "properties-hardcoded-secret" in {f["rule_id"] for f in body["deterministic_findings"]}
+    assert body["project"] == "acme"
+    assert "/v1/reviews/" not in body["instructions"], "no id for the agent to invent"
+
+
+def test_v2_creates_the_review_with_its_verdict_already_on_it(client, lead_session) -> None:
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    submitted = api.post(
+        "/v2/reviews/findings",
+        headers=auth,
+        json=V2_BODY
+        | {
+            "findings": [
+                {
+                    "file": "core/src/DefaultFooFacade.java",
+                    "line": 12,
+                    "severity": "warning",
+                    "rule_id": "no-business-logic-in-controller",
+                    "message": "this belongs in a service",
+                }
+            ]
+        },
+    )
+    assert submitted.status_code == 201, submitted.text
+    body = submitted.json()
+    review_id = body["review_id"]
+    # The hardcoded secret is critical, and the server found it itself rather than being told.
+    assert body["blocking"] is True
+    assert _rows(api) == [(review_id, "completed", True)]
+
+    detail = lead_session.get(f"/projects/acme/reviews/{review_id}").json()
+    assert [s["kind"] for s in detail["steps"]] == ["plan", "findings", "verdict"]
+    assert detail["title"] == "SMITH-1 the change"
+    assert detail["branch"] == "feature/x"
+    # Deterministic first and the agent's after, the same order `/v1` stores them in: a developer
+    # points at a finding by number, and that must not depend on which endpoint made the review.
+    sources = [f["source"] for f in detail["findings"]]
+    assert sources == sorted(sources, key=lambda s: s == "agent")
+    assert "agent" in sources
+
+    listed = lead_session.get("/projects/acme/reviews").json()["reviews"]
+    assert [r["id"] for r in listed] == [review_id], "a review with a verdict is what a lead reads"
+
+
+def test_v1_still_opens_a_review_while_it_plans(client) -> None:
+    """Pinned: a plugin already installed calls this and reads `review_id` back."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    plan = api.post("/v1/reviews", headers=auth, json=V2_BODY)
+    assert plan.status_code == 201, plan.text
+    review_id = plan.json()["review_id"]
+    assert _rows(api) == [(review_id, "planned", None)]
+    assert f"/v1/reviews/{review_id}/findings" in plan.json()["instructions"]
+
+    verdict = api.post(f"/v1/reviews/{review_id}/findings", headers=auth, json={"findings": []})
+    assert verdict.status_code == 200, verdict.text
+    assert _rows(api) == [(review_id, "completed", True)]
+
+
+def test_v2_refuses_the_same_changes_v1_does_and_creates_nothing_doing_it(client) -> None:
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    for route in ("/v2/reviews", "/v2/reviews/findings"):
+        oversized = api.post(route, headers=auth, json={"diff": "+" * 2_000_001})
+        assert oversized.status_code == 422, oversized.text
+        assert "too large to review in one go" in oversized.json()["detail"]
+
+        skipped = api.post(route, headers=auth, json={"diff": DOCS_DIFF})
+        assert skipped.status_code == 200, skipped.text
+        assert skipped.json()["skipped"] is True
+        assert "README.md" in skipped.json()["reason"]
+        assert "review_id" not in skipped.json()
+
+    assert _rows(api) == [], "a refusal and a skip both have to leave nothing behind"
+
+
+def test_a_dismissal_mutes_the_finding_on_v2_exactly_as_it_does_on_v1(client) -> None:
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    planned = _plan_the_props_diff(api, auth)
+    _respond(
+        api,
+        auth,
+        planned["review_id"],
+        _secret_finding_number(planned),
+        disposition="dismissed",
+        note="that value is a placeholder in this file",
+    )
+
+    plan = api.post("/v2/reviews", headers=auth, json=V2_BODY).json()
+    assert "properties-hardcoded-secret" not in {
+        f["rule_id"] for f in plan["deterministic_findings"]
+    }
+    assert "properties-hardcoded-secret" in {f["rule_id"] for f in plan["suppressed_findings"]}
+
+    verdict = api.post("/v2/reviews/findings", headers=auth, json=V2_BODY | {"findings": []})
+    assert verdict.status_code == 201, verdict.text
+    assert verdict.json()["blocking"] is False, "a muted finding cannot still block the review"
+
+
+def test_a_v2_plan_does_not_settle_a_fix_nobody_reviewed(client) -> None:
+    """Confirming a `fixed` claim is a judgement about the project, and a plan has made none."""
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    first = _plan_the_props_diff(api, auth)
+    _respond(api, auth, first["review_id"], _secret_finding_number(first), disposition="fixed")
+
+    api.post("/v2/reviews", headers=auth, json=V2_BODY)
+
+    # The claim is untouched, so the next real review is still the one that answers it.
+    again = _plan_the_props_diff(api, auth)
+    secrets = [
+        f for f in again["deterministic_findings"] if f["rule_id"] == "properties-hardcoded-secret"
+    ]
+    assert secrets and secrets[0]["regressed"] is True
 
 
 def test_fingerprint_ignores_path_spelling_and_reformatting() -> None:

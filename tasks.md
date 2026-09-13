@@ -4898,6 +4898,17 @@ both were turned down on 2026-09-09.
 
 
 ## Notes and decisions log
+- 2026-09-12 — **two measurement scripts were themselves wrong, and both were found by an agent
+  using them rather than by the suite.** `scripts/guideline_probe.mjs` created a review with its own
+  `plan`, let the session create and submit to a *different* one, then read back the first — so
+  `fired` was zero by construction and AI1's headline readings ("fired 0 of 2") measured nothing at
+  all. It now reads the id out of the `submit` the session actually ran, and reports a session that
+  submitted nothing as exactly that. `scripts/sanity.py` detected a walk's corpus dependency inside a
+  fixed 1400-character window, which read past a short entry into the next one; today it agrees with
+  the truth only because a walk was inserted between the two, which moved the number without fixing
+  anything. It now bounds at the entry's real end. The lesson is not that the scripts were buggy: it
+  is that a measurement nobody has seen produce a *positive* is indistinguishable from one that
+  cannot. Both of these only ever printed zero.
 - 2026-09-12 — AK1 bumped the plugin to 0.3.1 in all three manifests. The task's paths did not
   include them and phase AK is being worked by more than one agent, but a change to a command file
   that ships under the version people already installed is the defect `CLAUDE.md` names, and a

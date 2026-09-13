@@ -140,7 +140,13 @@ def measure_walks(report: Report) -> None:
         start = next(
             (table.index(form) for form in (f'"{name}": {{', f"{name}: {{") if form in table), None
         )
-        if start is not None and "buildRepo(" in table[start : start + 1400]:
+        if start is None:
+            continue
+        # To the entry's real end, never a fixed window. A window read past a short entry into the
+        # next one, so a walk needing no corpus was counted as needing one — and inserting a walk
+        # between the two moved the number without fixing anything, which reads as progress.
+        end = table.find("\n  },", start)
+        if "buildRepo(" in table[start : end if end != -1 else len(table)]:
             needs_corpus.append(name)
     report.measure("walks", "need a corpus", len(needs_corpus), None)
 

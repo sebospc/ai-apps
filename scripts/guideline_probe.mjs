@@ -193,14 +193,37 @@ function review(repo, key) {
        "--allowedTools", "Bash,Read,Glob,Grep", "--output-format", "stream-json", "--verbose"],
       { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, SMITH_HOME: home } },
     );
-    const messages = session.split("\n").filter(Boolean).flatMap((line) => {
-      try { return [JSON.parse(line)]; } catch { return []; }
+
+    // The session runs its own `plan`, so its findings land on a review this function never created.
+    // Reading back the one from the `plan` above returned the deterministic half and nothing else,
+    // which made `fired` zero by construction and every reading taken with it worthless. The review
+    // the session actually used is named in the `submit` it ran.
+    const commands = session.split("\n").flatMap((line) => {
+      try {
+        const message = JSON.parse(line);
+        if (message.type !== "assistant") return [];
+        return (message.message?.content ?? [])
+          .filter((block) => block.type === "tool_use")
+          .map((block) => String(block.input?.command ?? ""));
+      } catch {
+        return [];
+      }
     });
-    const reviewId = messages.length ? plan.review_id : plan.review_id;
-    const detail = JSON.parse(run(["review", String(reviewId)]));
+    const submitted = commands
+      .map((command) => /\bsubmit\s+(\d+)/.exec(command)?.[1])
+      .filter(Boolean)
+      .at(-1);
+
+    const offered = (plan.guidelines ?? []).map((g) => g.id);
+    // No submit at all is a real outcome — the session reviewed and reported nothing — and it must
+    // read as "no findings", never as a failure to measure.
+    if (!submitted) return { offered, cited: [], submitted: false };
+
+    const detail = JSON.parse(run(["review", submitted]));
     return {
-      offered: (plan.guidelines ?? []).map((g) => g.id),
+      offered,
       cited: (detail.findings ?? []).map((f) => f.rule_id),
+      submitted: true,
     };
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -243,6 +266,7 @@ async function main() {
       }
       const offered = result.offered.includes(id);
       const fired = result.cited.includes(id);
+      if (!result.submitted) console.log(`     (the session submitted nothing at all)`);
       offeredCount += offered ? 1 : 0;
       firedCount += fired ? 1 : 0;
       console.log(`  ${fired ? "!" : " "}  ${about}  offered=${offered} fired=${fired}`);

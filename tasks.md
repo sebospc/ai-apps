@@ -5046,7 +5046,9 @@ Acceptance:
 
 - One command runs it and prints recall and noise per case and overall.
 - `scripts/sanity.py` carries the score, so it sits next to the token costs and the ruleset health
-  where anybody changing a command file will see it move.
+  where anybody changing a command file will see it move. It carries **how old the reading is** too:
+  a score is a claim about a command file, and a command file edited two months after the last
+  reading is a change nobody measured. Sixty days, proved failing by backdating the record.
 - The budget is set from a measured spread, with the runs that produced it written down.
 - The first run is taken **before** anything else in this phase is tuned, and recorded whatever it
   says. A first number that flatters the product is a first number nobody checked.

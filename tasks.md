@@ -4883,7 +4883,7 @@ Not measured here: `scripts/rehearse.mjs` refuses to start without `SMITH_CORPUS
 SAP Commerce checkout on this machine. The API drive above covers the same ground for this change —
 the plan and the verdict, over HTTP, against postgres.
 
-### [x] AK3. `conventions` is the answer to the false positive and nobody fills it
+### [x] AK3. `conventions` is the answer to the false positive and nobody fills it — c8a071b
 
 The field exists, reaches the agent, and step 4 says a pattern listed there is not a finding. On the
 project this happened to it is **empty**, and everything the lead wanted to say went into the

@@ -11,7 +11,12 @@
 	tls {$SMITH_TLS:internal}
 
 	# The API's paths. Everything else is the UI, including Next's assets.
-	@api path /v1/* /auth/* /projects /projects/* /health
+	#
+	# Every plugin protocol version has to be listed here. `/v2/*` was missing for one deploy and
+	# nothing went red: the plugin falls back to `/v1` on a 404, so the new protocol was simply never
+	# reached and reviews quietly kept writing the rows `/v2` exists to stop. A version added to the
+	# server and not to this line is a feature that ships switched off.
+	@api path /v1/* /v2/* /auth/* /projects /projects/* /health
 	handle @api {
 		reverse_proxy api:8000
 	}

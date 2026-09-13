@@ -1925,3 +1925,37 @@ def test_the_sanity_report_runs_and_measures_something(tmp_path) -> None:
     # made about itself: nothing unscoped, no check without a fixture.
     assert report["failures"] == []
     assert measured["ruleset·guidelines with no scope"]["value"] == 0
+
+
+def test_every_api_version_the_server_speaks_is_routed_to_it() -> None:
+    """Caddy sends only the paths it was told about to the API; the rest go to the web app.
+
+    Measured in production on 2026-09-13: `/v2/*` was never added to that line, so the routes AE2
+    shipped answered 404 from Next.js. Nothing went red — the plugin falls back to `/v1` on a 404,
+    so the new protocol was simply never reached and reviews kept writing the rows it exists to
+    stop. A version added to the server and not to the proxy is a feature that ships switched off,
+    and the only place the two are compared is here.
+    """
+    from pathlib import Path
+
+    from smith.main import app
+
+    root = Path(__file__).resolve().parent.parent
+    routed = ""
+    for line in (root / "Caddyfile").read_text().splitlines():
+        if line.strip().startswith("@api path"):
+            routed = line
+            break
+    assert routed, "the Caddyfile no longer has an @api path line; this check is reading nothing"
+
+    # The OpenAPI paths, not `app.routes`: included routers do not expose their paths there, and
+    # this is the list a client actually sees.
+    served = {
+        path.split("/")[1]
+        for path in app.openapi()["paths"]
+        if path.startswith("/v") and path.split("/")[1].removeprefix("v").isdigit()
+    }
+    assert served, "no versioned routes found; this check would pass on an empty server"
+
+    missing = sorted(v for v in served if f"/{v}/*" not in routed)
+    assert not missing, f"the server speaks {missing} and Caddy does not route it: {routed.strip()}"

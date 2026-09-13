@@ -5117,6 +5117,15 @@ sample presented as a result — exactly what the phase text warned about before
 
 
 ## Notes and decisions log
+- 2026-09-13 — **`/v2` shipped to production switched off, and only a probe over HTTPS found it.**
+  `Caddyfile` lists the paths that reach the API and nobody added `/v2/*`, so those calls went to
+  Next.js and answered 404. Every check that mattered had passed: the suite is green, the agent that
+  built AE2 drove real postgres, and my own verification of the merge hit uvicorn directly — all
+  three bypass the proxy. What made it invisible rather than loud is the plugin's own fallback: a
+  404 on `/v2` falls back to `/v1`, so reviews kept working and kept writing exactly the abandoned
+  rows AE2 exists to stop. A feature that degrades silently is worse than one that breaks. There is
+  now a test comparing the versions in the OpenAPI schema against that line, and it was shown to
+  fail by deleting `/v2/*` from it — the only place the server and the proxy are ever compared.
 - 2026-09-13 — **AE2 changed what the CLI takes and left the document that explains it behind**, and
   a scored run caught it. `plugin/commands/smith-review.md` still said the plan carries a `review_id`
   and that `submit` needs one, so a session fumbled: a shell construction that submitted nothing, a

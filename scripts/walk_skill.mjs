@@ -808,7 +808,9 @@ async function reviewWhatWasWritten(repo, key) {
       plan = { skipped: true, reason: "the session wrote nothing, so there was no diff to review" };
     }
     if (plan.skipped) return { plan, verdict: null, size };
-    const verdict = JSON.parse(run(["submit", String(plan.review_id)], '{"findings": []}'));
+    // No id: since AE2 the plan writes nothing and `submit` is what creates the review. Passing
+    // `plan.review_id` sent `undefined` and the CLI reviewed whatever it was standing in.
+    const verdict = JSON.parse(run(["submit"], '{"findings": []}'));
     return { plan, verdict, size };
   } finally {
     rmSync(home, { recursive: true, force: true });

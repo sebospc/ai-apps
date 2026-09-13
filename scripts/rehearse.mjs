@@ -239,7 +239,9 @@ async function main() {
     introduceProblems(repo, target);
     const plan = smithJson(["plan", "--title", "rehearsal"], { key, home, cwd: repo });
 
-    check("plan opens a review", Number.isInteger(plan.review_id) && plan.review_id > 0);
+    // AE2 inverted this: a plan writes nothing at all, and the review is created by the submit
+    // below. Asserting an id here would pin the behaviour that phase removed.
+    check("plan opens no review", plan.review_id === undefined);
     check(
       "the plan carries the policy the verdict will be computed from",
       plan.policy?.block_on === "critical" && plan.policy.max_findings > 0,
@@ -264,15 +266,19 @@ async function main() {
     if (!jalo || !systemOut || !stackTrace) throw new Error("nothing left to rehearse");
 
     // --- 2. the verdict, and what moves it -------------------------------------------------------
-    const opened = smithJson(["submit", String(plan.review_id)], {
+    // Since AE2 a plan writes nothing and `submit` is what creates the review, so every id below
+    // comes from a submit. A plan the rehearsal wants to inspect as a row has to be submitted, or
+    // there is no row and no `plan` step to read.
+    const opened = smithJson(["submit"], {
       key,
       home,
+      cwd: repo,
       input: JSON.stringify({ findings: [] }),
     });
     const criticals = opened.counts.critical ?? 0;
     check("a critical finding blocks the review", opened.blocking === true && criticals >= 1);
 
-    const argued = respond(key, plan.review_id, jalo, "dismissed", DISMISSAL);
+    const argued = respond(key, opened.review_id, jalo, "dismissed", DISMISSAL);
     check(
       "dismissing a finding recomputes the verdict rather than acknowledging it",
       (argued.counts.critical ?? 0) === criticals - 1,
@@ -293,9 +299,10 @@ async function main() {
       "a dismissed finding is never shown as open again",
       !byFingerprint(second.deterministic_findings, jalo.fingerprint)
     );
-    const afterMuting = smithJson(["submit", String(second.review_id)], {
+    const afterMuting = smithJson(["submit"], {
       key,
       home,
+      cwd: repo,
       input: JSON.stringify({ findings: [] }),
     });
     check(
@@ -310,16 +317,22 @@ async function main() {
       "a finding keeps its identity across reviews even as its number changes",
       systemOutAgain?.fingerprint === systemOut.fingerprint
     );
-    respond(key, second.review_id, systemOutAgain, "fixed");
+    respond(key, afterMuting.review_id, systemOutAgain, "fixed");
     edit(repo, target, removeSystemOut);
 
     const third = smithJson(["plan"], { key, home, cwd: repo });
+    const thirdReview = smithJson(["submit"], {
+      key,
+      home,
+      cwd: repo,
+      input: JSON.stringify({ findings: [] }),
+    });
     check(
       "a finding reported fixed and actually fixed does not come back",
       !byFingerprint(third.deterministic_findings, systemOut.fingerprint) &&
         !byFingerprint(third.suppressed_findings, systemOut.fingerprint)
     );
-    const confirming = await planStep(slug, third.review_id);
+    const confirming = await planStep(slug, thirdReview.review_id);
     check(
       "the review that met the fix records it as confirmed",
       confirming.fixed_confirmed === 1 && confirming.regressed === 0,
@@ -330,6 +343,12 @@ async function main() {
     // the only way to tell a confirmed fix apart from a claim nobody ever checked.
     edit(repo, target, restoreSystemOut);
     const fourth = smithJson(["plan"], { key, home, cwd: repo });
+    const fourthReview = smithJson(["submit"], {
+      key,
+      home,
+      cwd: repo,
+      input: JSON.stringify({ findings: [] }),
+    });
     const writtenAgain = byFingerprint(fourth.deterministic_findings, systemOut.fingerprint);
     check(
       "a confirmed fix settles the claim instead of leaving it standing",
@@ -338,16 +357,22 @@ async function main() {
 
     // --- 5. a fix that did not hold ----------------------------------------------------------------
     const stackTraceAgain = byRule(fourth, "no-printstacktrace");
-    respond(key, fourth.review_id, stackTraceAgain, "fixed");
+    respond(key, fourthReview.review_id, stackTraceAgain, "fixed");
 
     const fifth = smithJson(["plan"], { key, home, cwd: repo });
+    const fifthReview = smithJson(["submit"], {
+      key,
+      home,
+      cwd: repo,
+      input: JSON.stringify({ findings: [] }),
+    });
     const stillThere = byFingerprint(fifth.deterministic_findings, stackTrace.fingerprint);
     check(
       "a finding reported fixed that is still there comes back saying the fix did not hold",
       Boolean(stillThere) && stillThere.regressed === true,
       JSON.stringify(stillThere)
     );
-    const regressing = await planStep(slug, fifth.review_id);
+    const regressing = await planStep(slug, fifthReview.review_id);
     check(
       "the review that met the unfixed claim records the regression",
       regressing.regressed === 1 && regressing.fixed_confirmed === 0,
@@ -356,10 +381,10 @@ async function main() {
 
     // --- 6. a conversation that lost its plan --------------------------------------------------------
     smith(["auth", "--url", API, "--key", key], { home: freshShell });
-    const recovered = smithJson(["review", String(fifth.review_id)], { home: freshShell });
+    const recovered = smithJson(["review", String(fifthReview.review_id)], { home: freshShell });
     check(
       "a new shell recovers the review from the credentials on disk alone",
-      recovered.review_id === fifth.review_id
+      recovered.review_id === fifthReview.review_id
     );
     check(
       "the recovered review numbers its findings the same way the plan did",
@@ -396,7 +421,7 @@ async function main() {
       `${filtered.author} · ${filtered.reviews.length} of ${project.reviews.length}`
     );
 
-    const reviewPage = await asLead(`/projects/${slug}/reviews/${plan.review_id}`);
+    const reviewPage = await asLead(`/projects/${slug}/reviews/${opened.review_id}`);
     const argument = byFingerprint(reviewPage.findings, jalo.fingerprint)?.answer;
     const held = byFingerprint(reviewPage.findings, systemOut.fingerprint)?.answer;
     check(

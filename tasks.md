@@ -5064,6 +5064,23 @@ worth knowing in one command rather than the next time somebody opens a pull req
 
 
 ## Notes and decisions log
+- 2026-09-13 — **AE2 broke three functional scripts and none of them went red.** `plan` no longer
+  returns a `review_id`, and `e2e_browser.mjs`, `rehearse.mjs` and `walk_skill.mjs` all fed that id
+  into `submit`; the CLI then reviewed whatever repository it was standing in and answered "no
+  blocking findings" for a seed built around a hardcoded secret. The agent that shipped AE2 was
+  scoped out of those files, replayed the seeding by hand rather than guessing, and reported it —
+  which is the outcome the scoping was for. `rehearse.mjs` needed more than a line each: it reads the
+  stored `plan` step of a review, and a plan no longer makes one, so every stage now submits and
+  every id comes from the submit. The title moved with it, because the submit is what creates the row
+  a lead reads in a list.
+- 2026-09-13 — the browser suite's abandoned-plan check was **passing in vacuum and I nearly shipped
+  it that way.** AE2 means the plugin cannot produce an abandoned plan at all, so the seed now goes
+  through `/v1` directly — still the right thing to cover, since a developer on an older plugin is
+  exactly who AE1's filter protects. Breaking the filter on purpose did not fail the check, and the
+  reason was my own test: `str.replace(..., 1)` hit the first of two identical `where` clauses, which
+  is `rule_health`, not the list. Aimed at the right one, the check fails. The lasting fix is the
+  guard beside it — an absence is only evidence when the thing was there to be absent, so the suite
+  now asserts the seed created a row before asserting the row is hidden.
 - 2026-09-13 — the probe now has to prove itself before anyone reads it. `--self-check` runs a change
   built to trip one named guideline and exits non-zero if no citation comes back, because the failure
   it shipped with printed a clean zero and looked like good news. It passes: `offered=true fired=true`.

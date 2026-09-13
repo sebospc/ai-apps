@@ -878,7 +878,7 @@ const USAGE = `smith — Smith client
   smith auth --url <server> --key <api key>   save credentials (~/.smith/config.json, mode 600)
   smith plan [--base <ref>] [--title <text>]  send the diff, print the review plan
   smith plan --preview                        what would be reviewed, without creating one
-  smith submit [<review_id>] [--base <ref>]   send findings from stdin, print the verdict
+  smith submit [<review_id>] [--base <ref>] [--title <text>]  findings from stdin, print the verdict
   smith respond <review_id>                   send the developer's answers from stdin, print the verdict
   smith review <review_id>                    print a review the conversation lost track of
   smith catalog [<entry_id>]                  list the implementation catalog, or print one entry

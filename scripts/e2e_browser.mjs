@@ -165,17 +165,37 @@ function seedReview(apiKey) {
   const plan = JSON.parse(
     smithCli(apiKey, ["plan", "--title", "e2e seeded review"], "", repo)
   );
-  // Submitting is what makes it a review. A row that only ever got a plan is a mechanism `submit`
-  // needs, and a lead never sees one — so seeding without this would seed something invisible.
-  smithCli(apiKey, ["submit", String(plan.review_id)], JSON.stringify({ findings: [] }));
-
-  // A second plan, abandoned the way a cancelled session abandons one. It exists, it has the same
-  // deterministic findings, and it must not reach the screens below.
-  const abandoned = JSON.parse(
-    smithCli(apiKey, ["plan", "--title", "e2e abandoned plan"], "", repo)
+  // Submitting is what makes it a review, and since AE2 it is also what creates it: `plan` writes
+  // nothing and hands back no id, so the id comes from here. Passing `plan.review_id` — which the
+  // script did until AE2 landed — sends `undefined`, and the CLI then reviews whatever repository
+  // it is standing in and answers "no blocking findings" for a seed built around a secret.
+  // The title goes on the submit, not the plan: since AE2 the submit is what creates the review, so
+  // it carries what a lead reads in the list. Passing it to the plan alone lands an untitled row.
+  const verdict = JSON.parse(
+    smithCli(apiKey, ["submit", "--title", "e2e seeded review"], JSON.stringify({ findings: [] }), repo)
   );
+
+  // A plan nobody finished, seeded through `/v1` on purpose. The plugin can no longer produce one —
+  // that is what AE2 removed — but a developer on an older plugin still can, and AE1's filter is
+  // what keeps their abandoned rows off a lead's screen. Dropping this check because the new
+  // protocol cannot reach it would stop covering the people it was written for.
+  const abandoned = v1Plan(apiKey, repo, "e2e abandoned plan");
+
   rmSync(repo, { recursive: true, force: true });
-  return { ...plan, abandoned_id: abandoned.review_id };
+  return { ...plan, ...verdict, abandoned_id: abandoned.review_id };
+}
+
+/** The old protocol, spoken directly, so the suite can still produce what only it produces. */
+function v1Plan(apiKey, repo, title) {
+  const diff = execFileSync("git", ["diff"], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const body = JSON.stringify({ diff, title, branch: "HEAD" });
+  const out = execFileSync(
+    "curl",
+    ["-sS", "-X", "POST", `${API}/v1/reviews`, "-H", `Authorization: Bearer ${apiKey}`,
+     "-H", "Content-Type: application/json", "-d", body],
+    { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+  );
+  return JSON.parse(out);
 }
 
 async function main() {
@@ -255,6 +275,14 @@ async function main() {
     check("the review is listed under the developer who ran it", list.includes("dev@acme.com"));
     // Reported 2026-09-08: a cancelled session left a review in the lead's list with six warnings
     // on a change nobody had read. A plan is not a review until it has a verdict.
+    // The absence below is only evidence if the thing was there to be absent. Without this the
+    // check passed with AE1's filter deliberately removed — a seed that quietly failed and an
+    // absence that meant nothing look identical from the page.
+    check(
+      "the abandoned plan was really seeded, so its absence means something",
+      Number.isInteger(plan.abandoned_id),
+      JSON.stringify(plan.abandoned_id)
+    );
     check(
       "a plan nobody finished is not in the list",
       !list.includes("e2e abandoned plan"),

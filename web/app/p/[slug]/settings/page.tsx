@@ -25,7 +25,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
 
       <div className="space-y-8">
         <ConfigForm slug={slug} data={config} />
-        <RuleHealthPanel rules={health.rules} />
+        <RuleHealthPanel slug={slug} rules={health.rules} guidelines={config.rules} />
         <MembersPanel slug={slug} members={members.members} />
         <KeysPanel slug={slug} keys={keys.keys} members={members.members} />
         <DangerPanel slug={slug} />

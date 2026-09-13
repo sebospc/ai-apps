@@ -1,15 +1,47 @@
 import { Card } from "@/components/ui";
 import type { RuleHealth } from "@/lib/types";
+import { AdoptConvention } from "./adopt-convention";
+
+/**
+ * The sentence offered to the lead when a rule is flagged. It is built from what is already on the
+ * screen — what the rule asks for, and the last reason a developer gave for ruling it out — because
+ * a rule dismissed again and again on one project is a convention nobody wrote down.
+ *
+ * The reason is the developer's agent's wording, so it is reported rather than quoted.
+ */
+export function proposedConvention(
+  ruleId: string,
+  ruleText: string | undefined,
+  reasons: string[]
+): string {
+  // First sentence only: a guideline's second sentence is how to fix it ("Return DTOs/Data
+  // objects"), which turns into an instruction to do the thing the convention just allowed.
+  const what = (ruleText ?? ruleId).trim().split(/(?<=\.)\s+/)[0].replace(/\.$/, "");
+  const reason = reasons[0]?.trim();
+  if (!reason) return `Not a finding in this project: ${what}.`;
+  const ends = /[.!?]$/.test(reason) ? "" : ".";
+  return `Not a finding in this project: ${what}. The team ruled it out, reason recorded: ${reason}${ends}`;
+}
 
 /**
  * What the team argues with, most-dismissed first.
  *
- * Smith reports and changes nothing: a tool that quietly switches off its own rules cannot be
- * trusted about the rules it leaves on. Switching one off is in the form above, and it is the
- * lead's decision.
+ * Smith reports and changes nothing on its own: a tool that quietly switches off its own rules
+ * cannot be trusted about the rules it leaves on. Switching one off is in the form above, and so is
+ * the convention offered here — both are the lead's decision and both are theirs to undo.
  */
-export function RuleHealthPanel({ rules }: { rules: RuleHealth[] }) {
+export function RuleHealthPanel({
+  slug,
+  rules,
+  guidelines,
+}: {
+  slug: string;
+  rules: RuleHealth[];
+  guidelines: { id: string; text: string }[];
+}) {
   const fired = rules.filter((r) => r.fired > 0);
+  // Deterministic checks are not in the guideline list, so their id is the only name there is.
+  const textFor = new Map(guidelines.map((g) => [g.id, g.text]));
 
   return (
     <Card>
@@ -43,6 +75,16 @@ export function RuleHealthPanel({ rules }: { rules: RuleHealth[] }) {
                     </li>
                   ))}
                 </ul>
+              )}
+              {rule.flagged && (
+                <AdoptConvention
+                  slug={slug}
+                  proposal={proposedConvention(
+                    rule.rule_id,
+                    textFor.get(rule.rule_id),
+                    rule.reasons
+                  )}
+                />
               )}
             </li>
           ))}

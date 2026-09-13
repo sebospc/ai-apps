@@ -4883,7 +4883,7 @@ Not measured here: `scripts/rehearse.mjs` refuses to start without `SMITH_CORPUS
 SAP Commerce checkout on this machine. The API drive above covers the same ground for this change —
 the plan and the verdict, over HTTP, against postgres.
 
-### [ ] AK3. `conventions` is the answer to the false positive and nobody fills it
+### [x] AK3. `conventions` is the answer to the false positive and nobody fills it
 
 The field exists, reaches the agent, and step 4 says a pattern listed there is not a finding. On the
 project this happened to it is **empty**, and everything the lead wanted to say went into the
@@ -4895,6 +4895,64 @@ Acceptance: whatever makes a lead fill it. The screen's hint is one candidate an
 better is that a rule dismissed repeatedly on one project offers the lead the sentence that would
 stop it, since rule health already counts exactly that. No new text box, no lead-authored rules —
 both were turned down on 2026-09-09.
+
+Done, on the rule health panel that was already there. A flagged rule now carries the sentence that
+would stop it, prefilled and editable, with one button. Nothing new is asked of the lead and no
+field was added: the offer writes the project's existing `conventions`.
+
+What the lead reads on a flagged row, under the dismissal reasons already displayed:
+
+```
+This keeps firing on something your team calls normal. Add it to Conventions above and
+reviews stop reporting it. Edit the wording first if it is not quite right.
+
+[ Not a finding in this project: properties-hardcoded-secret. The team ruled it out,     ]
+[ reason recorded: that credential is a local fixture, the real one comes from the vault.]
+
+[ Add to conventions ]
+```
+
+The sentence is built from what the screen already holds — the rule's own words when it is a
+guideline (first sentence only; the second is the fix, and pasting "Return DTOs/Data objects" into a
+convention that just allowed Models reads as an order to undo it), the rule id when it is a
+deterministic check, and the most recent reason a developer gave. Reported, not quoted: the reason
+is the developer's agent's wording, so it says "reason recorded" the way the review page does.
+
+Measured against the real API on postgres, four reviews of one properties change with the finding
+dismissed once:
+
+```
+rule_id properties-hardcoded-secret · fired 4 · dismissed 4 · rate 1.0 · flagged true
+reasons ["that credential is a local fixture, the real one comes from the vault"]
+```
+
+Proved in the browser, six new checks in `scripts/e2e_browser.mjs` (111 passed, 0 failed). Two of
+them were run against the unfixed screen first and named the missing offer rather than an index:
+
+```
+before  FAIL a rule dismissed again and again offers the lead the convention that stops it
+        FAIL the offer is written from what the developer already said
+        e2e failed: no element matches form:has(textarea[name="convention"]) button
+after   ok, and the accepted text is in the Conventions box without a reload, survives one,
+        and reaches the agent: the next plan's `conventions` carries it verbatim
+```
+
+Authorisation is settled in the API, not the screen:
+`test_a_developer_cannot_write_the_project_conventions` gives a developer a real password and a
+session — a lead's setup reads 200, their `PUT` is 403, a plugin key is 401, and the lead's text is
+unchanged afterwards. Run once against `save_config` with the lead check removed, where the
+developer's write returned 200.
+
+`uv run pytest` 166 passed, 9 skipped. `node --test plugin/test` 42 passed. `scripts/sanity.py`
+unchanged and every budget holds — it has no opinion about a screen, which is worth saying: nothing
+in it would have moved if this had shipped broken. `scripts/rehearse.mjs` not run: it refuses to
+start without `SMITH_CORPUS` and there is no checkout on this machine; no rule, analyzer or domain
+module changed here.
+
+Not solved, and worth writing down: this closes the loop only where a rule has already fired four
+times and been argued away. The project in the case above would have had to live with the false
+positive four times before the offer appeared. The cheaper half — a lead who knows on day one which
+box holds what — is still just two hints on a form.
 
 
 ## Notes and decisions log
@@ -7032,3 +7090,15 @@ Append here when a task forces a decision. One line each: what was decided and w
   corpus tests (165 passed, 9 skipped). What replaced it: AK2 drove both fixtures through the real
   API on postgres at both `block_on` settings, and AI2 drove six real `claude` sessions through the
   plugin against the same API. Both exercise the plan and the verdict; neither reads client code.
+- 2026-09-13 — AK3 appends rather than replaces, one rule at a time, and offers only the most recent
+  dismissal reason. Replacing would delete a lead's own words on a click in a different card, and
+  five reasons make a paragraph nobody reads; the box is editable before the click either way.
+- 2026-09-13 — AK3 builds the offered sentence in `web/`, from the config and health responses the
+  settings page already fetches. No new endpoint and no domain change: rule health counts it and the
+  guideline text is already on that screen, so putting the wording in the API would only move it.
+- 2026-09-13 — Removing an accepted convention is editing the Conventions box and pressing Save,
+  which a lead already has. No separate undo was added: it would be a second way to do one thing.
+- 2026-09-13 — A `key` on the conventions textarea was written to stop a stale Save overwriting the
+  added line, then measured: the browser check passed with and without it. React writes the new
+  `defaultValue` onto a textarea nobody has typed in, so the box catches up on its own, and the key
+  only added a way to discard what a lead had typed. Removed, and the reading is in a comment there.

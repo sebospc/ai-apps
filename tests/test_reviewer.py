@@ -1090,6 +1090,49 @@ def test_disabling_a_rule_stops_it_firing_and_stops_reaching_the_agent(lead_sess
     assert after["conventions"] == "Model in facade is fine here."
 
 
+def test_a_developer_cannot_write_the_project_conventions(client) -> None:
+    """Conventions silence a rule for the whole project, so writing them is a lead's decision.
+
+    The screen only shows the offer to a lead, and that is cosmetic — this is where it is settled.
+    """
+    api, dev_plugin_key = client
+    container: Container = api.app.state.container
+    with container.transaction() as (_session, services):
+        services.auth.register("dev@co.com", "Dev", LEAD_PASSWORD)
+
+    api.post("/auth/login", json={"email": "lead@co.com", "password": LEAD_PASSWORD})
+    api.post("/projects/acme/members", json={"email": "dev@co.com", "role": "dev"})
+    lead_wrote = {
+        "ruleset": "sap-commerce-base",
+        "policy": {"block_on": "critical", "max_agent_findings": 50},
+        "disabled_rules": [],
+        "conventions": "Direct Model use in a facade is intentional here.",
+        "reviewer_prompt": "",
+    }
+    assert api.put("/projects/acme/config", json=lead_wrote).status_code == 200
+
+    api.post("/auth/login", json={"email": "dev@co.com", "password": LEAD_PASSWORD})
+    # A developer reads the setup — they are shown what the review will apply to their code.
+    assert api.get("/projects/acme/config").status_code == 200
+    refused = api.put(
+        "/projects/acme/config", json={**lead_wrote, "conventions": "Anything goes here."}
+    )
+    assert refused.status_code == 403
+
+    # And the plugin key is not a way in either: this is a session surface, not the plugin's.
+    with_key = TestClient(api.app).put(
+        "/projects/acme/config",
+        headers={"Authorization": f"Bearer {dev_plugin_key}"},
+        json={**lead_wrote, "conventions": "Anything goes here."},
+    )
+    assert with_key.status_code == 401
+
+    api.post("/auth/login", json={"email": "lead@co.com", "password": LEAD_PASSWORD})
+    assert api.get("/projects/acme/config").json()["config"]["conventions"] == (
+        lead_wrote["conventions"]
+    )
+
+
 def test_empty_diff_is_rejected_not_stored(client) -> None:
     api, key = client
     response = api.post(

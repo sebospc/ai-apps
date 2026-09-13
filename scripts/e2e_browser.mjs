@@ -361,6 +361,57 @@ async function main() {
       setup.slice(setup.indexOf("Rules"), setup.indexOf("Rules") + 300)
     );
 
+    // --- a rule the team keeps ruling out becomes a convention, in one click -----------------------
+    // Four firings is what makes a rule the lead's problem (FLAG_MIN_FIRINGS). Two reviews above,
+    // two here — the same code every time, so it is the one fingerprint the developer already
+    // dismissed rather than four separate arguments.
+    seedReview(key);
+    seedReview(key);
+
+    await page.goto(`${WEB}/p/${SLUG}/settings`);
+    await page.waitForText("Rule health");
+    const health = await page.text();
+    check(
+      "a rule dismissed again and again offers the lead the convention that stops it",
+      health.includes("This keeps firing on something your team calls normal"),
+      health.slice(health.indexOf("Rule health"), health.indexOf("Rule health") + 400)
+    );
+    const proposal = await page.evaluate(
+      `return document.querySelector('textarea[name="convention"]')?.value ?? ""`
+    );
+    check(
+      "the offer is written from what the developer already said",
+      proposal.startsWith("Not a finding in this project:") &&
+        proposal.includes("throwaway fixture"),
+      proposal
+    );
+    await auditScreen(page, "settings-flagged");
+
+    await page.click('form:has(textarea[name="convention"]) button');
+    await page.waitForText("Added to your conventions.");
+    check("the lead accepts it without leaving the settings screen", true);
+    // Uncontrolled inputs keep what they first rendered with, so the box above must have caught up
+    // before the lead touches Save — otherwise their next Save writes the old text back.
+    const inTheBox = await page.evaluate(
+      `return document.querySelector('textarea[name="conventions"]').value`
+    );
+    check("the Conventions box shows it without a reload", inTheBox.includes(proposal), inTheBox);
+
+    await page.goto(`${WEB}/p/${SLUG}/settings`);
+    await page.waitForText("Review setup");
+    const stored = await page.evaluate(
+      `return document.querySelector('textarea[name="conventions"]').value`
+    );
+    check("the accepted convention survives a reload", stored.includes(proposal), stored);
+
+    // The loop only closes if the agent is told: the next plan for the same code carries it.
+    const informed = seedReview(key);
+    check(
+      "the convention reaches the agent on the next review",
+      String(informed.conventions).includes(proposal),
+      String(informed.conventions).slice(0, 300)
+    );
+
     // --- change the setup and prove it takes effect -------------------------------------------------
     await page.goto(`${WEB}/p/${SLUG}/settings`);
     await page.waitForText("Review setup");

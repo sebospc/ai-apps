@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ApiError, SESSION_COOKIE, api, apiLogin } from "@/lib/api";
+import type { ProjectConfig } from "@/lib/types";
 
 /**
  * Every mutation in the app. They run on the server, forward the session cookie, and revalidate the
@@ -114,6 +115,29 @@ export async function revokeKey(_prev: FormState, form: FormData): Promise<FormS
     () => api(`/projects/${slug}/keys/${form.get("key_id")}`, { method: "DELETE" }),
     `/p/${slug}/settings`
   );
+}
+
+/**
+ * Add one line to the project's conventions, from the rule health panel.
+ *
+ * Reads the setup back before writing it: the rest of it belongs to the lead and a rule they never
+ * touched must not be switched off by a click on a different card. Appends rather than replaces,
+ * for the same reason — removing a line is editing the Conventions box, which they already have.
+ */
+export async function addConvention(_prev: FormState, form: FormData): Promise<FormState> {
+  const slug = String(form.get("slug"));
+  const line = String(form.get("convention") ?? "").trim();
+  if (!line) return { error: "Write the convention first." };
+  return run(async () => {
+    const { config } = await api<{ config: ProjectConfig }>(`/projects/${slug}/config`);
+    if (config.conventions.includes(line)) return "Already in your conventions.";
+    const existing = config.conventions.trim();
+    await api(`/projects/${slug}/config`, {
+      method: "PUT",
+      body: JSON.stringify({ ...config, conventions: existing ? `${existing}\n${line}` : line }),
+    });
+    return "Added to your conventions.";
+  }, `/p/${slug}/settings`);
 }
 
 export async function saveConfig(_prev: FormState, form: FormData): Promise<FormState> {

@@ -57,6 +57,10 @@ export function ConfigForm({ slug, data }: { slug: string; data: ConfigResponse 
         </div>
 
         <Field label="Conventions" hint="what is normal here — the agent will not flag these">
+          {/* Written from the rule health panel below as well as from here. Nothing extra is
+              needed for that: React writes the new defaultValue onto a textarea the reader has not
+              typed in, so the box catches up on its own and Save cannot put the old text back. A
+              `key` was tried and measured as changing nothing, except discarding typing. */}
           <textarea
             name="conventions"
             rows={4}

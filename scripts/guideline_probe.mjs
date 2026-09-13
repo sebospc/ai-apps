@@ -151,6 +151,58 @@ public class DefaultGiftMessageDao {
   },
 ];
 
+/**
+ * A change that must trip one specific guideline.
+ *
+ * The probe's whole output is a count of citations, so a probe that cannot read a citation prints a
+ * clean zero and looks like good news — which is exactly the defect it shipped with. `--self-check`
+ * runs this first: if the plumbing cannot see a guideline fire on a change built to fire it, no
+ * other number from this tool means anything.
+ */
+const TRAP = {
+  guideline: "items-xml-active-flag-unique-index",
+  path: "core/resources/acme-core-items.xml",
+  before: `<items>
+</items>
+`,
+  after: `<items>
+  <itemtypes>
+    <itemtype code="AcmeLoyaltyCard" extends="GenericItem">
+      <deployment table="AcmeLoyaltyCard" typecode="14620"/>
+      <attributes>
+        <attribute qualifier="cardNumber" type="java.lang.String">
+          <persistence type="property"/>
+        </attribute>
+        <attribute qualifier="active" type="java.lang.Boolean">
+          <persistence type="property"/>
+          <defaultvalue>Boolean.TRUE</defaultvalue>
+        </attribute>
+      </attributes>
+      <indexes>
+        <index name="idx_acme_loyalty_card_number" unique="true">
+          <key attribute="cardNumber"/>
+        </index>
+      </indexes>
+    </itemtype>
+  </itemtypes>
+</items>
+`,
+};
+
+function trapCase() {
+  const repo = mkdtempSync(join(tmpdir(), "smith-guideline-trap-"));
+  const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "dev@acme.com");
+  git("config", "user.name", "Probe");
+  mkdirSync(join(repo, dirname(TRAP.path)), { recursive: true });
+  writeFileSync(join(repo, TRAP.path), TRAP.before);
+  git("add", ".");
+  git("commit", "-q", "-m", "baseline");
+  writeFileSync(join(repo, TRAP.path), TRAP.after);
+  return repo;
+}
+
 function plainCase(index) {
   const change = ORDINARY[index % ORDINARY.length];
   const repo = mkdtempSync(join(tmpdir(), "smith-guideline-"));
@@ -247,6 +299,27 @@ async function main() {
 
   const corpus = process.env.SMITH_CORPUS;
   const real = Boolean(corpus && existsSync(corpus));
+
+  if (process.argv.includes("--self-check")) {
+    const slug = `guideline-self-${Date.now().toString(36)}`;
+    const key = bootstrapProject(slug, "lead@example.com", "walk-password-1");
+    const repo = trapCase();
+    try {
+      const result = review(repo, key);
+      const fired = (result.cited ?? []).includes(TRAP.guideline);
+      console.log(`self-check · ${TRAP.guideline} on a change built to trip it`);
+      console.log(`  offered=${(result.offered ?? []).includes(TRAP.guideline)} fired=${fired}`);
+      console.log(
+        fired
+          ? "\nthe probe can see a citation. Its zeroes mean something."
+          : "\nthe probe saw nothing on a change built to fire. Every zero it prints is worthless"
+            + " until this passes — do not read another number from it.",
+      );
+      process.exit(fired ? 0 : 1);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }
   console.log(`guideline ${id} · ${wanted} ordinary changes · ${real ? "corpus" : "built-in set, a weaker reading"}\n`);
 
   const slug = `guideline-${Date.now().toString(36)}`;

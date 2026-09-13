@@ -4898,6 +4898,14 @@ both were turned down on 2026-09-09.
 
 
 ## Notes and decisions log
+- 2026-09-13 — the probe now has to prove itself before anyone reads it. `--self-check` runs a change
+  built to trip one named guideline and exits non-zero if no citation comes back, because the failure
+  it shipped with printed a clean zero and looked like good news. It passes: `offered=true fired=true`.
+  That the old code could not have passed needs no experiment — it read back a review the session
+  never submitted to, and `items-xml-active-flag-unique-index` is a guideline with no deterministic
+  check behind it, so the id could not appear in that row by any path. With the plumbing proved,
+  AI1's void reading was retaken: `no-scattered-condition`, offered on 2 of 4 ordinary changes, fired
+  on 0. Same number as before and now it means something, which is the whole difference.
 - 2026-09-12 — **two measurement scripts were themselves wrong, and both were found by an agent
   using them rather than by the suite.** `scripts/guideline_probe.mjs` created a review with its own
   `plan`, let the session create and submit to a *different* one, then read back the first — so

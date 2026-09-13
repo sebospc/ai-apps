@@ -3,6 +3,10 @@
 Two calls, one contract. The server owns the deterministic findings, the rules and the verdict; the
 agent running inside the developer's editor owns the reasoning. Neither trusts the other blindly:
 the agent's findings are scoped, capped and deduped before they can affect the verdict.
+
+Both calls come in two shapes. `/v1` opens the review while planning and `submit` finds it by id;
+`/v2` plans without writing anything and `create_review` is handed the diff again with the findings.
+`/v2` is the one worth reading — the other stays until nobody is running a plugin that needs it.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from smith.reviewer.domain.findings import apply_dispositions, fingerprint
 from smith.reviewer.domain.models import (
     MUTING_DISPOSITIONS,
     Disposition,
+    FileDiff,
     Finding,
     Guideline,
     ReviewConfig,
@@ -88,7 +93,9 @@ def _identify(findings: list[Finding]) -> list[Finding]:
 
 @dataclass
 class ReviewPlan:
-    review_id: int
+    # `None` when planning wrote nothing, which is what `/v2` does: there is no row yet, so there is
+    # no id to hand back. `/v1` opens the review while planning and fills this in.
+    review_id: int | None
     findings: list[Finding]
     # Muted findings travel with the plan so the agent can answer "what did you hide?" without a
     # second call. A finding that vanishes without a trace is what makes a tool untrustworthy.
@@ -100,6 +107,45 @@ class ReviewPlan:
     # What the rules were filtered against. Empty means nothing was detected and every rule applied;
     # the developer has to be able to see which of the two happened.
     platform_version: str = ""
+
+
+@dataclass
+class _Examination:
+    """Everything the deterministic half produces for one change, before anything is stored.
+
+    Both versions of the plan compute this and neither writes a row from inside it. `/v1` opens a
+    review around it; `/v2` throws it away and computes it again when the findings come back.
+    """
+
+    project_id: int
+    config: ReviewConfig
+    diffs: list[FileDiff]
+    added: dict[str, set[int]]
+    findings: list[Finding]
+    dropped_over_cap: list[Finding]
+    fixed_confirmed: int
+    regressed: int
+    guidelines: list[dict]
+    platform_version: str
+
+
+def _findings_step(
+    submitted: list[Finding],
+    agent_final: list[Finding],
+    scoped: list[Finding],
+    dropped_over_cap: int,
+    resubmit: bool,
+) -> dict:
+    """What happened to the agent's findings, for the lead reading the review later."""
+    out_of_scope = len([f for f in scoped if f.suppressed])
+    return {
+        "submitted": len(submitted),
+        "accepted": len([f for f in agent_final if not f.suppressed]),
+        "out_of_scope": out_of_scope,
+        "duplicates": len([f for f in agent_final if f.suppressed]) - out_of_scope,
+        "dropped_over_cap": dropped_over_cap,
+        "resubmit": resubmit,
+    }
 
 
 @dataclass
@@ -144,10 +190,15 @@ Rules of engagement:
 - You do not decide the verdict. The server computes it from the project's policy.
 - Report nothing rather than padding the list.
 
-POST your findings to /v1/reviews/{review_id}/findings as {"findings": [...]} where each item is:
+{send} where each item is:
   {"file": str, "line": int, "severity": "critical|warning|suggestion|nitpick",
    "rule_id": str, "message": str, "issue_type": "bug|style|security|performance|logic"}
 """
+
+# Where the findings go. On `/v1` the review already exists and the route names it. On `/v2` nothing
+# has been created yet, so the sentence names no id — an agent told to fill one in would invent one.
+_SEND_TO_REVIEW = 'POST your findings to /v1/reviews/{review_id}/findings as {"findings": [...]}'
+_SEND_BACK = 'Send your findings back as {"findings": [...]}'
 
 _CAPPED_SECTION = """
 ## One more thing to tell the developer
@@ -158,7 +209,9 @@ that state wants one sweep, not {total} separate comments.
 """
 
 
-def _instructions(review_id: int, reviewer_prompt: str, dropped: list[Finding], kept: int) -> str:
+def _instructions(
+    review_id: int | None, reviewer_prompt: str, dropped: list[Finding], kept: int
+) -> str:
     """The project's words first, the contract last.
 
     Order is the whole point: a project prompt that tries to change the output format is followed by
@@ -166,7 +219,10 @@ def _instructions(review_id: int, reviewer_prompt: str, dropped: list[Finding], 
     protocol is not.
     """
     project = _PROJECT_SECTION.format(prompt=reviewer_prompt.strip()) if reviewer_prompt.strip() else ""
-    contract = _INSTRUCTIONS.replace("{review_id}", str(review_id))
+    send = (
+        _SEND_BACK if review_id is None else _SEND_TO_REVIEW.replace("{review_id}", str(review_id))
+    )
+    contract = _INSTRUCTIONS.replace("{send}", send)
     return project + contract + _capped_section(dropped, kept)
 
 
@@ -213,10 +269,60 @@ class ReviewService:
         actor: Principal,
         diff_text: str,
         files: dict[str, str],
+        platform_version: str = "",
+    ) -> ReviewPlan:
+        """The plan, with nothing written anywhere.
+
+        A plan is a mechanism, not a review: it exists so the agent knows what the rules already
+        found and what it is being asked. Until a verdict exists there is nothing a lead would want
+        to read, so there is nothing to store.
+        """
+        return self._as_plan(
+            self._examine(actor, diff_text, files, platform_version, settle_fixed=False), None
+        )
+
+    def plan_v1(
+        self,
+        actor: Principal,
+        diff_text: str,
+        files: dict[str, str],
         branch: str = "",
         title: str = "",
         platform_version: str = "",
     ) -> ReviewPlan:
+        """The plan, plus the review row `/v1` promises in its response.
+
+        Kept exactly as it was because a plugin already installed calls it and reads `review_id`
+        back. It goes when nobody is on a plugin that needs it, and not before.
+        """
+        examined = self._examine(actor, diff_text, files, platform_version, settle_fixed=True)
+        review_id = self._store.create(
+            project_id=examined.project_id,
+            user_id=actor.user_id,
+            branch=branch,
+            title=title,
+            added=examined.added,
+            files_changed=len(examined.diffs),
+        )
+        self._store.add_findings(review_id, examined.findings)
+        self._store.add_step(review_id, "plan", self._plan_step(examined))
+        return self._as_plan(examined, review_id)
+
+    def _examine(
+        self,
+        actor: Principal,
+        diff_text: str,
+        files: dict[str, str],
+        platform_version: str,
+        *,
+        settle_fixed: bool,
+    ) -> _Examination:
+        """Run the deterministic half of a review over one change. Touches no review row.
+
+        `settle_fixed` is what separates a plan from a review. Confirming a `fixed` claim is a
+        judgement about the project's history, and a session that is only looking at a diff has not
+        earned the right to make it — a cancelled plan must leave the claims where it found them.
+        """
         if actor.project_id is None:
             raise Forbidden("this credential is not scoped to a project")
         size = len(diff_text.encode("utf-8", "ignore"))
@@ -254,33 +360,10 @@ class ReviewService:
         findings = _identify([f for f in scoped if f.rule_id not in config.disabled_rules])
         answered = self._dispositions.active(actor.project_id, [f.fingerprint for f in findings])
         findings = apply_dispositions(findings, answered)
-        findings, fixed_confirmed, regressed = self._reconcile_fixed(actor.project_id, findings)
+        findings, fixed_confirmed, regressed = self._reconcile_fixed(
+            actor.project_id, findings, settle=settle_fixed
+        )
         findings, dropped_over_cap = _cap(findings, self._max_findings)
-
-        review_id = self._store.create(
-            project_id=actor.project_id,
-            user_id=actor.user_id,
-            branch=branch,
-            title=title,
-            added=added,
-            files_changed=len(diffs),
-        )
-        self._store.add_findings(review_id, findings)
-        self._store.add_step(
-            review_id,
-            "plan",
-            {
-                "files_changed": len(diffs),
-                "ruleset": config.ruleset,
-                "deterministic_findings": len([f for f in findings if not f.suppressed]),
-                "suppressed": len([f for f in findings if f.suppressed]),
-                "fixed_confirmed": fixed_confirmed,
-                "regressed": regressed,
-                "dropped_over_cap": len(dropped_over_cap),
-                "platform_version": platform_version or "not detected",
-                "analyzers": [a.name for a in self._analyzers],
-            },
-        )
 
         # A guideline that cannot apply to any file in this change is not sent at all. It used to
         # be, with its scope alongside as a hint, and an agent reviewing a jQuery file was offered
@@ -304,24 +387,61 @@ class ReviewService:
             for g in ruleset.guidelines
             if g.id not in config.disabled_rules and g.applies_to(changed_paths)
         ]
+        return _Examination(
+            project_id=actor.project_id,
+            config=config,
+            diffs=diffs,
+            added=added,
+            findings=findings,
+            dropped_over_cap=dropped_over_cap,
+            fixed_confirmed=fixed_confirmed,
+            regressed=regressed,
+            guidelines=guidelines,
+            platform_version=platform_version,
+        )
+
+    @staticmethod
+    def _as_plan(examined: _Examination, review_id: int | None) -> ReviewPlan:
+        config = examined.config
         return ReviewPlan(
             review_id=review_id,
-            findings=[f for f in findings if not f.suppressed],
-            suppressed=[f for f in findings if f.suppressed],
-            guidelines=guidelines,
+            findings=[f for f in examined.findings if not f.suppressed],
+            suppressed=[f for f in examined.findings if f.suppressed],
+            guidelines=examined.guidelines,
             conventions=config.conventions,
             policy={
                 "block_on": config.policy.block_on,
                 "max_findings": config.policy.max_agent_findings,
             },
             instructions=_instructions(
-                review_id, config.reviewer_prompt, dropped_over_cap, len(findings)
+                review_id,
+                config.reviewer_prompt,
+                examined.dropped_over_cap,
+                len(examined.findings),
             ),
-            platform_version=platform_version,
+            platform_version=examined.platform_version,
         )
 
+    def _plan_step(self, examined: _Examination) -> dict:
+        """What the deterministic half did, for the lead reading the review later.
+
+        Both versions record it. On `/v2` the review is created at the end, so this step describes
+        work that happened before the row existed, which is what it always described anyway.
+        """
+        return {
+            "files_changed": len(examined.diffs),
+            "ruleset": examined.config.ruleset,
+            "deterministic_findings": len([f for f in examined.findings if not f.suppressed]),
+            "suppressed": len([f for f in examined.findings if f.suppressed]),
+            "fixed_confirmed": examined.fixed_confirmed,
+            "regressed": examined.regressed,
+            "dropped_over_cap": len(examined.dropped_over_cap),
+            "platform_version": examined.platform_version or "not detected",
+            "analyzers": [a.name for a in self._analyzers],
+        }
+
     def _reconcile_fixed(
-        self, project_id: int, findings: list[Finding]
+        self, project_id: int, findings: list[Finding], *, settle: bool
     ) -> tuple[list[Finding], int, int]:
         """Check every standing `fixed` claim against what this review found.
 
@@ -337,8 +457,9 @@ class ReviewService:
 
         regressed = claimed & {f.fingerprint for f in findings}
         confirmed = claimed - regressed
-        self._dispositions.confirm_fixed(project_id, sorted(confirmed))
-        self._dispositions.revoke(project_id, sorted(regressed))
+        if settle:
+            self._dispositions.confirm_fixed(project_id, sorted(confirmed))
+            self._dispositions.revoke(project_id, sorted(regressed))
         return (
             [replace(f, regressed=True) if f.fingerprint in regressed else f for f in findings],
             len(confirmed),
@@ -373,14 +494,7 @@ class ReviewService:
         self._store.add_step(
             review_id,
             "findings",
-            {
-                "submitted": len(agent_findings),
-                "accepted": len([f for f in agent_final if not f.suppressed]),
-                "out_of_scope": len([f for f in scoped if f.suppressed]),
-                "duplicates": len([f for f in agent_final if f.suppressed]) - len([f for f in scoped if f.suppressed]),
-                "dropped_over_cap": dropped,
-                "resubmit": status == "completed",
-            },
+            _findings_step(agent_findings, agent_final, scoped, dropped, status == "completed"),
         )
         self._store.complete(review_id, verdict)
         self._store.add_step(
@@ -389,6 +503,65 @@ class ReviewService:
             {"blocking": verdict.blocking, "reason": verdict.reason, "counts": verdict.counts},
         )
         return verdict
+
+    def create_review(
+        self,
+        actor: Principal,
+        diff_text: str,
+        files: dict[str, str],
+        agent_findings: list[Finding],
+        branch: str = "",
+        title: str = "",
+        platform_version: str = "",
+    ) -> tuple[int, Verdict]:
+        """`/v2`: from a diff and the agent's findings to a review that already has its verdict.
+
+        The deterministic half runs a second time here instead of being carried over from the plan,
+        which costs another analyzer pass and is the only version that is safe: everything a plugin
+        sends is untrusted, so a plan handed back would be a client deciding what the server found.
+        """
+        examined = self._examine(actor, diff_text, files, platform_version, settle_fixed=True)
+        config = examined.config
+        capped = agent_findings[: config.policy.max_agent_findings]
+        dropped = len(agent_findings) - len(capped)
+
+        scoped = scope_to_diff(capped, examined.added)
+        scoped = _identify([f for f in scoped if f.rule_id not in config.disabled_rules])
+
+        final = merge(examined.findings, scoped)
+        answered = self._dispositions.active(
+            examined.project_id, [f.fingerprint for f in final]
+        )
+        final = apply_dispositions(final, answered)
+        verdict = compute_verdict(final, config.policy)
+        agent_final = [f for f in final if f.source == "agent"]
+
+        review_id = self._store.create(
+            project_id=examined.project_id,
+            user_id=actor.user_id,
+            branch=branch,
+            title=title,
+            added=examined.added,
+            files_changed=len(examined.diffs),
+        )
+        # Deterministic first, in the order the rules produced them, then the agent's. A developer
+        # points at a finding by its number and `respond` resolves that by position, so which
+        # endpoint created the review must not change what "3" means.
+        self._store.add_findings(review_id, examined.findings)
+        self._store.add_findings(review_id, agent_final)
+        self._store.add_step(review_id, "plan", self._plan_step(examined))
+        self._store.add_step(
+            review_id,
+            "findings",
+            _findings_step(agent_findings, agent_final, scoped, dropped, resubmit=False),
+        )
+        self._store.complete(review_id, verdict)
+        self._store.add_step(
+            review_id,
+            "verdict",
+            {"blocking": verdict.blocking, "reason": verdict.reason, "counts": verdict.counts},
+        )
+        return review_id, verdict
 
     # --- call 3: respond ---
 

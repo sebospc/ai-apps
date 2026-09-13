@@ -269,7 +269,9 @@ def test_two_submits_of_one_review_at_once_leave_one_set_of_findings() -> None:
 
     for round_number in range(8):
         with container.transaction() as (_, services):
-            review_id = services.reviewer.plan(
+            # `plan_v1` on purpose: the race is between two submits against one existing review,
+            # which is the shape only `/v1` produces.
+            review_id = services.reviewer.plan_v1(
                 principal, _diff(f"src/R{round_number}.java", FLOODING_LINE, 3), {}
             ).review_id
         _race_two_submits(container, principal, review_id)

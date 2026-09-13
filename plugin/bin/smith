@@ -10,7 +10,7 @@
  *
  *   smith auth --url https://smith.co --key smk_...
  *   smith plan [--base main]
- *   smith submit <review_id>      # findings JSON on stdin
+ *   smith submit [review_id]      # findings JSON on stdin
  *   smith respond <review_id>     # responses JSON on stdin
  *   smith review <review_id>
  *   smith catalog [<entry_id>]
@@ -492,7 +492,14 @@ function request(config, method, route, body) {
             /* keep raw */
           }
           if (res.statusCode >= 400) {
-            reject(new Error(explainHttp(res.statusCode, parsed, raw, res.statusMessage, config, route)));
+            const failure = new Error(
+              explainHttp(res.statusCode, parsed, raw, res.statusMessage, config, route)
+            );
+            // The status stays on the error so a caller can tell "this server does not have that
+            // endpoint" from "this server refused". Nothing prints it: the message is what a
+            // developer reads, and it is already a sentence.
+            failure.statusCode = res.statusCode;
+            reject(failure);
           } else {
             resolve(parsed);
           }
@@ -645,6 +652,34 @@ function previewOf(root, base) {
   return compared;
 }
 
+/**
+ * The change, as both `plan` and `submit` send it to the server.
+ *
+ * `submit` collects it a second time rather than remembering the first: this plugin writes no state
+ * between commands, and the server needs the diff to work out which lines a finding may sit on.
+ */
+function changeBody(root, base, title) {
+  const { diff, spec, names } = collectDiff(root, base);
+  const ticket = ticketFromRepository(root, spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""));
+  return {
+    spec,
+    names,
+    ticket,
+    body: {
+      diff,
+      branch: branchName(root),
+      title: title || ticket,
+      platform_version: platformVersion(root),
+      files: readChangedFiles(root, names),
+    },
+  };
+}
+
+/** A server that has never heard of a route, as opposed to one that refused the request. */
+function missingEndpoint(err) {
+  return err && err.statusCode === 404;
+}
+
 async function cmdPlan(flags) {
   const root = repoRoot(process.cwd());
   const base = typeof flags.base === "string" ? flags.base : null;
@@ -653,17 +688,19 @@ async function cmdPlan(flags) {
     return;
   }
   const config = requireConfig();
-  const { diff, spec, names } = collectDiff(root, base);
-  if (!diff.trim()) throw new Error(`no changes to review (compared against ${spec})`);
-  const ticket = ticketFromRepository(root, spec === "HEAD" ? null : spec.replace(/\.\.\.HEAD$/, ""));
+  const title = typeof flags.title === "string" ? flags.title : "";
+  const { spec, names, ticket, body } = changeBody(root, base, title);
+  if (!body.diff.trim()) throw new Error(`no changes to review (compared against ${spec})`);
 
-  const plan = await request(config, "POST", "/v1/reviews", {
-    diff,
-    branch: branchName(root),
-    title: typeof flags.title === "string" && flags.title ? flags.title : ticket,
-    platform_version: platformVersion(root),
-    files: readChangedFiles(root, names),
-  });
+  // `/v2` plans without opening a review, so a session cancelled here leaves nothing behind. An
+  // older server has no such route and answers 404, and then `/v1` is the whole contract again.
+  let plan;
+  try {
+    plan = await request(config, "POST", "/v2/reviews", body);
+  } catch (err) {
+    if (!missingEndpoint(err)) throw err;
+    plan = await request(config, "POST", "/v1/reviews", body);
+  }
   // What was compared, and whether the thing it was compared against is current. Both are for the
   // agent to say out loud: a developer who is not told cannot tell a review of their change from a
   // review of everything merged since this machine last fetched.
@@ -678,29 +715,57 @@ async function cmdPlan(flags) {
   console.log(JSON.stringify({ ...plan, compared_against: spec, compared }, null, 2));
 }
 
-async function cmdSubmit(positional) {
-  const config = requireConfig();
-  const reviewId = Number(positional[0]);
-  if (!Number.isInteger(reviewId) || reviewId <= 0) {
-    throw new Error("usage: smith submit <review_id>   (findings JSON on stdin)");
-  }
-  const raw = (await readStdin()).trim();
+/** The findings an agent piped in. Accepts `{findings: [...]}` or a bare array. */
+function findingsFrom(raw) {
+  const text = (raw || "").trim();
   let parsed;
   try {
-    parsed = raw ? JSON.parse(raw) : { findings: [] };
+    parsed = text ? JSON.parse(text) : { findings: [] };
   } catch {
     throw new Error("stdin is not valid JSON — expected {\"findings\": [...]} or [...]");
   }
-  const findings = Array.isArray(parsed) ? parsed : parsed.findings || [];
+  return Array.isArray(parsed) ? parsed : parsed.findings || [];
+}
+
+async function cmdSubmit(positional, flags) {
+  const config = requireConfig();
+  // Optional: on a server that plans without opening a review there is no id to pass, and a
+  // stale one an agent kept from an earlier session must not decide where the findings go.
+  const reviewId = Number(positional[0]) > 0 ? Number(positional[0]) : null;
+  const findings = findingsFrom(await readStdin());
   let root = null;
   try {
     root = repoRoot(process.cwd());
   } catch {
     /* submitting from outside a repository still works, just without the quoted lines */
   }
-  const verdict = await request(config, "POST", `/v1/reviews/${reviewId}/findings`, {
-    findings: quoteFindings(root, findings),
-  });
+
+  // `/v2` carries the change with the findings, because nothing was stored at plan time. The
+  // server re-runs its own checks over that diff, which is also what scopes the findings.
+  let verdict = null;
+  if (root) {
+    const base = typeof flags.base === "string" ? flags.base : null;
+    const { body } = changeBody(root, base, typeof flags.title === "string" ? flags.title : "");
+    if (body.diff.trim()) {
+      try {
+        verdict = await request(config, "POST", "/v2/reviews/findings", {
+          ...body,
+          findings: quoteFindings(root, findings),
+        });
+      } catch (err) {
+        if (!missingEndpoint(err)) throw err;
+      }
+    }
+  }
+
+  if (verdict === null) {
+    if (reviewId === null) {
+      throw new Error("usage: smith submit <review_id>   (findings JSON on stdin)");
+    }
+    verdict = await request(config, "POST", `/v1/reviews/${reviewId}/findings`, {
+      findings: quoteFindings(root, findings),
+    });
+  }
   console.log(JSON.stringify(verdict, null, 2));
   // Non-zero on a blocking verdict so a hook or CI step can gate on it without parsing JSON.
   if (verdict.blocking) process.exitCode = 1;
@@ -813,7 +878,7 @@ const USAGE = `smith — Smith client
   smith auth --url <server> --key <api key>   save credentials (~/.smith/config.json, mode 600)
   smith plan [--base <ref>] [--title <text>]  send the diff, print the review plan
   smith plan --preview                        what would be reviewed, without creating one
-  smith submit <review_id>                    send findings from stdin, print the verdict
+  smith submit [<review_id>] [--base <ref>]   send findings from stdin, print the verdict
   smith respond <review_id>                   send the developer's answers from stdin, print the verdict
   smith review <review_id>                    print a review the conversation lost track of
   smith catalog [<entry_id>]                  list the implementation catalog, or print one entry
@@ -830,7 +895,7 @@ async function main(argv) {
     case "plan":
       return cmdPlan(flags);
     case "submit":
-      return cmdSubmit(positional);
+      return cmdSubmit(positional, flags);
     case "respond":
       return cmdRespond(positional);
     case "review":

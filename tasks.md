@@ -3789,7 +3789,7 @@ Measured alongside it: **3159** temp directories left in the system temp folder 
 2485 of them from `plugin/test` and 338 from `scripts/e2e_browser.mjs`. Both are outside these
 files. Nobody had written either number down.
 
-### [x] Y4. A test that is red for the environment reads as a defect — SHA_Y4
+### [x] Y4. A test that is red for the environment reads as a defect — 4239ef9
 
 `tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on this machine and
 was red at `HEAD~15`, so it is the environment. X1 left the diagnosis rather than the fix: the guard

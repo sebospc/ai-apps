@@ -3773,7 +3773,7 @@ Acceptance:
 What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
 next person to see red assumes it is this one.
 
-### [x] Y5. The sentence that protects the developer is written and never checked — done, commit CHANGEME
+### [x] Y5. The sentence that protects the developer is written and never checked — done, commit 9fba8a6
 
 `plugin/commands/smith-review.md`, step 7, already tells the agent to say it: *"I'll record that for
 your lead."* Once per session, the first time the developer rules something out. The bullet above it

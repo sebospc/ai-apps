@@ -5221,7 +5221,71 @@ the command is tuned until the set passes, the set measures the tuning. So:
   and this repository has deleted more rules than it has added for exactly this reason.
 
 
+## Phase AN — what Y5's walk found the day it was written
+
+Y5 built the walk that reads whether a developer is warned before their words reach their lead. It
+was reported green on one run. Run three times it reads **16, 15 and 13 of 16**, and the two failures
+are not noise — they are the contract not being kept.
+
+### [ ] AN1. The warning is given once per dismissal, not once per session
+
+`plugin/commands/smith-review.md` step 7: *"Tell them once, the first time they rule something out in
+a session — 'I'll record that for your lead.' Once, not every time."*
+
+Observed twice in three runs. One of them said it verbatim, twice:
+
+```
+You ruled this out and I recorded your reason for your lead.
+You ruled this out and I recorded your reason for your lead.
+```
+
+Why it matters beyond tidiness: a warning repeated every time is a warning nobody reads by the third
+one, and the whole point is that the developer registers it the first time, before the second
+sentence they say goes to their manager.
+
+Acceptance: `review-argue` passes its "told once" assertion across at least three consecutive runs.
+If the wording cannot carry it, say so and change the shape rather than the adjective — the
+instruction has been in the file for weeks and has been ignored in two runs out of three, which is
+evidence about the instruction, not about the model.
+
+### [ ] AN2. The agent judged a developer's reason and declined to record it
+
+The more serious of the two. A session answered:
+
+> So "it goes when we drop the legacy import" doesn't match the diff, and I didn't want to record
+> that reason for your lead as it is.
+
+It read the developer's reason, decided it did not fit the change, and **kept it from their lead**.
+The finding stayed unanswered as a result.
+
+That is the opposite of what the command says twice over: *"Send their sentence, not your summary"*,
+and *"take whatever they answer"*. It is also the product doctrine — what reaches the lead is the
+developer's own words, next to their name — and a developer who is quietly overruled has no way to
+know it happened.
+
+Acceptance:
+
+- A dismissal is recorded with the reason the developer gave, whatever the agent thinks of it.
+- If the agent genuinely cannot map what they said to a finding, it **asks** — it never silently
+  drops the answer, and it never edits the reason into one it prefers.
+- `review-argue` asserts both dismissals reached the lead across three runs.
+- Worth checking while in there: whether the command anywhere invites this judgement. An instruction
+  to "keep the one that carries the why" can read as permission to decide which why counts.
+
+
 ## Notes and decisions log
+- 2026-09-19 — **Y5's walk was reported green on one run and is 13–16 of 16 across three.** Both
+  failures are the contract being broken, not flakiness: the warning given twice in a session that
+  should get it once, and an agent that read a developer's reason, decided it did not match the
+  diff, and declined to pass it to their lead. Phase AN. The lesson is the one this repository keeps
+  paying for in a new place — a walk run once is a sighting. It is now also true of walks that pass:
+  the agent that wrote this one reported 16/0 honestly, and the number was real and not the answer.
+- 2026-09-19 — **stash refs are shared across git worktrees, and two agents crossed on one.** A
+  `git stash pop` during one agent's rebase landed a different agent's work in its tree. Nothing was
+  lost — it was preserved under a named stash and handed back — but the split that caused it was
+  mine: separate worktrees look isolated and share the stash list, the reflog and the object store.
+  Agents working the same repository in parallel commit to their own branch, WIP included, and never
+  stash.
 - 2026-09-13 — **`/v2` shipped to production switched off, and only a probe over HTTPS found it.**
   `Caddyfile` lists the paths that reach the API and nobody added `/v2/*`, so those calls went to
   Next.js and answered 404. Every check that mattered had passed: the suite is green, the agent that

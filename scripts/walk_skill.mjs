@@ -10,11 +10,14 @@
  *   scripts/ensure_db.sh
  *   uv run uvicorn smith.main:app --port 8099 &
  *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
- *   node scripts/walk_skill.mjs [claude|cursor] [review|prior-art|apply|apply-ask|apply-catalog] [entry,entry]
+ *   node scripts/walk_skill.mjs [claude|cursor] [review|prior-art|review-argue|apply|apply-catalog] [entry,entry]
  *   node scripts/walk_skill.mjs --self-check      # the assertions that have to be able to fail
  *
  * `review` reasons over real code and argues about it. `prior-art` reads whether it looks past the
- * diff at all. `apply` starts from a developer asking for a
+ * diff at all. `review-argue` is a developer ruling two findings out in their own words, and reads
+ * what they were told before their sentences went to their lead and what the lead ended up with;
+ * `review-argue-no-reason` is the same argument with no reason in it, where the command has to ask.
+ * `apply` starts from a developer asking for a
  * feature and ends with code in a project it had to read first. `apply-ask` is the same feature
  * asked for as a bare symptom, and it reads for the opposite ending: a question, and an untouched
  * checkout, because nothing in the prompt says what to build. `apply-catalog` runs the apply session
@@ -751,7 +754,7 @@ function contentsOf(repo, path) {
   }
 }
 
-function reviewChecks({ repo, text, commands }) {
+async function reviewChecks({ repo, text, commands, slug }) {
   const ran = (verb) => commands.some((c) => new RegExp(`smith(["\']?\\s|\\s)[^|]*\\b${verb}\\b`).test(c));
   check("the agent asked the server for a plan", ran("plan"), commands.join(" ; ").slice(0, 300));
   // Looked before it started. This fixture is uncommitted work, so the preview is all that is
@@ -812,6 +815,24 @@ function reviewChecks({ repo, text, commands }) {
       lines.join(" / ") || "no numbered line mentions it at all"
     );
   }
+
+  // The negative half of what `review-argue` reads, and the reason that walk's assertion is worth
+  // anything. Nobody ruled anything out here, so the sentence about the lead has nothing to warn
+  // about — a check that fires on every session is not reading the session. The second half is the
+  // same statement as data: an agent that muted a finding nobody argued with has told a lead this
+  // developer waved something away.
+  const warnings = leadWarnings(text);
+  check(
+    "nothing was said about the lead on a session that ruled nothing out",
+    warnings.length === 0,
+    warnings.join(" / ").slice(0, 300)
+  );
+  const answered = answeredOnce(await findingsInProject(slug)).filter((f) => f.answer);
+  check(
+    "nothing was ruled out on a session the developer never answered",
+    answered.length === 0,
+    answered.map((f) => `${f.rule_id}: ${f.answer.disposition}`).join(", ")
+  );
 }
 
 /**
@@ -2033,6 +2054,242 @@ async function priorArtChecks({ text, commands, toolCalls, slug }) {
   );
 }
 
+// --------------------------------------------------------------------------------------------
+// arguing with a review: what the developer is told, and what their lead ends up reading
+// --------------------------------------------------------------------------------------------
+
+/**
+ * A file with the three problems the base ruleset is certain about, so the walk needs no corpus.
+ *
+ * `System.out.println` is `no-system-out`, the `SessionContext` line is `service-no-session` and
+ * `printStackTrace()` is `no-printstacktrace`. Two get ruled out and one does not, which is the
+ * shape these checks need: an agent that mutes what nobody argued about is a defect of its own.
+ */
+const ARGUED_JAVA = "core-customize/hybris/bin/custom/acmecore/src/com/acme/core/job/LoyaltySyncJob.java";
+const ARGUED_JAVA_BEFORE = `package com.acme.core.job;
+
+import de.hybris.platform.servicelayer.model.ModelService;
+
+public class LoyaltySyncJob
+{
+    private ModelService modelService;
+
+    public void setModelService(final ModelService modelService)
+    {
+        this.modelService = modelService;
+    }
+}
+`;
+const ARGUED_JAVA_AFTER = `package com.acme.core.job;
+
+import de.hybris.platform.jalo.JaloSession;
+import de.hybris.platform.jalo.SessionContext;
+import de.hybris.platform.servicelayer.model.ModelService;
+
+public class LoyaltySyncJob
+{
+    private ModelService modelService;
+
+    public void setModelService(final ModelService modelService)
+    {
+        this.modelService = modelService;
+    }
+
+    public void sync()
+    {
+        System.out.println("loyalty-sync started");
+        final SessionContext ctx = JaloSession.getCurrentSession().createSessionContext();
+        try
+        {
+            modelService.refresh(ctx);
+        }
+        catch (final RuntimeException failure)
+        {
+            failure.printStackTrace();
+        }
+    }
+}
+`;
+
+/**
+ * The two findings the developer argues with, their words for each, and the words a summary loses.
+ *
+ * `keep` is what makes this a check rather than a sighting. "Send their sentence, not your summary"
+ * cannot be read as a string comparison — an agent may trim a clause and still have complied — but
+ * a summary drops the concrete nouns, and those are the whole of what the lead has to judge the
+ * reason by. Every word here is one the reason cannot be paraphrased without losing.
+ */
+const ARGUED = [
+  {
+    rule: "no-system-out",
+    what: "the System.out finding",
+    said: "we grep that marker out of the container log in the release script",
+    keep: ["grep", "marker", "container", "release", "script"],
+  },
+  {
+    rule: "no-printstacktrace",
+    what: "the printStackTrace finding",
+    said: "that whole method is dead code, it goes when we drop the legacy import",
+    keep: ["dead", "legacy", "import"],
+  },
+];
+
+// Built out of `ARGUED` so the prompt and the assertions cannot drift apart. Two findings and not
+// one: "once, not every time" needs a session with more than one chance to say it.
+const ARGUE_PROMPT =
+  "/smith-review my uncommitted changes. Two of them I already know about. If System.out comes up, " +
+  `that finding is wrong: ${ARGUED[0].said}. If printStackTrace comes up, that one is wrong too: ` +
+  `${ARGUED[1].said}.`;
+
+// The same argument with the reason left out, which is how a developer actually types it.
+const ARGUE_NO_REASON = "/smith-review my uncommitted changes. The System.out one is wrong, drop it.";
+
+/**
+ * The sentences where the agent told the developer their reason is going to their lead.
+ *
+ * Read for meaning and not for the wording in `commands/smith-review.md`: an agent that says it in
+ * its own words has complied, and an assertion on a literal string turns a fine paraphrase into a
+ * red run. What the sentence cannot be without is who reads it and that it is being kept. `lead to`
+ * is the verb and is not one of these.
+ */
+const READS_IT = /\b(?:project |team |your |their |the )?leads?\b(?!\s+to\b)/i;
+const KEPT_FOR_THEM =
+  /\b(record|records|recorded|recording|note|noted|noting|log|logged|send|sends|sending|sent|pass|passes|passed|passing|go|goes|going|went|share|shared|sharing|report|reported|reports|show|shows|shown|see|sees|seen|visible|reach|reaches|reached|land|lands|landed|file|filed|attach|attached|keep|kept)\b/i;
+
+function sentences(text) {
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function leadWarnings(text) {
+  return sentences(text).filter((one) => READS_IT.test(one) && KEPT_FOR_THEM.test(one));
+}
+
+/** The sentences where the agent asked what was wrong with a finding the developer only waved at. */
+function reasonAsks(text) {
+  return sentences(text).filter(
+    (one) => one.includes("?") && /\b(why|reason|what'?s wrong|what is wrong|wrong with)\b/i.test(one)
+  );
+}
+
+/**
+ * Whether a note is made of words the developer actually used.
+ *
+ * The server refuses a dismissal with an empty reason, so an agent that rules something out for a
+ * developer who gave none has to write one. That is the defect this reads for, and it reads it as
+ * data: every word of substance in the note has to appear in what the developer said.
+ */
+function saidByTheDeveloper(note, said) {
+  const spoken = said.toLowerCase();
+  return note
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((word) => word.length >= 4)
+    .every((word) => spoken.includes(word));
+}
+
+/** One entry per finding, so a fingerprint answered on a later review is not counted twice. */
+function answeredOnce(findings) {
+  const found = new Map();
+  for (const finding of findings) {
+    if (!found.has(finding.fingerprint) || finding.answer) found.set(finding.fingerprint, finding);
+  }
+  return [...found.values()];
+}
+
+/**
+ * A developer argues with two findings, and what their lead ends up reading is the measurement.
+ *
+ * The prose half — that they were warned at all — can only be read as prose, because the warning is
+ * prose and nothing else records it. Everything after it is read off the lead's own screen: how
+ * many findings were muted, which ones, and whether the reason stored against each is the
+ * developer's sentence or an agent's summary of it.
+ */
+async function reviewArgueChecks({ text, commands, slug }) {
+  check(
+    "the agent recorded the answers through the plugin",
+    commands.some((c) => /\brespond\b/.test(c)),
+    commands.join(" ; ").slice(0, 300)
+  );
+
+  const warnings = leadWarnings(text);
+  check(
+    "the developer was told their reason goes to their lead",
+    warnings.length >= 1,
+    warnings.join(" / ").slice(0, 300) || text.slice(-400)
+  );
+  // Two findings were ruled out, so an agent that warns on each has said it twice. Being told once
+  // is the instruction; being told every time is the other way of getting it wrong, and a check
+  // that cannot tell those apart is not reading the instruction.
+  check(
+    "they were told once, not once per finding they ruled out",
+    warnings.length <= 1,
+    warnings.join(" / ").slice(0, 300)
+  );
+
+  const findings = answeredOnce(await findingsInProject(slug));
+  const muted = findings.filter((f) => f.answer?.disposition === "dismissed");
+  check(
+    "both findings the developer argued with were ruled out",
+    muted.length === 2,
+    muted.map((f) => f.rule_id).join(", ") || "nothing was ruled out"
+  );
+
+  for (const { rule, what, keep } of ARGUED) {
+    const answered = findings.find((f) => f.rule_id === rule && f.answer);
+    const note = answered?.answer?.note ?? "";
+    const lost = keep.filter((word) => !new RegExp(`\\b${word}`, "i").test(note));
+    check(
+      `${what} reached the lead with the developer's own sentence, not a summary of it`,
+      answered !== undefined && lost.length === 0,
+      answered ? `"${note}" — missing ${lost.join(", ")}` : `nothing was recorded against ${rule}`
+    );
+    // One reason each. An agent that pastes both reasons onto both findings has told the lead the
+    // developer said something they never said about that line.
+    const other = ARGUED.find((one) => one.rule !== rule);
+    const bled = other.keep.filter((word) => new RegExp(`\\b${word}`, "i").test(note));
+    check(`${what} carries its own reason and not the other one`, bled.length === 0, `"${note}"`);
+  }
+
+  const untouched = findings.find((f) => f.rule_id === "service-no-session");
+  check(
+    "the finding the developer said nothing about was left alone",
+    untouched !== undefined && !untouched.answer,
+    JSON.stringify(untouched?.answer ?? "the finding is not there at all")
+  );
+}
+
+/**
+ * The same argument with no reason in it, which is the case the command has to ask about.
+ *
+ * Nobody can answer a single-shot session, so the only correct end is the question. The server is
+ * what makes the other half readable: it refuses a dismissal with an empty reason, so an agent that
+ * ruled the finding out anyway had to invent the sentence this developer's lead is now reading.
+ */
+async function reviewArgueNoReasonChecks({ text, slug }) {
+  const asks = reasonAsks(text);
+  check("the agent asked what was wrong with it", asks.length >= 1, text.slice(-400));
+  check("it asked once, rather than pressing", asks.length <= 1, asks.join(" / ").slice(0, 300));
+
+  const warnings = leadWarnings(text);
+  check(
+    "the question said where the reason goes",
+    warnings.length >= 1,
+    warnings.join(" / ").slice(0, 300) || text.slice(-400)
+  );
+
+  const invented = answeredOnce(await findingsInProject(slug))
+    .filter((f) => f.answer?.note)
+    .filter((f) => !saidByTheDeveloper(f.answer.note, ARGUE_NO_REASON));
+  check(
+    "nothing was ruled out on a reason the developer never gave",
+    invented.length === 0,
+    invented.map((f) => `${f.rule_id}: "${f.answer.note}"`).join(" / ")
+  );
+}
+
 const WALKS = {
   scope: {
     // The range is in the prompt for the same reason the `review` walk carries it: the command
@@ -2138,6 +2395,38 @@ const WALKS = {
     },
     forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
     checks: reviewChecks,
+  },
+  "review-argue": {
+    // A developer rules two findings out, in their own words, in the message that opens the command.
+    // A single-shot session has nobody to answer step 6's question, so the answer arrives before the
+    // question — the same shape the `apply` walk uses, and the only one that reaches `smith respond`.
+    prompts: { claude: ARGUE_PROMPT, cursor: ARGUE_PROMPT },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-argue",
+    setup: () => {
+      const repo = buildPlainRepo("smith-walk-argue-", {
+        [ARGUED_JAVA]: { before: ARGUED_JAVA_BEFORE, after: ARGUED_JAVA_AFTER },
+      });
+      return { repo, about: `three findings in ${ARGUED_JAVA}, two of them argued with` };
+    },
+    forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
+    checks: reviewArgueChecks,
+  },
+  "review-argue-no-reason": {
+    // The same argument with the reason left out. Nobody can answer here, so the correct end is the
+    // question and an untouched finding — and the server, which refuses a dismissal with no reason,
+    // is what turns "did it invent one" into something readable.
+    prompts: { claude: ARGUE_NO_REASON, cursor: ARGUE_NO_REASON },
+    tools: "Bash,Read,Glob,Grep",
+    transcript: "review-argue-no-reason",
+    setup: () => {
+      const repo = buildPlainRepo("smith-walk-argue-", {
+        [ARGUED_JAVA]: { before: ARGUED_JAVA_BEFORE, after: ARGUED_JAVA_AFTER },
+      });
+      return { repo, about: `three findings in ${ARGUED_JAVA}, one waved away with no reason` };
+    },
+    forbidden: [...FORBIDDEN, ...REVIEW_FORBIDDEN],
+    checks: reviewArgueNoReasonChecks,
   },
   "review-confirm": {
     // Reported 2026-09-08 by a developer whose `/smith-review` went straight into 32 uncommitted
@@ -2450,6 +2739,60 @@ function selfCheck() {
   assert.ok(
     !namesExtensionCollision(`I created ${TAKEN_EXTENSION} and duplicateorderfacades.`),
     "an agent that wrote over the extension reads as having found the collision"
+  );
+
+  // The warning a developer gets before their words go to their lead. It is prose and its reader is
+  // a regex, so the shapes that decide it are asserted here: the wording the command suggests, a
+  // paraphrase that has to stay green, the two ways a reader this loose gets it wrong — `lead` as a
+  // verb and an ordinary verdict line — and the repeat that `review-argue` exists to tell apart.
+  assert.equal(
+    leadWarnings("Recorded. I'll record that for your lead.").length,
+    1,
+    "the sentence the command asks for does not read as a warning"
+  );
+  assert.equal(
+    leadWarnings("Noted — your project lead sees that reason next to your name.").length,
+    1,
+    "an agent that warned in its own words reads as not having warned"
+  );
+  assert.equal(
+    leadWarnings("Repeating that condition will lead to a second query.").length,
+    0,
+    "`lead` as a verb reads as a warning about the developer's lead"
+  );
+  assert.equal(
+    leadWarnings("Blocked: 1 critical finding.\n\n1. LoyaltySyncJob.java:19 — logs to stdout.").length,
+    0,
+    "an ordinary verdict reads as a warning"
+  );
+  assert.equal(
+    leadWarnings("I'll record that for your lead.\nAnd this one too — it goes to your lead.").length,
+    2,
+    "an agent that warned on every dismissal reads as having warned once"
+  );
+
+  // The question asked when a developer ruled something out and said nothing about why. Step 6's
+  // own question must not read as this one, or the walk passes on a session that never asked.
+  assert.equal(
+    reasonAsks("What's wrong with it? A few words is enough, it goes to your lead.").length,
+    1,
+    "the question the command asks for does not read as a question about the reason"
+  );
+  assert.equal(
+    reasonAsks("Want me to fix any of these, or is something off?").length,
+    0,
+    "step 6's question reads as a question about the reason"
+  );
+
+  // And the note the lead is left with, which is data and reads as such: the developer's own words
+  // pass whatever the agent trimmed, and anything the agent wrote for them does not.
+  assert.ok(
+    saidByTheDeveloper("the System.out one is wrong", ARGUE_NO_REASON),
+    "a note made of the developer's own words reads as invented"
+  );
+  assert.ok(
+    !saidByTheDeveloper("intentional debug output, kept deliberately", ARGUE_NO_REASON),
+    "a reason the agent wrote for the developer reads as something they said"
   );
 
   // The directory half, against a real checkout of the skeleton rather than a string, because what

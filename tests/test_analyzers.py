@@ -8,7 +8,9 @@ machine without ESLint has to be a quieter review, never a failed one.
 from __future__ import annotations
 
 import shutil
+import tempfile
 from dataclasses import replace
+from functools import cache
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -17,7 +19,7 @@ import pytest
 from smith.reviewer.adapters.depcruise import DependencyCruiserAnalyzer, parse_depcruise
 from smith.reviewer.adapters.eslint import EslintAnalyzer, parse_eslint
 from smith.reviewer.adapters.pmd import load_fixes
-from smith.reviewer.adapters.workspace import materialize, safe_args
+from smith.reviewer.adapters.workspace import materialize, run_json, safe_args
 from smith.reviewer.domain.diff import added_lines, parse_unified_diff
 from smith.reviewer.domain.findings import apply_dispositions, fingerprint
 from smith.reviewer.domain.models import ActiveDisposition
@@ -152,9 +154,56 @@ CYCLE_FILES = {
 }
 
 
-@pytest.mark.skipif(shutil.which("depcruise") is None, reason="dependency-cruiser is not installed")
+
+# A one-way import between two modules: the smallest question that separates "depcruise is on PATH"
+# from "depcruise can see a module graph here". Without `typescript` resolvable from its own install
+# directory both files cruise as modules with no dependencies at all, so a cycle test is red and a
+# quiet test is green for the wrong reason, neither of them saying anything about this code.
+_GRAPH_PROBE = {
+    "src/app/first.ts": 'import { second } from "./second";\nexport const first = second;\n',
+    "src/app/second.ts": "export const second = 1;\n",
+}
+
+_NO_TYPESCRIPT = (
+    "depcruise is installed but cannot resolve a TypeScript module graph here. It reads .ts only "
+    "when `typescript` resolves from its own install directory, and caps out below TypeScript 7 - "
+    "install the pair together: npm i -g dependency-cruiser typescript@5 (README, the analyzers)"
+)
+
+
+@cache
+def _module_graph_is_unavailable() -> str:
+    """Why these tests cannot run here, or empty when they can.
+
+    Asked of the tool rather than of PATH, because `which` answers a question no test here depends
+    on. The probe holds no cycle: what it reads is whether one module resolved a dependency on
+    another at all, so a real regression in cycle detection still comes out red.
+    """
+    if shutil.which("depcruise") is None:
+        return "dependency-cruiser is not installed"
+    workdir = tempfile.mkdtemp(prefix="smith-depcruise-probe-")
+    try:
+        materialize(_GRAPH_PROBE, Path(workdir))
+        config = Path(workdir) / ".dependency-cruiser.json"
+        config.write_text('{"forbidden": []}', encoding="utf-8")
+        raw = run_json(
+            ["depcruise", "--config", config.name, "--output-type", "json", "."], workdir
+        )
+        modules = raw.get("modules") or [] if isinstance(raw, dict) else []
+        return "" if any(module.get("dependencies") for module in modules) else _NO_TYPESCRIPT
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _needs_a_module_graph() -> None:
+    missing = _module_graph_is_unavailable()
+    if missing:
+        pytest.skip(missing)
+
+
 def test_dependency_cruiser_really_finds_the_cycle() -> None:
     """The parser is tested against captured output; this proves the wiring against the real tool."""
+    _needs_a_module_graph()
     diffs = parse_unified_diff(TS_DIFF)
     findings = DependencyCruiserAnalyzer().run(diffs, CYCLE_FILES, _added())
     assert [f.rule_id for f in findings] == ["depcruise:no-circular"]
@@ -164,9 +213,13 @@ def test_dependency_cruiser_really_finds_the_cycle() -> None:
     assert "cart.service" in findings[0].message
 
 
-@pytest.mark.skipif(shutil.which("depcruise") is None, reason="dependency-cruiser is not installed")
 def test_dependency_cruiser_is_silent_once_the_cycle_is_broken() -> None:
-    """The same two modules, with the back edge removed: a real tool run that must find nothing."""
+    """The same two modules, with the back edge removed: a real tool run that must find nothing.
+
+    Guarded by the same probe as its sibling, and it needs it more: a blind depcruise reports
+    nothing on anything, so this one passes on a machine where the analyzer sees no graph at all.
+    """
+    _needs_a_module_graph()
     diffs = parse_unified_diff(TS_DIFF)
     files = {
         **CYCLE_FILES,

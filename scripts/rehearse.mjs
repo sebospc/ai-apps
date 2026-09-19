@@ -33,6 +33,7 @@ import {
   JALO_SESSION,
   SYSTEM_OUT,
 } from "./lib/corpus_repo.mjs";
+import { throwawaySlug, tidyAfterEarlierRuns } from "./lib/throwaway_project.mjs";
 
 const API = process.env.SMITH_API_URL ?? "http://localhost:8099";
 const SMITH_CLI = new URL("../plugin/bin/smith", import.meta.url).pathname;
@@ -225,9 +226,19 @@ async function main() {
     process.exit(1);
   }
 
-  const slug = `rehearse-${Date.now().toString(36)}`;
+  const slug = throwawaySlug("rehearse");
   bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
   await signInAsLead();
+  // A killed run never reaches its own cleanup, so this one clears what the last one left. It runs
+  // after the bootstrap because signing in needs the lead account the bootstrap creates.
+  say(
+    await tidyAfterEarlierRuns({
+      api: API,
+      email: LEAD_EMAIL,
+      password: LEAD_PASSWORD,
+      keep: [slug],
+    })
+  );
   const key = await hireDeveloper(slug);
   const { repo, target } = buildRepo();
   const home = mkdtempSync(join(tmpdir(), "smith-rehearse-home-"));

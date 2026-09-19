@@ -3728,9 +3728,7 @@ Acceptance:
 What breaks for a developer if this does not exist: the only claim anyone can make about Pergamon's
 output is that one session of it did not trip a quiet ruleset.
 
-### [>] Y3. A walk that is killed leaves its project behind
-
-*In flight 2026-09-19, on a worktree branch. Reopen as `[ ]` if that branch is never merged.*
+### [x] Y3. A walk that is killed leaves its project behind — 4c333a9
 
 X2 measured **9** `walk-%` projects in the database, four days after W5 emptied it. The cause is in
 the note: `discardProject` runs in a `finally`, so it covers a walk that fails and not a walk that is
@@ -3752,9 +3750,48 @@ Acceptance:
 What breaks for a developer if this does not exist: the projects list fills with junk, and the last
 time that happened it was T4 clearing 94 of them.
 
-### [>] Y4. A test that is red for the environment reads as a defect
+**What it came to, measured 2026-09-19.** 56 projects in the database, **30** of them left by a run
+that never reached its own cleanup: 14 `walk-`, 5 `rehearse-`, 5 `probe-`, 5 `guideline-`, 1
+`proof-`. After clearing them, **27**. The leak had grown since X2 counted 9.
 
-*In flight 2026-09-19, same worktree as Y3.*
+That hand cleanup made the case for the threshold by breaking it. It deleted an explicit list with
+no age guard, and one entry — `walk-mu8gx63n`, created 14:13 — belonged to a walk that was still
+running in another worktree. Twenty minutes later that run printed `left walk-mu8gx63n behind:
+deleting answered 403` and its key answered `the API key is not valid`: the project was gone, and by
+design a project you cannot see is indistinguishable from one that does not exist. The sweep would
+not have touched it, because two hours had not passed. A refused delete and a delete that never ran
+are different failures and only the second is what this task fixes — the first one here was me.
+
+A run now names its project `throwaway-<what-made-it>-<base36 milliseconds>`, and the next run of
+the same script sweeps the ones older than two hours before starting its own. Two conditions have to
+hold before a row is deleted: the session doing the sweeping is a lead of the project, and the name
+has the prefix *and* a timestamp reading a plausible date. `walk-mtnr8srh` — the exact shape the
+leak produced — is left alone, because a resemblance is not a claim.
+
+`scripts/rehearse.mjs`, `scripts/review_score.mjs` and `scripts/guideline_probe.mjs` adopted it.
+**`scripts/walk_skill.mjs` and `scripts/e2e_browser.mjs` still have to**: both build their own slug
+inline and neither could be edited in this task. Until they do, a killed walk still leaks one row,
+and `guideline_probe.mjs` is worth reading first — it never removed its project at all, so every
+single run of it leaked, killed or not.
+
+Proved the way the leak happens, not the way a tidy shutdown does: a rehearsal was SIGKILLed the
+moment its project row existed, the row survived it (57 projects), and the next run printed
+`swept 1 project an earlier run left behind: throwaway-rehearse-mu8h1u41` and the count came back.
+`tests/test_throwaway_sweep.py` is the postgres-backed version, and it was read red twice before it
+was believed: dropping the prefix from the predicate reported *the sweep deleted projects it did not
+create: walk-mtnr8srh*, and narrowing it to single-word names reported *the sweep left behind
+projects an earlier run abandoned: throwaway-score-first-reading-…*.
+
+**It covers rows and not processes.** Killing the night runner turned up nine orphaned `claude` and
+Smith CLI processes, hung for 2 to 12 days, from the same cause. They are started by
+`walk_skill.mjs`, which this task could not edit, and the only predicate available for killing them
+is a command-line pattern — which is the kind of predicate that kills a live run. It belongs with
+whoever adopts the sweep in `walk_skill.mjs`, with the same bar the row predicate was held to.
+Measured alongside it: **3159** temp directories left in the system temp folder by the same defect,
+2485 of them from `plugin/test` and 338 from `scripts/e2e_browser.mjs`. Both are outside these
+files. Nobody had written either number down.
+
+### [x] Y4. A test that is red for the environment reads as a defect — 4239ef9
 
 `tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on this machine and
 was red at `HEAD~15`, so it is the environment. X1 left the diagnosis rather than the fix: the guard
@@ -3780,6 +3817,36 @@ What breaks for a developer if this does not exist: `uv run pytest` is not a sig
 next person to see red assumes it is this one.
 
 ### [x] Y5. The sentence that protects the developer is written and never checked — done, commit 9fba8a6
+**The environment had changed under the diagnosis.** `typescript@5.9.3` is installed globally here
+now, so both depcruise tests pass and the red X1 recorded could not be reproduced by running them.
+It was reproduced by rebuilding the environment instead: `dependency-cruiser@17.4.3` installed on
+its own in a scratch directory with no typescript beside it, its `node_modules/.bin` first on PATH.
+That is `depcruise` present and blind, and it gives back exactly what X1 read —
+`assert [] == ['depcruise:no-circular']`, with nothing logged.
+
+The guard now runs the tool over two modules where one imports the other and asks whether any
+dependency resolved at all. No cycle in the probe, so a regression in cycle detection still comes
+out red; the only thing it can excuse is a machine where the graph is empty before the test starts.
+The skip message is the README's paragraph on the analyzers, in the same words.
+
+Both tests carry it, and the quiet one needed it more than the cycle one: a blind depcruise reports
+nothing about anything, so *is silent once the cycle is broken* was green on an environment where it
+proved nothing at all. A test that cannot fail was sitting next to the one that could not pass.
+
+Three readings, on the whole suite:
+
+| | before | after |
+|---|---|---|
+| depcruise blind (scratch install, no typescript) | 1 failed, 175 passed, 7 skipped | 174 passed, 9 skipped |
+| depcruise with typescript (this machine) | 176 passed, 7 skipped | 176 passed, 7 skipped |
+| capable, detection broken on purpose | — | 2 failed, naming the cycle and the finding that should not exist |
+
+The third is the one that makes the guard worth having. With the bundled rule flipped to
+`{"circular": false}` and the global depcruise in place, the cycle test fails on
+`assert [] == ['depcruise:no-circular']` and its sibling fails on a finding it should never see.
+The guard skips a machine that cannot answer; it does not skip an answer that is wrong.
+
+### [ ] Y5. The sentence that protects the developer is written and never checked
 
 `plugin/commands/smith-review.md`, step 7, already tells the agent to say it: *"I'll record that for
 your lead."* Once per session, the first time the developer rules something out. The bullet above it
@@ -7522,3 +7589,26 @@ Append here when a task forces a decision. One line each: what was decided and w
   mapped a pre-answered finding to the wrong number and muted `service-no-session` with the
   System.out reason. The walk caught it as data, not prose. Not fixed here — the numbering contract
   when a developer answers before the findings are shown is its own task.
+- 2026-09-19 — Y3 sweeps only the new `throwaway-` naming, and the 30 projects already leaked under
+  the old names were removed once by hand instead. Teaching the sweep the old shapes means matching
+  `walk-<8 characters>`, which any project could be called; the naming is the whole reason the
+  predicate is safe, so widening it to cover history would give away what the task is for.
+- 2026-09-19 — Two hours is the threshold. The longest run here is minutes, so nothing live is ever
+  that old, and an abandoned project is gone by the next run rather than sitting for four days.
+  `SMITH_THROWAWAY_MAX_AGE_MINUTES` overrides it, which is how the sweep was proved against a
+  project killed a minute earlier — the caller's own project is named in `keep` and never swept.
+- 2026-09-19 — `git stash` is shared by every worktree in this repository, so two agents stashing at
+  once pop each other's work: this iteration popped another worktree's `y5-wip` and had its own
+  stash popped into somebody else's worktree. Recovered both — the stash commit survives as a
+  dangling object, `git fsck --unreachable` finds it and `git stash apply <sha>` restores it. An
+  unattended agent should commit to its own branch rather than stash.
+- 2026-09-19 — `scripts/rehearse.mjs` fails three verdict checks on current main (*a critical
+  finding blocks the review*, *dismissing a finding recomputes the verdict — critical went 0 -> 0*,
+  *a dismissed finding no longer counts toward the verdict — {"warning":3}*). Not Y3's doing: main's
+  own copy of the script at 9788de7 fails the same three. The injected JaloSession problem is no
+  longer critical, so the rehearsal's verdict checks have nothing critical to block on.
+- 2026-09-19 — Y4 leaves `adapters/depcruise.py` alone. X1's diagnosis noted that a blind depcruise
+  logs no warning, and a warning there would have to read an empty module graph as a broken
+  machine — which a change touching two files that genuinely import nothing also produces. The
+  module docstring already refuses to guess about someone's machine, and that decision still holds;
+  the test is the place that can ask, because a test can run a probe of its own first.

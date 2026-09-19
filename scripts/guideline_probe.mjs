@@ -27,10 +27,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { bootstrapProject, buildRepo } from "./lib/corpus_repo.mjs";
+import { throwawaySlug, tidyAfterEarlierRuns } from "./lib/throwaway_project.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGIN = join(ROOT, "plugin", "bin", "smith");
 const API = process.env.SMITH_API_URL ?? "http://localhost:8099";
+
+const LEAD_EMAIL = "lead@example.com";
+const LEAD_PASSWORD = "walk-password-1";
 
 /**
  * Ordinary SAP Commerce changes with nothing wrong in them.
@@ -297,12 +301,16 @@ async function main() {
     process.exit(1);
   }
 
+  // This probe never removed its projects at all, so every run left one. The sweep is what removes
+  // them now, including the ones a run that was killed could never have removed itself.
+  console.log(await tidyAfterEarlierRuns({ api: API, email: LEAD_EMAIL, password: LEAD_PASSWORD }));
+
   const corpus = process.env.SMITH_CORPUS;
   const real = Boolean(corpus && existsSync(corpus));
 
   if (process.argv.includes("--self-check")) {
-    const slug = `guideline-self-${Date.now().toString(36)}`;
-    const key = bootstrapProject(slug, "lead@example.com", "walk-password-1");
+    const slug = throwawaySlug("guideline-self");
+    const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
     const repo = trapCase();
     try {
       const result = review(repo, key);
@@ -322,8 +330,8 @@ async function main() {
   }
   console.log(`guideline ${id} · ${wanted} ordinary changes · ${real ? "corpus" : "built-in set, a weaker reading"}\n`);
 
-  const slug = `guideline-${Date.now().toString(36)}`;
-  const key = bootstrapProject(slug, "lead@example.com", "walk-password-1");
+  const slug = throwawaySlug("guideline");
+  const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
 
   let offeredCount = 0;
   let firedCount = 0;

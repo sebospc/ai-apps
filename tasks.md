@@ -3726,7 +3726,7 @@ Acceptance:
 What breaks for a developer if this does not exist: the only claim anyone can make about Pergamon's
 output is that one session of it did not trip a quiet ruleset.
 
-### [ ] Y3. A walk that is killed leaves its project behind
+### [x] Y3. A walk that is killed leaves its project behind — 7267287
 
 X2 measured **9** `walk-%` projects in the database, four days after W5 emptied it. The cause is in
 the note: `discardProject` runs in a `finally`, so it covers a walk that fails and not a walk that is
@@ -3747,6 +3747,40 @@ Acceptance:
 
 What breaks for a developer if this does not exist: the projects list fills with junk, and the last
 time that happened it was T4 clearing 94 of them.
+
+**What it came to, measured 2026-09-19.** 56 projects in the database, **30** of them left by a run
+that never reached its own cleanup: 14 `walk-`, 5 `rehearse-`, 5 `probe-`, 5 `guideline-`, 1
+`proof-`. After clearing them, **27** — and the one `walk-` among those is a live run belonging to
+another worktree, not junk. The leak had grown since X2 counted 9.
+
+A run now names its project `throwaway-<what-made-it>-<base36 milliseconds>`, and the next run of
+the same script sweeps the ones older than two hours before starting its own. Two conditions have to
+hold before a row is deleted: the session doing the sweeping is a lead of the project, and the name
+has the prefix *and* a timestamp reading a plausible date. `walk-mtnr8srh` — the exact shape the
+leak produced — is left alone, because a resemblance is not a claim.
+
+`scripts/rehearse.mjs`, `scripts/review_score.mjs` and `scripts/guideline_probe.mjs` adopted it.
+**`scripts/walk_skill.mjs` and `scripts/e2e_browser.mjs` still have to**: both build their own slug
+inline and neither could be edited in this task. Until they do, a killed walk still leaks one row,
+and `guideline_probe.mjs` is worth reading first — it never removed its project at all, so every
+single run of it leaked, killed or not.
+
+Proved the way the leak happens, not the way a tidy shutdown does: a rehearsal was SIGKILLed the
+moment its project row existed, the row survived it (57 projects), and the next run printed
+`swept 1 project an earlier run left behind: throwaway-rehearse-mu8h1u41` and the count came back.
+`tests/test_throwaway_sweep.py` is the postgres-backed version, and it was read red twice before it
+was believed: dropping the prefix from the predicate reported *the sweep deleted projects it did not
+create: walk-mtnr8srh*, and narrowing it to single-word names reported *the sweep left behind
+projects an earlier run abandoned: throwaway-score-first-reading-…*.
+
+**It covers rows and not processes.** Killing the night runner turned up nine orphaned `claude` and
+Smith CLI processes, hung for 2 to 12 days, from the same cause. They are started by
+`walk_skill.mjs`, which this task could not edit, and the only predicate available for killing them
+is a command-line pattern — which is the kind of predicate that kills a live run. It belongs with
+whoever adopts the sweep in `walk_skill.mjs`, with the same bar the row predicate was held to.
+Measured alongside it: **3159** temp directories left in the system temp folder by the same defect,
+2485 of them from `plugin/test` and 338 from `scripts/e2e_browser.mjs`. Both are outside these
+files. Nobody had written either number down.
 
 ### [ ] Y4. A test that is red for the environment reads as a defect
 
@@ -7325,3 +7359,21 @@ Append here when a task forces a decision. One line each: what was decided and w
   added line, then measured: the browser check passed with and without it. React writes the new
   `defaultValue` onto a textarea nobody has typed in, so the box catches up on its own, and the key
   only added a way to discard what a lead had typed. Removed, and the reading is in a comment there.
+- 2026-09-19 — Y3 sweeps only the new `throwaway-` naming, and the 30 projects already leaked under
+  the old names were removed once by hand instead. Teaching the sweep the old shapes means matching
+  `walk-<8 characters>`, which any project could be called; the naming is the whole reason the
+  predicate is safe, so widening it to cover history would give away what the task is for.
+- 2026-09-19 — Two hours is the threshold. The longest run here is minutes, so nothing live is ever
+  that old, and an abandoned project is gone by the next run rather than sitting for four days.
+  `SMITH_THROWAWAY_MAX_AGE_MINUTES` overrides it, which is how the sweep was proved against a
+  project killed a minute earlier — the caller's own project is named in `keep` and never swept.
+- 2026-09-19 — `git stash` is shared by every worktree in this repository, so two agents stashing at
+  once pop each other's work: this iteration popped another worktree's `y5-wip` and had its own
+  stash popped into somebody else's worktree. Recovered both — the stash commit survives as a
+  dangling object, `git fsck --unreachable` finds it and `git stash apply <sha>` restores it. An
+  unattended agent should commit to its own branch rather than stash.
+- 2026-09-19 — `scripts/rehearse.mjs` fails three verdict checks on current main (*a critical
+  finding blocks the review*, *dismissing a finding recomputes the verdict — critical went 0 -> 0*,
+  *a dismissed finding no longer counts toward the verdict — {"warning":3}*). Not Y3's doing: main's
+  own copy of the script at 9788de7 fails the same three. The injected JaloSession problem is no
+  longer critical, so the rehearsal's verdict checks have nothing critical to block on.

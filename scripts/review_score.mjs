@@ -40,6 +40,7 @@ import { join } from "node:path";
 import { buildPlainRepo } from "./lib/plain_repo.mjs";
 import { CASES } from "./lib/review_cases.mjs";
 import { PLUGIN_DIR, pluginWithCommandAt, runSession, searchesOf, seedCredentials } from "./lib/review_session.mjs";
+import { throwawaySlug, tidyAfterEarlierRuns } from "./lib/throwaway_project.mjs";
 
 const API = process.env.SMITH_API_URL ?? "http://localhost:8094";
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -186,7 +187,7 @@ export function scoreRun(theCase, reviews) {
 
 async function runCase(name, { control }) {
   const theCase = CASES[name];
-  const slug = `score-${name.slice(0, 12)}-${Date.now().toString(36)}`;
+  const slug = throwawaySlug(`score-${name.slice(0, 12)}`);
   const key = bootstrapProject(slug);
   const repo = buildPlainRepo(`smith-score-${name}-`, theCase.files());
   const home = mkdtempSync(join(tmpdir(), "smith-score-home-"));
@@ -386,6 +387,9 @@ async function main() {
     console.error(`nothing is answering at ${API}. Start it with:\n  uv run uvicorn smith.main:app --port 8094`);
     process.exit(1);
   }
+
+  // A run killed mid-case never reaches its own cleanup, so this one clears what the last one left.
+  console.log(await tidyAfterEarlierRuns({ api: API, email: LEAD_EMAIL, password: LEAD_PASSWORD }));
 
   console.log(`api ${API} · ${names.length} cases · ${runs} runs each${control ? " · against the command before AK1" : ""}\n`);
   const cases = {};

@@ -3773,12 +3773,14 @@ Acceptance:
 What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
 next person to see red assumes it is this one.
 
-### [ ] Y5. The sentence that protects the developer is written and never checked
+### [x] Y5. The sentence that protects the developer is written and never checked — done, commit CHANGEME
 
-`plugin/skills/review/SKILL.md:178` already tells the agent to say it: *"I'll record that for your
-lead."* Once per session, the first time the developer rules something out. Line 175 tells it to send
-their sentence rather than a summary, and line 180 tells it to ask for a reason when they gave none,
-naming where it goes. The design is right and the words are already there.
+`plugin/commands/smith-review.md`, step 7, already tells the agent to say it: *"I'll record that for
+your lead."* Once per session, the first time the developer rules something out. The bullet above it
+tells the agent to send their sentence rather than a summary, and the one below tells it to ask for a
+reason when they gave none, naming where it goes. The design is right and the words are already
+there. (This phase was written against `plugin/skills/review/SKILL.md`, which phase Z replaced with
+the command file; the lines it describes moved, they did not go away.)
 
 Nothing checks that any of it happens. `scripts/walk_skill.mjs` asserts the verdict, the numbering
 and the fixes, and not one assertion reads for this. So the guarantee a developer has that they were
@@ -3808,6 +3810,23 @@ Acceptance:
 What breaks for a developer if this does not exist: nothing visibly, until an agent quietly stops
 saying it and the first person to notice is a developer who finds their own sentence on a screen they
 did not know existed.
+
+**What it reads, and where the reading is weak.** Two walks, both on a plain repository so neither
+needs a corpus: `review-argue` gives the developer two findings to rule out, each with its own
+sentence; `review-argue-no-reason` has them wave one away and say nothing about why.
+
+Only one assertion is prose, and it has to be: the warning is prose and nothing else records it. It
+reads the assistant text — what the developer actually sees in the conversation, not an intermediate
+— for a sentence carrying both halves the warning cannot be without, who reads it and that it is
+being kept. Everything after that is data off the lead's own screen, through the endpoint the lead's
+page reads: how many findings were muted, which ones, and whether the `note` stored against each
+still carries the concrete nouns a summary would have dropped. The no-reason walk leans on the
+server refusing a dismissal with an empty reason — an agent that ruled the finding out anyway had to
+write the sentence itself, and that is readable as data rather than as prose.
+
+One limit worth writing down rather than implying: "once, not every time" is read as *exactly one
+warning across a session that rules out two findings*. A single-shot session has one turn, so this
+cannot read a second turn repeating it. Two dismissals is the most discrimination one session gives.
 
 ## Phase Z — one door, and the developer is asked at it
 
@@ -7325,3 +7344,31 @@ Append here when a task forces a decision. One line each: what was decided and w
   added line, then measured: the browser check passed with and without it. React writes the new
   `defaultValue` onto a textarea nobody has typed in, so the box catches up on its own, and the key
   only added a way to discard what a lead had typed. Removed, and the reading is in a comment there.
+- 2026-09-19 — Y5 reads the warning on two new walks rather than on `review`, which rules nothing
+  out and is now the negative case: a session where nobody argued must not say the sentence, and the
+  walk asserts it says nothing about a lead and that the project holds no answered finding. A check
+  that fires on every session is not reading the session.
+- 2026-09-19 — Y5's walks build a plain repository with one Java file carrying `System.out`, a
+  `SessionContext` line and `printStackTrace()`, so both run with no corpus. `runnable here` in
+  `sanity.py` went 4 → 6 and `defined` 11 → 13.
+- 2026-09-19 — Y5 proved the warning assertion before trusting it. With the "Tell them once" bullet
+  deleted from `plugin/commands/smith-review.md`, `review-argue` in Claude went 15 passed / 1 failed
+  and the one failure was "the developer was told their reason goes to their lead"; every other
+  check stayed green, so the assertion reads that line and not the session around it. Line restored,
+  same walk 16 passed / 0 failed. Both readings on the current command file, after the rebase that
+  rewrote it.
+- 2026-09-19 — Y5 asserts one thing on prose and the rest on data, deliberately. The warning is
+  prose and nothing else records it, so it is read from the assistant text the developer sees. The
+  `note` is read back off the lead's project screen and checked for the concrete nouns a summary
+  drops, and the no-reason walk uses the server's refusal of an empty reason: an agent that ruled the
+  finding out anyway had to invent the sentence, which is data.
+- 2026-09-19 — Y5 could not measure Cursor. Every `/smith-review` walk on this machine is answered by
+  an unrelated `caveman-review` skill in the user's global plugin cache: the session never runs a
+  `smith` command and reports in that skill's format. Confirmed pre-existing rather than Y5's doing
+  by running `review-confirm`, an existing walk from main, which fails the same way with the same
+  signature. The Claude side of both new walks is green; the Cursor half is unmeasured and the cause
+  is an editor picking another plugin's skill over a typed command.
+- 2026-09-19 — Y5's `review-argue` measured a second thing worth keeping: on one run the agent
+  mapped a pre-answered finding to the wrong number and muted `service-no-session` with the
+  System.out reason. The walk caught it as data, not prose. Not fixed here — the numbering contract
+  when a developer answers before the findings are shown is its own task.

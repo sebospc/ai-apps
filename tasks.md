@@ -3699,7 +3699,9 @@ Acceptance:
 What breaks for a developer if this does not exist: they ask for a feature, the catalog holds three,
 and they go back to writing it by hand — which is the problem Pergamon exists to solve.
 
-### [ ] Y2. The measurement three entries could not give
+### [>] Y2. The measurement three entries could not give
+
+*In flight 2026-09-19: the walk is written and committed (`2a111e0`); the catalog sweep is running now. Reopen as `[ ]` if no measurement is recorded by the next reader.*
 
 X2 built the pipeline and ran it once. This runs it across the catalog and reads the result as a
 rate, which is the only form in which it can be compared to anything.
@@ -3726,7 +3728,9 @@ Acceptance:
 What breaks for a developer if this does not exist: the only claim anyone can make about Pergamon's
 output is that one session of it did not trip a quiet ruleset.
 
-### [ ] Y3. A walk that is killed leaves its project behind
+### [>] Y3. A walk that is killed leaves its project behind
+
+*In flight 2026-09-19, on a worktree branch. Reopen as `[ ]` if that branch is never merged.*
 
 X2 measured **9** `walk-%` projects in the database, four days after W5 emptied it. The cause is in
 the note: `discardProject` runs in a `finally`, so it covers a walk that fails and not a walk that is
@@ -3748,7 +3752,9 @@ Acceptance:
 What breaks for a developer if this does not exist: the projects list fills with junk, and the last
 time that happened it was T4 clearing 94 of them.
 
-### [ ] Y4. A test that is red for the environment reads as a defect
+### [>] Y4. A test that is red for the environment reads as a defect
+
+*In flight 2026-09-19, same worktree as Y3.*
 
 `tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on this machine and
 was red at `HEAD~15`, so it is the environment. X1 left the diagnosis rather than the fix: the guard
@@ -3773,7 +3779,9 @@ Acceptance:
 What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
 next person to see red assumes it is this one.
 
-### [ ] Y5. The sentence that protects the developer is written and never checked
+### [>] Y5. The sentence that protects the developer is written and never checked
+
+*In flight 2026-09-19, on its own worktree branch. Reopen as `[ ]` if that branch is never merged.*
 
 `plugin/skills/review/SKILL.md:178` already tells the agent to say it: *"I'll record that for your
 lead."* Once per session, the first time the developer rules something out. Line 175 tells it to send
@@ -3913,7 +3921,13 @@ Acceptance:
 What breaks for a developer if this does not exist: the documentation teaches the old install, and
 the person who follows it concludes the product is what the page describes.
 
-### [ ] Z4. Cursor follows a command worse than it followed a skill, and apply pays for it
+### [!] Z4. Cursor follows a command worse than it followed a skill, and apply pays for it
+
+*Blocked 2026-09-19, and the block is in the entry's own banner: every number below was taken with a
+user-scope plugin installed that answered the walk in its place, so none of them separate "Cursor
+follows a command worse" from "another plugin won". Removing that plugin does not stick — Cursor
+restores it from the account within minutes — so the re-measurement this needs cannot be taken on
+this machine as it stands. Reopen when there is a Cursor profile with nothing else installed.*
 
 > **Read this first: the measurement below is not safe.** On 2026-09-08 a `cursor review` walk was
 > found reading `caveman/skills/caveman-review/SKILL.md` — a plugin installed on this account, whose
@@ -4170,7 +4184,11 @@ Both surfaces stay. Claude Code keeps `plugin/commands/`, which is explicit ther
 cleanly; Cursor gets `skills/`. That is the shape caveman uses — one behaviour, one adapter per
 agent — and it is why its Cursor install updates and ours does not.
 
-### [ ] AB1. A Cursor skill surface that only runs when it is asked for
+### [!] AB1. A Cursor skill surface that only runs when it is asked for
+
+*Parked 2026-09-08 and still parked, on the note directly below this phase: Auto Refresh on a Team
+Marketplace solves what this was for, is configured once by whoever administers the account, and
+needs no change to the plugin at all. Reopen only if that route is ruled out.*
 
 Acceptance:
 
@@ -4193,7 +4211,11 @@ Acceptance:
 What breaks for a developer if this does not exist: they are three commits behind and the only way
 forward is a directory listing and an interactive reinstall.
 
-### [ ] AB2. The explicit-invocation claim, verified rather than trusted
+### [!] AB2. The explicit-invocation claim, verified rather than trusted
+
+*Parked with AB1. The claim it would verify was measured directly on 2026-09-08 — a flagged skill did
+not fire against a prompt copying its own description, and deleting the flag made it fire — so what
+is left here is a regression check for a surface this plugin does not ship.*
 
 **Already measured on 2026-09-08, before the phase was started, because the whole phase depends on
 it.** A probe skill in `~/.cursor/skills/` was invoked from a terminal session, ran its own script by
@@ -5114,6 +5136,72 @@ against the command file at `ebc6330`, before AK1. Both were run.
 **Read the spread, never a run.** Six runs of `first-reading` today gave 2, 3, 3, 2, 2 and 3 of
 three. An earlier report in this session called it "3 of 3" from the first two runs, which was one
 sample presented as a result — exactly what the phase text warned about before the tool existed.
+
+
+**Task markers.** `[ ]` open, `[x]` done with its sha, `[!]` blocked with the reason, `[>]` somebody
+is on it right now. The night runner takes the first `[ ]` from the top, so `[>]` is what keeps it
+from starting a task another process is half way through — two commits fighting over the same files
+on `main` costs more than an idle run. A `[>]` with no commit behind it goes back to `[ ]`.
+
+
+## Phase AM — the parts that only work because somebody remembers
+
+Three things this repository depends on that live in nobody's file. None were found by a test; all
+three were found by doing the thing by hand and noticing there was no other way.
+
+### [ ] AM1. The deployment is a set of commands nobody wrote down
+
+`CLAUDE.md` has said so since the server went up: it "was built by hand and lives nowhere in this
+repository, so recreating it means repeating commands nobody wrote down." That is still true, and
+the cost was paid twice this month — a `/v2` route that shipped switched off because the Caddyfile
+is edited by hand on the box, and a build that failed on two root-owned files under `~/.docker` left
+by an old `sudo` run.
+
+Acceptance:
+
+- One script takes a fresh Ubuntu host to a running stack: docker, the repository, `.env.prod` from
+  values it is given rather than ones it invents, the compose stack up, and the certificate.
+- It is **idempotent**. Running it on the live host changes nothing and says so. That is what makes
+  it runnable at all, because the only host to test it against is the one with users on it.
+- The secrets it needs are named, never generated into a file that gets committed, and never printed.
+- What it cannot do it says plainly — DNS, the Lightsail instance itself, the firewall rules — with
+  the values it expects. A script that silently skips a step is worse than a list.
+- A deploy to the running host is one command, and it takes a backup before it changes anything.
+
+### [ ] AM2. Backups run when somebody remembers
+
+`scripts/backup.sh` exists, dumps the database and proves the dump is a readable archive. Nothing
+calls it. Both backups this server has were taken by hand, minutes before a deploy, because whoever
+was deploying thought of it.
+
+Acceptance:
+
+- The dump runs on a schedule on the host, keeps a bounded number, and deletes the oldest itself —
+  a disk that fills is an outage caused by the backup.
+- **A restore is exercised, not assumed.** Restore the newest dump into a scratch database on the
+  same host and count the rows against the live one. A backup nobody has restored is a file.
+- The schedule reports where a person would notice it stopped. If that is a log nobody reads, say so
+  in the phase rather than pretending it is monitoring.
+
+### [ ] AM3. The investigation stops after the second defect
+
+Measured by `scripts/review_score.mjs`: the parallel-implementation defect is found **2 of 2 when it
+is the only thing planted** and **3 of 6 when it is one of three**. A transcript of a miss shows
+three searches, none of them for a second storefront. The lookup works; the review finds two things,
+spends its budget there and stops.
+
+**This one has a rule the other two do not.** The scored set is a regression detector, and the moment
+the command is tuned until the set passes, the set measures the tuning. So:
+
+- Whatever is changed must be **structural**, not a phrase aimed at these cases — for instance, the
+  investigation naming what it will check before it starts, so stopping early is visible rather than
+  silent.
+- It is judged on a case **held out** from the scored set and written after the change, not on
+  `first-reading`. If the held-out case does not improve, the change did not work, whatever the
+  scored set says.
+- If nothing structural helps, **that is the answer**: write down what was tried and what it scored,
+  and leave the command alone. A review that finds two of three real defects is still worth having,
+  and this repository has deleted more rules than it has added for exactly this reason.
 
 
 ## Notes and decisions log

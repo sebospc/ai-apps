@@ -3750,8 +3750,15 @@ time that happened it was T4 clearing 94 of them.
 
 **What it came to, measured 2026-09-19.** 56 projects in the database, **30** of them left by a run
 that never reached its own cleanup: 14 `walk-`, 5 `rehearse-`, 5 `probe-`, 5 `guideline-`, 1
-`proof-`. After clearing them, **27** — and the one `walk-` among those is a live run belonging to
-another worktree, not junk. The leak had grown since X2 counted 9.
+`proof-`. After clearing them, **27**. The leak had grown since X2 counted 9.
+
+That hand cleanup made the case for the threshold by breaking it. It deleted an explicit list with
+no age guard, and one entry — `walk-mu8gx63n`, created 14:13 — belonged to a walk that was still
+running in another worktree. Twenty minutes later that run printed `left walk-mu8gx63n behind:
+deleting answered 403` and its key answered `the API key is not valid`: the project was gone, and by
+design a project you cannot see is indistinguishable from one that does not exist. The sweep would
+not have touched it, because two hours had not passed. A refused delete and a delete that never ran
+are different failures and only the second is what this task fixes — the first one here was me.
 
 A run now names its project `throwaway-<what-made-it>-<base36 milliseconds>`, and the next run of
 the same script sweeps the ones older than two hours before starting its own. Two conditions have to
@@ -3782,7 +3789,7 @@ Measured alongside it: **3159** temp directories left in the system temp folder 
 2485 of them from `plugin/test` and 338 from `scripts/e2e_browser.mjs`. Both are outside these
 files. Nobody had written either number down.
 
-### [ ] Y4. A test that is red for the environment reads as a defect
+### [x] Y4. A test that is red for the environment reads as a defect — SHA_Y4
 
 `tests/test_analyzers.py::test_dependency_cruiser_really_finds_the_cycle` is red on this machine and
 was red at `HEAD~15`, so it is the environment. X1 left the diagnosis rather than the fix: the guard
@@ -3806,6 +3813,35 @@ Acceptance:
 
 What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
 next person to see red assumes it is this one.
+
+**The environment had changed under the diagnosis.** `typescript@5.9.3` is installed globally here
+now, so both depcruise tests pass and the red X1 recorded could not be reproduced by running them.
+It was reproduced by rebuilding the environment instead: `dependency-cruiser@17.4.3` installed on
+its own in a scratch directory with no typescript beside it, its `node_modules/.bin` first on PATH.
+That is `depcruise` present and blind, and it gives back exactly what X1 read —
+`assert [] == ['depcruise:no-circular']`, with nothing logged.
+
+The guard now runs the tool over two modules where one imports the other and asks whether any
+dependency resolved at all. No cycle in the probe, so a regression in cycle detection still comes
+out red; the only thing it can excuse is a machine where the graph is empty before the test starts.
+The skip message is the README's paragraph on the analyzers, in the same words.
+
+Both tests carry it, and the quiet one needed it more than the cycle one: a blind depcruise reports
+nothing about anything, so *is silent once the cycle is broken* was green on an environment where it
+proved nothing at all. A test that cannot fail was sitting next to the one that could not pass.
+
+Three readings, on the whole suite:
+
+| | before | after |
+|---|---|---|
+| depcruise blind (scratch install, no typescript) | 1 failed, 175 passed, 7 skipped | 174 passed, 9 skipped |
+| depcruise with typescript (this machine) | 176 passed, 7 skipped | 176 passed, 7 skipped |
+| capable, detection broken on purpose | — | 2 failed, naming the cycle and the finding that should not exist |
+
+The third is the one that makes the guard worth having. With the bundled rule flipped to
+`{"circular": false}` and the global depcruise in place, the cycle test fails on
+`assert [] == ['depcruise:no-circular']` and its sibling fails on a finding it should never see.
+The guard skips a machine that cannot answer; it does not skip an answer that is wrong.
 
 ### [ ] Y5. The sentence that protects the developer is written and never checked
 
@@ -7377,3 +7413,8 @@ Append here when a task forces a decision. One line each: what was decided and w
   *a dismissed finding no longer counts toward the verdict — {"warning":3}*). Not Y3's doing: main's
   own copy of the script at 9788de7 fails the same three. The injected JaloSession problem is no
   longer critical, so the rehearsal's verdict checks have nothing critical to block on.
+- 2026-09-19 — Y4 leaves `adapters/depcruise.py` alone. X1's diagnosis noted that a blind depcruise
+  logs no warning, and a warning there would have to read an empty module graph as a broken
+  machine — which a change touching two files that genuinely import nothing also produces. The
+  module docstring already refuses to guess about someone's machine, and that decision still holds;
+  the test is the place that can ask, because a test can run a probe of its own first.

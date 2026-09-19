@@ -10,14 +10,17 @@
  *   scripts/ensure_db.sh
  *   uv run uvicorn smith.main:app --port 8099 &
  *   uv run python scripts/seed_catalog.py          # the apply walk reads the catalog
- *   node scripts/walk_skill.mjs [claude|cursor] [review|prior-art|apply|apply-ask]
+ *   node scripts/walk_skill.mjs [claude|cursor] [review|prior-art|apply|apply-ask|apply-catalog] [entry,entry]
  *   node scripts/walk_skill.mjs --self-check      # the assertions that have to be able to fail
  *
  * `review` reasons over real code and argues about it. `prior-art` reads whether it looks past the
  * diff at all. `apply` starts from a developer asking for a
  * feature and ends with code in a project it had to read first. `apply-ask` is the same feature
  * asked for as a bare symptom, and it reads for the opposite ending: a question, and an untouched
- * checkout, because nothing in the prompt says what to build.
+ * checkout, because nothing in the prompt says what to build. `apply-catalog` runs the apply session
+ * once per catalog entry and reads the findings per 1000 generated lines over all of them, which is
+ * the only form in which Pergamon's output can be compared to the corpus — one entry is a session,
+ * not a measurement. It takes an hour or more; the optional list finishes an interrupted sweep.
  *
  * Both editors are walked by the same assertions on purpose. A skill that reads well in one and
  * leaks a review id in the other is a skill that is only half written, and the two sessions differ
@@ -235,7 +238,7 @@ function configLeftBehind(home) {
   }
 }
 
-function runSession(editor, args, repo, home) {
+function runSession(editor, args, repo, home, timeout = SESSION_TIMEOUT_MS) {
   const env = { ...process.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
   // The plugin is not on PATH in either editor after a real install, so this is the developer's
   // setup: whatever the agent finds, it finds by reading the skill.
@@ -248,10 +251,18 @@ function runSession(editor, args, repo, home) {
       cwd: repo,
       env,
       encoding: "utf8",
-      timeout: SESSION_TIMEOUT_MS,
+      timeout,
       maxBuffer: 256 * 1024 * 1024,
     });
   } catch (err) {
+    // A session the walk stopped is not an ending the agent chose, and what it left half written
+    // is not an answer. Measured 2026-09-13: an apply session read the project, spent the rest of
+    // fifteen minutes on one reply that never arrived, and the reading recorded "wrote nothing".
+    if (err.code === "ETIMEDOUT") {
+      throw Object.assign(new Error(`the session was stopped after ${timeout / 60000} minutes, unfinished`), {
+        timedOut: true,
+      });
+    }
     // A blocking verdict makes the agent's last command exit non-zero, which can end the session
     // non-zero too. The stream is still what matters.
     stdout = err.stdout ?? "";
@@ -311,13 +322,31 @@ const REVIEW_FORBIDDEN = [
   },
 ];
 
-const APPLY_FORBIDDEN = [
-  // The id as a word in a sentence, which would be Smith's vocabulary handed to a developer. Not
-  // the same string inside a path: the first walk to reach code named its spec file after the
-  // feature, `duplicate-order-prevention-spec.md`, and a file named after what it describes is a
-  // good name rather than a leak.
-  { what: "the id of the entry it applied", pattern: /(?<![\w/`-])duplicate-order-prevention(?![\w-]|[./][\w])/ },
-  { what: "a word only this product uses", pattern: /\bcatalog entr(y|ies)\b|\bintegration block\b/i },
+// The id as a word in a sentence, which would be Smith's vocabulary handed to a developer. Not
+// the same string inside a path: the first walk to reach code named its spec file after the
+// feature, `duplicate-order-prevention-spec.md`, and a file named after what it describes is a
+// good name rather than a leak.
+const entryIdForbidden = (entry) => ({
+  what: "the id of the entry it applied",
+  pattern: new RegExp(`(?<![\\w/\`-])${entry}(?![\\w-]|[./][\\w])`),
+});
+
+const APPLY_VOCABULARY = {
+  what: "a word only this product uses",
+  pattern: /\bcatalog entr(y|ies)\b|\bintegration block\b/i,
+};
+
+const APPLY_FORBIDDEN = [entryIdForbidden("duplicate-order-prevention"), APPLY_VOCABULARY];
+
+/**
+ * The same list for whichever entry a session applied. A one-word id is an English word before it
+ * is ours — "dashboard" in a sentence is the feature being described — so only a hyphenated id,
+ * which nobody writes in prose, is read as a leak.
+ */
+const applyForbiddenFor = (entry) => [
+  ...FORBIDDEN,
+  ...(entry.includes("-") ? [entryIdForbidden(entry)] : []),
+  APPLY_VOCABULARY,
 ];
 
 function firstMatch(text, pattern) {
@@ -567,15 +596,37 @@ function registeredExtensions(xml) {
  * thing the build has to load.
  */
 function extensionsWrittenInto(repo, written) {
-  const roots = execFileSync("git", ["ls-files", "-co", "--exclude-standard"], {
-    cwd: repo,
-    encoding: "utf8",
-  })
+  const roots = extensionRoots(repo);
+  const owner = (path) => roots.find((root) => path.startsWith(`${root}/`));
+  return [...new Set(written.map(owner).filter(Boolean))];
+}
+
+/** Every directory in the checkout that holds an `extensioninfo.xml`, which is what an extension is. */
+function extensionRoots(repo) {
+  return execFileSync("git", ["ls-files", "-co", "--exclude-standard"], { cwd: repo, encoding: "utf8" })
     .split("\n")
     .filter((path) => /(^|\/)extensioninfo\.xml$/i.test(path))
     .map(dirname);
-  const owner = (path) => roots.find((root) => path.startsWith(`${root}/`));
-  return [...new Set(written.map(owner).filter(Boolean))];
+}
+
+/**
+ * What each extension pulls in with it, as `requires-extension` declares it.
+ *
+ * The platform resolves this itself, so an extension nobody named in `localextensions.xml` is still
+ * loaded when a registered one requires it. The catalog relies on it: `account-summary` registers
+ * only its OCC extension and lets the core and facades halves come in behind it, and a check that
+ * reads the registration file alone calls two thirds of that feature dead code.
+ */
+function requiredExtensions(repo) {
+  const requires = new Map();
+  for (const root of extensionRoots(repo)) {
+    const xml = contentsOf(repo, `${root}/extensioninfo.xml`).replace(/<!--[\s\S]*?-->/g, "");
+    const needed = (xml.match(/<requires-extension\b[^>]*>/g) ?? [])
+      .map((tag) => /\bname\s*=\s*"([^"]*)"/.exec(tag)?.[1])
+      .filter(Boolean);
+    requires.set(root.split("/").pop(), needed);
+  }
+  return requires;
 }
 
 /** What a command printed, on either stream, whether or not it exited zero. */
@@ -673,7 +724,20 @@ function impexProblems(repo, paths) {
  * can fail are reading the same logic.
  */
 function registration(repo, written) {
-  const registered = registeredExtensions(contentsOf(repo, LOCALEXTENSIONS));
+  const requires = requiredExtensions(repo);
+  const loaded = new Set(registeredExtensions(contentsOf(repo, LOCALEXTENSIONS)));
+  // A plain worklist, because each extension added can require more and a stream has no natural
+  // way to say "keep going until nothing new turns up".
+  const pending = [...loaded];
+  while (pending.length) {
+    for (const needed of requires.get(pending.pop()) ?? []) {
+      if (!loaded.has(needed)) {
+        loaded.add(needed);
+        pending.push(needed);
+      }
+    }
+  }
+  const registered = [...loaded];
   const landedIn = extensionsWrittenInto(repo, written);
   const unregistered = landedIn.filter((root) => !registered.includes(root.split("/").pop()));
   return { registered, landedIn, unregistered };
@@ -765,7 +829,7 @@ function reviewChecks({ repo, text, commands }) {
  * No agent findings are submitted. The reasoning half needs a second session and would measure the
  * model rather than what Pergamon wrote, so the verdict here is the deterministic rules alone.
  */
-async function reviewWhatWasWritten(repo, key) {
+async function reviewWhatWasWritten(repo, key, title = "what an apply session wrote") {
   execFileSync("git", ["add", "-A"], { cwd: repo, stdio: "ignore" });
   const home = mkdtempSync(join(tmpdir(), "smith-review-home-"));
   const plugin = join(PLUGIN_DIR, "bin", "smith");
@@ -791,10 +855,20 @@ async function reviewWhatWasWritten(repo, key) {
     // diff, and an empty diff is the way this check fails quietly.
     const sent = execFileSync("git", ["diff", "--cached", "--numstat"], { cwd: repo, encoding: "utf8" })
       .split("\n")
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((line) => {
+        const [added, , path] = line.split("\t");
+        return { path, added: Number(added) || 0 };
+      });
+    const addedIn = (matches) =>
+      sent.filter(({ path }) => matches(path)).reduce((total, { added }) => total + added, 0);
     const size = {
       files: sent.length,
-      lines: sent.reduce((total, line) => total + (Number(line.split("\t")[0]) || 0), 0),
+      lines: addedIn(() => true),
+      // The lines a rule can fire on, counted the way the corpus rate counts them. A spec written in
+      // markdown is added lines no rule reads, and dividing by it would flatter the rate for free.
+      reviewedLines: addedIn((path) => REVIEWED_EXTENSIONS.some((extension) => path.endsWith(extension))),
+      javaLines: addedIn((path) => path.endsWith(".java")),
     };
     // A session that wrote nothing has no diff, and the CLI refuses to send one rather than
     // asking for a review of it. Measured 2026-09-05 on a cursor run that returned an empty
@@ -802,59 +876,206 @@ async function reviewWhatWasWritten(repo, key) {
     // among the others rather than as the walk itself falling over.
     let plan;
     try {
-      plan = JSON.parse(run(["plan", "--title", "what an apply session wrote"]));
+      plan = JSON.parse(run(["plan", "--title", title]));
     } catch (err) {
       if (!/no changes to review/.test(err.message)) throw err;
       plan = { skipped: true, reason: "the session wrote nothing, so there was no diff to review" };
     }
-    if (plan.skipped) return { plan, verdict: null, size };
+    // The walk deletes the project afterwards, and a quiet rate can only be read by opening the code
+    // the rules were quiet about. Everything is staged, so the cached diff is the whole change.
+    const diff = execFileSync("git", ["diff", "--cached"], {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (plan.skipped) return { plan, verdict: null, size, diff };
     // No id: since AE2 the plan writes nothing and `submit` is what creates the review. Passing
     // `plan.review_id` sent `undefined` and the CLI reviewed whatever it was standing in.
-    const verdict = JSON.parse(run(["submit"], '{"findings": []}'));
-    return { plan, verdict, size };
+    const verdict = JSON.parse(run(["submit", "--title", title], '{"findings": []}'));
+    return { plan, verdict, size, diff };
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
 }
 
-/** The reading, written whether the verdict blocks or not — a blocking one is the interesting case. */
-function writeReviewReading(path, { plan, verdict, size }) {
-  const findings = plan.deterministic_findings ?? [];
+/**
+ * What the ruleset says about human-written code, which is the only thing generated code can be
+ * compared against here. Measured 2026-09-13 by `uv run pytest -k precision -s` over a real
+ * checkout: 108 findings in 370,833 lines of the file kinds below. PMD is measured apart, on a
+ * sample of 150 Java files, because the corpus rate is the ruleset's alone.
+ */
+// ponytail: pinned readings, re-measure with the command above when the ruleset changes.
+const CORPUS = { findings: 108, lines: 370833, pmdPer1000JavaLines: 1.35 };
+const CORPUS_FINDINGS_PER_1000 = (CORPUS.findings * 1000) / CORPUS.lines;
+
+// What `tests/corpus.py` counts as a line a rule can read. The two have to agree, or the walk and
+// the corpus divide by different things and the comparison is between two definitions.
+const REVIEWED_EXTENSIONS = [".java", ".impex", ".properties", ".xml", ".js", ".ts"];
+
+/** An analyzer's finding carries its tool in the id — `pmd:`, `eslint:`, `depcruise:`. A rule's does not. */
+const fromAnalyzer = (finding) => finding.rule_id.includes(":");
+
+/** P(X <= k) for a Poisson count with this mean. A plain loop: it is a running sum of terms. */
+function poissonAtMost(k, mean) {
+  let term = Math.exp(-mean);
+  let total = term;
+  for (let i = 1; i <= k; i++) {
+    term *= mean / i;
+    total += term;
+  }
+  return total;
+}
+
+/**
+ * Which of the three readings the count is, said in words rather than left for a reader to infer.
+ *
+ * "Far" means the corpus rate would produce a count this extreme less than one time in twenty.
+ * A ratio alone would call zero findings over two thousand lines "far below", when the corpus rate
+ * predicts less than one finding there and zero is the most likely thing it produces.
+ *
+ * The far-below case is the one that needs a person. Better code and a blind ruleset look the same
+ * from here, so the reading names both and says where the answer gets written.
+ */
+function rateReading({ findings, predicted, readings }) {
+  const aboveByChance = findings === 0 ? 1 : 1 - poissonAtMost(findings - 1, predicted);
+  const belowByChance = poissonAtMost(findings, predicted);
+  const expected = `${findings} ruleset finding${findings === 1 ? "" : "s"} where the corpus rate predicts ${predicted.toFixed(2)}`;
+  if (aboveByChance < 0.05) {
+    const guilty = readings
+      .filter(({ plan }) => (plan.deterministic_findings ?? []).some((finding) => !fromAnalyzer(finding)))
+      .map(({ entry }) => entry);
+    return (
+      `**Far above the corpus.** ${expected}. The entries that produced them are wrong, not the ` +
+      `rules: ${guilty.join(", ")}. Each finding gets fixed in the entry it came from.`
+    );
+  }
+  if (belowByChance < 0.05) {
+    return (
+      `**Far below the corpus.** ${expected}. Two explanations fit and the numbers cannot separate ` +
+      "them: the output is cleaner than the corpus, or the ruleset is blind to the way generated " +
+      "code goes wrong. Deciding needs somebody to read the generated code and name what a rule " +
+      "would have had to catch, and that reading goes in the notes log of `tasks.md`, because this " +
+      "file is not committed."
+    );
+  }
+  return (
+    `**About the corpus rate.** ${expected}.` +
+    (predicted < 3
+      ? ` At this volume even no finding at all happens ${Math.round(poissonAtMost(0, predicted) * 100)}% ` +
+        "of the time at the corpus rate, so this cannot tell code as good as the corpus from better " +
+        "code or from a ruleset blind to it. More generated lines is what would."
+      : " Generated code is about as good as the human code this ruleset was tuned against.")
+  );
+}
+
+/**
+ * The reading, written whether a verdict blocks or not — a blocking one is the interesting case.
+ *
+ * Takes a list because one entry is not a measurement: a sweep of the catalog writes every entry
+ * into the same file, and the rate over all of them is the number worth reading.
+ */
+function writeReviewReading(path, readings) {
+  const total = { files: 0, lines: 0, reviewedLines: 0, javaLines: 0, ruleset: 0, analyzers: 0 };
+  for (const { plan, size } of readings) {
+    const findings = plan.deterministic_findings ?? [];
+    total.files += size.files;
+    total.lines += size.lines;
+    total.reviewedLines += size.reviewedLines ?? 0;
+    total.javaLines += size.javaLines ?? 0;
+    total.analyzers += findings.filter(fromAnalyzer).length;
+    total.ruleset += findings.length - findings.filter(fromAnalyzer).length;
+  }
+  const per1000 = (count, lines) => (lines ? (count * 1000) / lines : 0);
+  const predicted = (total.reviewedLines * CORPUS_FINDINGS_PER_1000) / 1000;
+  const blocked = readings.filter(({ verdict }) => verdict?.blocking);
+  const notReviewed = readings.filter(({ verdict }) => !verdict);
   const lines = [
     `# Smith reviews what Pergamon wrote — ${new Date().toISOString().slice(0, 10)}`,
     "",
-    "The apply walk's own output, sent through `smith plan` and `smith submit` with the walk's key.",
+    "Each apply session's output, sent through `smith plan` and `smith submit` with the walk's key.",
     "Deterministic rules only: no agent findings were submitted, because a second reasoning session",
     "would measure the model rather than the catalog entry.",
     "",
-    verdict
-      ? `Verdict: **${verdict.blocking ? "blocks" : "does not block"}** — ${verdict.reason || "no reason given"}`
-      : `No review: the server skipped it — ${plan.reason || "no reason given"}`,
+    "## The rate",
     "",
-    `Reviewed: ${size.files} files, ${size.lines} added lines`,
-    `Platform version detected: ${plan.platform_version || "(none)"}`,
-    `Findings: ${findings.length}`,
+    `Entries walked: ${readings.length}` +
+      (notReviewed.length ? ` — ${notReviewed.length} wrote nothing to review: ${notReviewed.map(({ entry }) => entry).join(", ")}` : ""),
+    `Generated: ${total.files} files, ${total.lines} added lines, ${total.reviewedLines} of them in files the ruleset reads`,
+    `Ruleset: ${total.ruleset} findings — **${per1000(total.ruleset, total.reviewedLines).toFixed(3)} per 1000 lines**, ` +
+      `against the corpus's ${CORPUS_FINDINGS_PER_1000.toFixed(3)} over ${CORPUS.lines} lines of a real checkout`,
+    `Analyzers: ${total.analyzers} findings over ${total.javaLines} added Java lines — ` +
+      `${per1000(total.analyzers, total.javaLines).toFixed(2)} per 1000, against PMD's ${CORPUS.pmdPer1000JavaLines} ` +
+      "on a corpus sample. Kept out of the rate above, which is the ruleset's alone.",
+    `Blocking: ${blocked.length} of ${readings.length}` +
+      (blocked.length ? ` — ${blocked.map(({ entry }) => entry).join(", ")}` : ""),
+    "",
+    rateReading({ findings: total.ruleset, predicted, readings }),
+    "",
+    "| entry | files | added lines | lines the ruleset reads | ruleset findings | analyzer findings | verdict |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...readings.map(({ entry, plan, verdict, size }) => {
+      const findings = plan.deterministic_findings ?? [];
+      const said = verdict ? (verdict.blocking ? "blocks" : "does not block") : "not reviewed";
+      const analyzers = findings.filter(fromAnalyzer).length;
+      return `| ${entry} | ${size.files} | ${size.lines} | ${size.reviewedLines ?? 0} | ${findings.length - analyzers} | ${analyzers} | ${said} |`;
+    }),
     "",
   ];
-  for (const finding of findings) {
+  for (const { entry, plan, verdict, size } of readings) {
+    const findings = plan.deterministic_findings ?? [];
+    const byRule = Object.entries(
+      findings.reduce((counts, { rule_id }) => ({ ...counts, [rule_id]: (counts[rule_id] ?? 0) + 1 }), {})
+    );
     lines.push(
-      `## ${finding.index ?? "?"}. ${finding.rule_id} — ${finding.severity}`,
+      `## ${entry}`,
       "",
-      `- file: \`${finding.file}\`${finding.line ? `:${finding.line}` : ""}`,
-      `- line: \`${finding.quoted_line ?? ""}\``,
-      `- says: ${finding.message}`,
-      ...(finding.suggestion ? [`- fix: ${finding.suggestion}`] : []),
-      // Which of the three a finding is cannot be decided by the script that found it, so the line
-      // is left as the question rather than printed as an answer nobody computed.
-      "- reading, pick one: _Pergamon's fault_ / _a rule noisy on generated code_ / _correct and worth fixing in the entry_",
+      verdict
+        ? `Verdict: **${verdict.blocking ? "blocks" : "does not block"}** — ${verdict.reason || "no reason given"}`
+        : `No review: the server skipped it — ${plan.reason || "no reason given"}`,
+      "",
+      `Reviewed: ${size.files} files, ${size.lines} added lines`,
+      `Platform version detected: ${plan.platform_version || "(none)"}`,
+      `Findings: ${findings.length}${byRule.length ? ` — ${byRule.map(([rule, count]) => `${rule} ${count}`).join(", ")}` : ""}`,
       ""
     );
+    for (const finding of findings) {
+      lines.push(
+        `### ${finding.index ?? "?"}. ${finding.rule_id} — ${finding.severity}`,
+        "",
+        `- file: \`${finding.file}\`${finding.line ? `:${finding.line}` : ""}`,
+        `- line: \`${finding.quoted_line ?? ""}\``,
+        `- says: ${finding.message}`,
+        ...(finding.suggestion ? [`- fix: ${finding.suggestion}`] : []),
+        // Which of the three a finding is cannot be decided by the script that found it, so the line
+        // is left as the question rather than printed as an answer nobody computed.
+        "- reading, pick one: _Pergamon's fault_ / _a rule noisy on generated code_ / _correct and worth fixing in the entry_",
+        ""
+      );
+    }
+    if (!findings.length) lines.push("Nothing fired.", "");
   }
-  if (!findings.length) lines.push("Nothing fired.", "");
   writeFileSync(path, lines.join("\n"));
 }
 
-async function applyChecks({ repo, text, commands, key }) {
+/**
+ * Add one entry's measurement to the day's reading and rewrite it, keeping the code it was taken on.
+ *
+ * The measurements are kept beside the reading, so running one entry again replaces that entry
+ * instead of throwing away the others, each of which cost a session of several minutes.
+ */
+function recordReading(stem, measurement, diff = "") {
+  if (diff) writeFileSync(`${stem}-${measurement.entry}.diff`, diff);
+  const store = `${stem}.json`;
+  const readings = existsSync(store) ? JSON.parse(readFileSync(store, "utf8")) : [];
+  const kept = readings.filter(({ entry }) => entry !== measurement.entry);
+  kept.push(measurement);
+  kept.sort((one, other) => one.entry.localeCompare(other.entry));
+  writeFileSync(store, `${JSON.stringify(kept, null, 2)}\n`);
+  writeReviewReading(`${stem}.md`, kept);
+  return `${stem}.md`;
+}
+
+async function applyChecks({ repo, text, commands, key, readingStem }) {
   const catalogCalls = commands.filter((c) => /\bcatalog\b/.test(c));
   check("the agent read the catalog before choosing", catalogCalls.length > 0, commands.join(" ; ").slice(0, 300));
   check(
@@ -1024,10 +1245,8 @@ async function applyChecks({ repo, text, commands, key }) {
   );
 
   // Last, because it stages the repository and every check above reads it unstaged.
-  const { plan, verdict, size } = await reviewWhatWasWritten(repo, key);
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  const reading = join(OUTPUT_DIR, `pergamon-reviewed-${new Date().toISOString().slice(0, 10)}.md`);
-  writeReviewReading(reading, { plan, verdict, size });
+  const { plan, verdict, size, diff } = await reviewWhatWasWritten(repo, key);
+  const reading = recordReading(readingStem, { entry: "duplicate-order-prevention", plan, verdict, size }, diff);
   console.log(`\nreviewed what the session wrote: ${reading}`);
 
   // A session that wrote a feature is not a trivial change, so the gate firing here means the diff
@@ -1211,17 +1430,20 @@ async function discardProject(slug) {
   }
 }
 
-async function catalogIsLoaded(key) {
+/** The ids the server's catalog holds, failing by name when an expected one is not among them. */
+async function catalogIsLoaded(key, expected = ["duplicate-order-prevention"]) {
   const listed = await fetch(`${API}/v1/catalog`, {
     headers: { ...NO_KEEPALIVE, authorization: `Bearer ${key}` },
   });
-  const entries = listed.ok ? (await listed.json()).entries : [];
-  if (!entries.some((entry) => entry.id === "duplicate-order-prevention")) {
+  const ids = listed.ok ? (await listed.json()).entries.map((entry) => entry.id) : [];
+  const missing = expected.filter((id) => !ids.includes(id));
+  if (missing.length) {
     throw new Error(
-      "the catalog does not hold duplicate-order-prevention — load it with:\n" +
+      `the catalog does not hold ${missing.join(", ")} — load it with:\n` +
         "  uv run python scripts/seed_catalog.py"
     );
   }
+  return ids;
 }
 
 /**
@@ -1251,6 +1473,179 @@ const APPLY_REQUEST =
  */
 const APPLY_SYMPTOM =
   "buyers are placing the same order twice when they double-click, can you fix that";
+
+/**
+ * The same conversation as `APPLY_REQUEST`, once per catalog entry: the need in a developer's own
+ * words, then that entry's `ask` list answered, then the go-ahead.
+ *
+ * Written by hand from each entry's questions rather than generated from them, because an `ask` is
+ * a question only a project can answer — "which sizes does the storefront ask for" has no answer in
+ * the file that asks it. A session that has to ask stops with nothing written, which measures the
+ * headless walk instead of the entry.
+ *
+ * The entry is never named. Matching what the developer said against the catalog is the first thing
+ * the command does, and naming it would skip that step and measure a different product.
+ */
+const CATALOG_REQUESTS = {
+  "account-summary":
+    "our B2B buyers need one page showing their unit's open balance, its credit limit and a list " +
+    "of its invoices, credit memos and delivery notes. Only the buyer's own unit. The documents " +
+    "are imported into Commerce nightly, the credit limit comes from the finance system so leave " +
+    "it as one method to implement, and invoices and credit memos count towards the balance while " +
+    "delivery notes do not. Go ahead and write it.",
+  "cost-center":
+    "B2B buyers have to choose which cost center pays for the order while they are in checkout. " +
+    "The cost centers are created in backoffice. Show the selector to every B2B buyer, and when " +
+    "their unit has no cost center at all let them carry on without one. Go ahead and write it.",
+  dashboard:
+    "we want a page of chart widgets that a user drags into the shape they want. The first numbers " +
+    "are orders per day and revenue per month. It is for our own internal users, so the numbers " +
+    "cover the whole store. Each user keeps their own layout, and one fixed query per number is " +
+    "enough for now. Go ahead and write it.",
+  "duplicate-order-prevention": APPLY_REQUEST,
+  "feature-flags":
+    "the storefront needs feature flags it reads once when it boots. Business users flip them in " +
+    "Backoffice at runtime, not developers at deploy time. A flag can differ per base site. On and " +
+    "off is enough, none of them carries a value. The storefront asks for the codes it needs. Go " +
+    "ahead and write it.",
+  "potential-promotions":
+    "on the listing and the product page we want to show what a promotion would take off this " +
+    "price, and how much more the buyer has to add to reach the next step. Percentage, absolute " +
+    "and the tiered kind. The promotions are for everyone, not targeted at segments, and they are " +
+    "targeted at categories. A product with no promotion shows its plain price. Apply the discount " +
+    "to the indexed price. Go ahead and write it.",
+  "product-comparison":
+    "shoppers want to put products side by side and compare them, from the listing tiles and from " +
+    "the product page. Compare the classification features. The selection survives a reload, four " +
+    "products at most, and the add control goes on both the tiles and the product page. Go ahead " +
+    "and write it.",
+  "webp-media":
+    "our product images are far too heavy and we want the platform to produce WebP. The storefront " +
+    "asks for thumbnail, product and zoom. Keep the original as it was uploaded. Lossy, quality " +
+    "80. Editors only ever upload JPEG and PNG. Go ahead and write it.",
+};
+
+/**
+ * What holds for every entry, which is all a sweep can assert: the session applied the entry that
+ * was described, reached code that parses, loaded it where the build would, left the project's own
+ * types alone, and said what it wrote. Everything past that is one entry's own shape and belongs to
+ * the `apply` walk.
+ */
+function catalogEntryChecks(entry, { repo, text, commands }) {
+  const catalogCalls = commands.filter((c) => /\bcatalog\b/.test(c));
+  check(
+    `${entry}: the agent read the entry the developer described`,
+    catalogCalls.some((c) => new RegExp(`\\bcatalog\\s+["']?${entry}\\b`).test(c)),
+    catalogCalls.join(" ; ").slice(0, 300) || "the catalog was never read"
+  );
+  const written = filesWritten(repo);
+  check(
+    `${entry}: the developer got code, not only a plan`,
+    written.some((path) => /\.(java|ts|impex)$/i.test(path)),
+    written.join(" ; ").slice(0, 300) || "nothing was written"
+  );
+  const malformed = structuralProblems(repo, written);
+  check(`${entry}: every file the session wrote parses`, malformed.length === 0, malformed.join(" ; ").slice(0, 600));
+  // Only the half of the `apply` walk's registration check that holds for every entry: two entries
+  // are storefront modules with no platform extension at all, on purpose. What is never acceptable
+  // is code inside an extension the build would not load.
+  const { registered, unregistered } = registration(repo, written);
+  check(
+    `${entry}: every extension the code landed in is registered, so the build would load it`,
+    unregistered.length === 0,
+    `not registered: ${unregistered.join(", ")} — registered: ${registered.join(", ") || "none"}`
+  );
+  const survivor = itemtypes(contentsOf(repo, PROJECT_ITEMS)).find((block) =>
+    block.includes(`code="${PROJECT_ITEM_TYPE}"`)
+  );
+  check(
+    `${entry}: the project's own item type survived`,
+    Boolean(survivor) && survivor.includes(`typecode="${PROJECT_TYPECODE}"`),
+    (survivor ?? "the type is no longer declared").slice(0, 300)
+  );
+  const stolen = written
+    .filter((path) => /items\.xml$/i.test(path))
+    .flatMap((path) => itemtypes(contentsOf(repo, path)))
+    .find(
+      (block) =>
+        block.includes(`typecode="${PROJECT_TYPECODE}"`) && !block.includes(`code="${PROJECT_ITEM_TYPE}"`)
+    );
+  check(`${entry}: the taken typecode was not handed to a new type`, !stolen, (stolen ?? "").slice(0, 300));
+  const named = pathsNamedIn(text, written);
+  check(
+    `${entry}: the agent's own text names the files it wrote, as paths`,
+    named.length >= 3,
+    `${named.length} of ${written.length} written paths are named — ${named.join(" ; ") || "none"}`
+  );
+}
+
+/**
+ * An apply session per catalog entry, each into a fresh project, each sent through the review a
+ * developer's change would take. The reading is rewritten after every entry, so a sweep that is
+ * killed halfway still leaves what it measured.
+ *
+ * One review project for the whole sweep rather than one each: a review belongs to a project, and
+ * eight throwaway projects is eight rows to clean up for nothing. Nothing one review stores can
+ * change another's findings — muting needs a disposition, and a sweep submits none.
+ */
+async function catalogSweep({ walk, editor, editorName, key, slug, only, readingStem }) {
+  const unknown = only.filter((entry) => !CATALOG_REQUESTS[entry]);
+  if (unknown.length) throw new Error(`no request is written for: ${unknown.join(", ")}`);
+  const entries = only.length ? only : Object.keys(CATALOG_REQUESTS);
+  const held = await catalogIsLoaded(key, entries);
+  // "Across every entry" is the claim the rate makes, so an entry nobody wrote a request for would
+  // make it a lie by omission.
+  const unwritten = held.filter((id) => !CATALOG_REQUESTS[id]);
+  if (!only.length && unwritten.length) {
+    throw new Error(`the catalog holds entries this sweep has no request for: ${unwritten.join(", ")}`);
+  }
+
+  for (const [index, entry] of entries.entries()) {
+    console.log(`\n=== ${index + 1}/${entries.length} · ${entry}`);
+    let session;
+    try {
+      session = walkOnce({
+        walk,
+        editor,
+        editorName,
+        key,
+        slug,
+        prompt: `/smith-apply ${CATALOG_REQUESTS[entry]}`,
+        transcript: `${walk.transcript}-${entry}`,
+      });
+    } catch (err) {
+      // A stopped session is not recorded, so it cannot pass for an entry that wrote nothing, and
+      // the next entry still runs: one feature too big for the cap says nothing about the others.
+      if (!err.timedOut) throw err;
+      check(`${entry}: the session finished before the walk stopped it`, false, err.message);
+      continue;
+    }
+    try {
+      check(`${entry}: the agent said something to the developer`, session.text.length > 0);
+      catalogEntryChecks(entry, session);
+      for (const { what, pattern } of applyForbiddenFor(entry)) {
+        check(`${entry}: the developer is never shown ${what}`, !pattern.test(session.text), firstMatch(session.text, pattern));
+      }
+      const { plan, verdict, size, diff } = await reviewWhatWasWritten(session.repo, key, `pergamon: ${entry}`);
+      const reading = recordReading(readingStem, { entry, plan, verdict, size }, diff);
+      console.log(`reviewed what the session wrote: ${reading}`);
+      check(`${entry}: the change is big enough to be reviewed at all`, Boolean(verdict), plan.reason ?? "");
+      check(
+        `${entry}: Smith's own reviewer does not block what Pergamon wrote`,
+        verdict ? !verdict.blocking : false,
+        verdict ? verdict.reason ?? "" : "there was no verdict to read"
+      );
+      const critical = (plan.deterministic_findings ?? []).filter((finding) => finding.severity === "critical");
+      check(
+        `${entry}: nothing the session wrote is a critical finding`,
+        critical.length === 0,
+        critical.map((finding) => `${finding.rule_id} at ${finding.file}:${finding.line ?? "?"}`).join(" ; ")
+      );
+    } finally {
+      rmSync(session.repo, { recursive: true, force: true });
+    }
+  }
+}
 
 // --------------------------------------------------------------------------------------------
 // staying current
@@ -1852,6 +2247,19 @@ const WALKS = {
     forbidden: [...FORBIDDEN, ...APPLY_FORBIDDEN],
     checks: applyAskChecks,
   },
+  "apply-catalog": {
+    // The `apply` session once per entry, into a fresh project each time. It carries no prompt of
+    // its own and asserts only what holds for every entry: what one entry's code has to look like
+    // is that entry's business, and what this walk reads is the rate over all of them.
+    tools: "Bash,Read,Glob,Grep,Write,Edit",
+    transcript: "apply-catalog",
+    // Three extensions, an OCC layer and a storefront module is a longer session than the one
+    // feature the other walks ask for: `account-summary` read the project and had not finished its
+    // next reply when fifteen minutes ran out.
+    sessionTimeoutMs: 45 * 60 * 1000,
+    setup: buildCommerceProject,
+    sweep: catalogSweep,
+  },
 };
 
 // --------------------------------------------------------------------------------------------
@@ -1934,6 +2342,67 @@ function selfCheck() {
     [`core-customize/hybris/bin/custom/${cursorLayout[1]}`],
     "an extension whose code was written and never registered reads as registered"
   );
+
+  // The layout the catalog itself asks for, measured 2026-09-05 on `account-summary`: three
+  // extensions, one of them registered, the other two pulled in by `requires-extension`. The
+  // platform loads all three, and reading the registration file alone called two of them dead code.
+  const chained = ["accountsummarycore", "accountsummaryfacades", "accountsummaryocc"];
+  const chain = { accountsummaryocc: ["accountsummaryfacades"], accountsummaryfacades: ["accountsummarycore"] };
+  assert.deepEqual(
+    unregisteredIn(chained, acme + `<extension name="accountsummaryocc"/>`, [], chain),
+    [],
+    "an extension required by a registered one reads as unregistered"
+  );
+  // And the case that has to stay red: a chain nobody registered is still a chain nobody loads.
+  assert.deepEqual(
+    unregisteredIn(chained, acme, [], chain).sort(),
+    chained.map((extension) => `core-customize/hybris/bin/custom/${extension}`).sort(),
+    "a requires-extension chain hanging off nothing reads as registered"
+  );
+
+  // The id check follows the entry a session applied, and only where the id is not also a word.
+  const leaks = (entry, text) => applyForbiddenFor(entry).some(({ pattern }) => pattern.test(text));
+  assert.ok(leaks("cost-center", "I matched this to cost-center."), "a hyphenated id in prose does not read as a leak");
+  assert.ok(
+    !leaks("cost-center", "Wrote `storefront/cost-center.module.ts` and app-cost-center."),
+    "an id inside a file name or a selector reads as a leak"
+  );
+  assert.ok(!leaks("dashboard", "The dashboard page shows two charts."), "a one-word id in prose reads as a leak");
+  assert.ok(
+    leaks("duplicate-order-prevention", "This is duplicate-order-prevention.") &&
+      !leaks("duplicate-order-prevention", "Specs in docs/duplicate-order-prevention-spec.md"),
+    "the apply walk's own id check no longer reads the way it did"
+  );
+
+  // The editor ending a session for usage, measured as it reached the transcript on 2026-09-05, and
+  // the sentence an agent can legitimately write about a limit without the session ending.
+  assert.ok(
+    endedByUsageLimit("Now the facades extension.\n\nYou've hit your weekly limit · resets Sep 6 at 11pm (America/Bogota)"),
+    "a session the editor cut off for usage reads as a session that ran"
+  );
+  assert.ok(
+    !endedByUsageLimit("You've hit your credit limit check in the facade.\n\nWrote 12 files, listed below."),
+    "an agent's sentence about a limit reads as the editor stopping the session"
+  );
+
+  // A stopped session has to say so, and a session that ended badly on its own has to stay a stream:
+  // a blocking verdict exits non-zero and is exactly the case the review walks read.
+  const shell = { binary: "sh" };
+  const scratch = mkdtempSync(join(tmpdir(), "smith-session-"));
+  try {
+    assert.throws(
+      () => runSession(shell, ["-c", 'echo \'{"type":"assistant"}\'; sleep 5'], scratch, scratch, 300),
+      (err) => err.timedOut === true,
+      "a session the walk stopped reads as one that finished"
+    );
+    assert.equal(
+      runSession(shell, ["-c", 'echo \'{"type":"assistant"}\'; exit 1'], scratch, scratch).length,
+      1,
+      "a session that exited non-zero on its own loses its stream"
+    );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 
   // The schema decision, on the two shapes real sessions produced. The redesign is the one that has
   // to read as red: it writes the same qualifier, one type away from where the entry puts it, so a
@@ -2067,15 +2536,19 @@ function structuralSelfCheck() {
  * A throwaway project holding these extensions, registering `body`, with every file under the new
  * extensions written by the session — and what the walk's check would say about it.
  */
-function unregisteredIn(created, body, alsoWritten = []) {
+function unregisteredIn(created, body, alsoWritten = [], requires = {}) {
   const repo = mkdtempSync(join(tmpdir(), "smith-selfcheck-"));
   const write = (path, contents) => {
     mkdirSync(join(repo, dirname(path)), { recursive: true });
     writeFileSync(join(repo, path), contents);
   };
+  const info = (extension) =>
+    `<extensioninfo><extension name="${extension}">` +
+    (requires[extension] ?? []).map((needed) => `<requires-extension name="${needed}"/>`).join("") +
+    "</extension></extensioninfo>\n";
   write(LOCALEXTENSIONS, `<hybrisconfig><extensions>${body}</extensions></hybrisconfig>\n`);
-  write(extensionInfo(PROJECT_EXTENSION), "<extensioninfo/>\n");
-  for (const extension of created) write(extensionInfo(extension), "<extensioninfo/>\n");
+  write(extensionInfo(PROJECT_EXTENSION), info(PROJECT_EXTENSION));
+  for (const extension of created) write(extensionInfo(extension), info(extension));
   for (const path of alsoWritten) write(path, "\n");
   execFileSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
   try {
@@ -2109,37 +2582,176 @@ function readingSelfCheck() {
     ],
   };
   const verdict = { blocking: true, reason: "1 finding(s) at or above `critical`" };
-  const path = join(mkdtempSync(join(tmpdir(), "smith-reading-")), "reading.md");
-  try {
-    writeReviewReading(path, { plan, verdict, size: { files: 18, lines: 640 } });
-    const written = readFileSync(path, "utf8");
-    for (const expected of [
-      "## 1. hardcoded-secret — critical",
-      "acmecore/src/com/acme/Bad.java`:3",
-      "Verdict: **blocks**",
-      "Reviewed: 18 files, 640 added lines",
-      "- reading, pick one:",
-    ]) {
-      assert.ok(written.includes(expected), `the reading does not say "${expected}":\n${written}`);
+  const clear = { blocking: false, reason: "no blocking findings" };
+  const quietPlan = { platform_version: "2211", deterministic_findings: [] };
+  const size = (lines, files = 10) => ({ files, lines, reviewedLines: lines, javaLines: lines });
+  const directory = mkdtempSync(join(tmpdir(), "smith-reading-"));
+  const path = join(directory, "reading.md");
+  const read = (readings) => {
+    writeReviewReading(path, readings);
+    return readFileSync(path, "utf8");
+  };
+  const says = (reading, expected, what) => {
+    for (const sentence of expected) {
+      assert.ok(reading.includes(sentence), `${what} does not say "${sentence}":\n${reading}`);
     }
+  };
+  try {
+    const written = read([{ entry: "duplicate-order-prevention", plan, verdict, size: size(640, 18) }]);
+    says(
+      written,
+      [
+        "### 1. hardcoded-secret — critical",
+        "acmecore/src/com/acme/Bad.java`:3",
+        "Verdict: **blocks**",
+        "Reviewed: 18 files, 640 added lines",
+        "Findings: 1 — hardcoded-secret 1",
+        "Blocking: 1 of 1 — duplicate-order-prevention",
+        "- reading, pick one:",
+      ],
+      "a blocking reading"
+    );
+
+    // The arithmetic nothing else would catch: the rate is over the pooled lines, not an average of
+    // two entries' own rates, and an analyzer's finding stays out of it. Nine findings over 4000
+    // lines the ruleset reads is 2.25 per 1000; the PMD finding beside them must not make it 2.5.
+    const nine = Array.from({ length: 9 }, (_, at) => ({ ...plan.deterministic_findings[0], index: at + 1 }));
+    const pmd = { ...plan.deterministic_findings[0], index: 10, rule_id: "pmd:UnusedPrivateField", severity: "warning" };
+    const noisy = read([
+      { entry: "account-summary", plan: { ...plan, deterministic_findings: [...nine, pmd] }, verdict, size: size(1000) },
+      { entry: "webp-media", plan: quietPlan, verdict: clear, size: { files: 3, lines: 3500, reviewedLines: 3000, javaLines: 0 } },
+    ]);
+    says(
+      noisy,
+      [
+        "Generated: 13 files, 4500 added lines, 4000 of them in files the ruleset reads",
+        "**2.250 per 1000 lines**",
+        "Analyzers: 1 findings over 1000 added Java lines — 1.00 per 1000",
+        "| webp-media | 3 | 3500 | 3000 | 0 | 0 | does not block |",
+        // Nine where the corpus predicts about one is not chance, and the band names the entry
+        // that produced them rather than the one that stayed quiet.
+        "**Far above the corpus.**",
+        "not the rules: account-summary.",
+      ],
+      "a noisy reading"
+    );
+    assert.ok(!noisy.includes("not the rules: account-summary, webp-media"), `a quiet entry is blamed:\n${noisy}`);
+
+    // The trap the bands exist for: zero findings over a small change is what the corpus rate
+    // produces most of the time, so it must not read as generated code being better.
+    const small = read([{ entry: "cost-center", plan: quietPlan, verdict: clear, size: size(1500) }]);
+    says(small, ["**About the corpus rate.**", "cannot tell code as good as the corpus"], "a small quiet reading");
+    assert.ok(!small.includes("**Far below the corpus.**"), `zero over 1500 lines reads as far below:\n${small}`);
+
+    // And the same zero over enough code that the corpus would have said something several times.
+    const quiet = read([{ entry: "dashboard", plan: quietPlan, verdict: clear, size: size(20000) }]);
+    says(quiet, ["**Far below the corpus.**", "or the ruleset is blind"], "a large quiet reading");
+    assert.ok(
+      !quiet.includes("**About the corpus rate.**") && !quiet.includes("**Far above the corpus.**"),
+      `the quiet reading claims more than one band:\n${quiet}`
+    );
 
     // The other ending, which a green walk also never reaches: nothing was written, so there is no
     // verdict to report. It must say that rather than print a blank one and read as "not blocking".
-    writeReviewReading(path, {
-      plan: { skipped: true, reason: "the session wrote nothing, so there was no diff to review" },
-      verdict: null,
-      size: { files: 0, lines: 0 },
-    });
-    const nothing = readFileSync(path, "utf8");
-    for (const expected of ["No review: the server skipped it", "Reviewed: 0 files, 0 added lines"]) {
-      assert.ok(nothing.includes(expected), `the reading does not say "${expected}":\n${nothing}`);
-    }
+    const nothing = read([
+      {
+        entry: "feature-flags",
+        plan: { skipped: true, reason: "the session wrote nothing, so there was no diff to review" },
+        verdict: null,
+        size: { files: 0, lines: 0, reviewedLines: 0, javaLines: 0 },
+      },
+    ]);
+    says(
+      nothing,
+      ["No review: the server skipped it", "Reviewed: 0 files, 0 added lines", "1 wrote nothing to review: feature-flags"],
+      "a reading of nothing"
+    );
     assert.ok(!nothing.includes("Verdict:"), `a review that never ran still claims a verdict:\n${nothing}`);
 
-    return written.split("\n").find((line) => line.startsWith("## "));
+    // Running one entry again replaces it: a second reading of the same entry is not a second entry.
+    const stem = join(directory, "store");
+    recordReading(stem, { entry: "webp-media", plan, verdict, size: size(640) });
+    recordReading(stem, { entry: "cost-center", plan: quietPlan, verdict: clear, size: size(900) });
+    recordReading(stem, { entry: "webp-media", plan: quietPlan, verdict: clear, size: size(700) }, "+class Lock {}\n");
+    assert.equal(
+      contentsOf(directory, "store-webp-media.diff"),
+      "+class Lock {}\n",
+      "the code a measurement was taken on is not kept beside it"
+    );
+    const stored = JSON.parse(readFileSync(`${stem}.json`, "utf8"));
+    assert.deepEqual(
+      stored.map(({ entry, size: { lines } }) => `${entry} ${lines}`),
+      ["cost-center 900", "webp-media 700"],
+      "re-running an entry duplicates it or keeps the old measurement"
+    );
+
+    return written.split("\n").find((line) => line.startsWith("### "));
   } finally {
-    rmSync(dirname(path), { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true });
   }
+}
+
+/**
+ * The editor's own refusal to go on, as it reaches the developer's text: "You've hit your weekly
+ * limit · resets …". Read off the last paragraph only, because an agent's own sentence about a limit
+ * somewhere in its reasoning is not the session ending.
+ */
+function endedByUsageLimit(text) {
+  const last = text.split(/\n\s*\n/).pop() ?? "";
+  return last.length < 200 && /\b(hit|reached) your\b.*\blimit\b/i.test(last);
+}
+
+/**
+ * One session, and the transcript it left behind. The caller owns the repository afterwards: the
+ * checks read it off the disk and removing it is theirs.
+ *
+ * A session the editor cut off for usage is not evidence about anything, so it throws instead of
+ * returning. On 2026-09-05 a sweep ran into that limit and recorded seven entries as "the session
+ * wrote nothing", which is what a measurement looks like and is not one.
+ */
+function walkOnce({ walk, editor, editorName, key, slug, prompt, transcript }) {
+  const { repo, about } = walk.setup();
+  const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
+  // Most walks are about what happens after setup, so they start configured. A walk that reads the
+  // setup itself says so, and then the session has to do what a developer's first one does.
+  if (walk.seedCredentials !== false) {
+    execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
+      env: { ...process.env, SMITH_HOME: home },
+      stdio: "ignore",
+    });
+  }
+
+  editor.beforeSession?.();
+  // Most walks run the plugin out of this checkout. The update walk has to run it from a
+  // directory named by a commit sha, because that is where the sha it reports comes from.
+  const pluginDir = walk.pluginDir?.() ?? PLUGIN_DIR;
+  const args = editor.args(prompt, walk.tools, pluginDir);
+  console.log(`api ${API} · project ${slug} · ${about} · editor ${editorName}`);
+  console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
+
+  let messages;
+  let credentials;
+  try {
+    messages = runSession(editor, args, repo, home, walk.sessionTimeoutMs);
+  } catch (err) {
+    rmSync(repo, { recursive: true, force: true });
+    throw err;
+  } finally {
+    credentials = configLeftBehind(home);
+    rmSync(home, { recursive: true, force: true });
+  }
+
+  const text = developerText(messages);
+  const toolCalls = editor.toolCalls(messages);
+  const path = join(OUTPUT_DIR, `${transcript}${editor.suffix}-${new Date().toISOString().slice(0, 10)}.txt`);
+  writeTranscript(path, { editor, args, repo, slug, about, toolCalls, text });
+  console.log(`transcript: ${path}\n`);
+  if (endedByUsageLimit(text)) {
+    rmSync(repo, { recursive: true, force: true });
+    throw new Error(`the editor stopped the session for usage, so it measured nothing: ${text.split("\n").pop()}`);
+  }
+
+  return { repo, text, toolCalls, commands: shellCommandsOf(toolCalls), credentials };
 }
 
 async function main() {
@@ -2183,58 +2795,36 @@ async function main() {
 
   const slug = `walk-${Date.now().toString(36)}`;
   const key = bootstrapProject(slug, LEAD_EMAIL, LEAD_PASSWORD);
+  // Named once, before the first session: a sweep that runs past midnight still writes one reading.
+  const readingStem = join(
+    OUTPUT_DIR,
+    `pergamon-reviewed${editor.suffix}-${new Date().toISOString().slice(0, 10)}`
+  );
+  mkdirSync(OUTPUT_DIR, { recursive: true });
   try {
-    await walk.before?.(key);
-    const { repo, about } = walk.setup();
-    const home = mkdtempSync(join(tmpdir(), "smith-walk-home-"));
-    // Most walks are about what happens after setup, so they start configured. A walk that reads the
-    // setup itself says so, and then the session has to do what a developer's first one does.
-    if (walk.seedCredentials !== false) {
-      execFileSync("node", [join(PLUGIN_DIR, "bin", "smith"), "auth", "--url", API, "--key", key], {
-        env: { ...process.env, SMITH_HOME: home },
-        stdio: "ignore",
-      });
-    }
-
-    editor.beforeSession?.();
-    // Most prompts are fixed strings. A walk that reads the setup conversation needs the server and
-    // the key this run created, so its prompt is a function and gets them.
-    const declared = walk.prompts[name];
-    const prompt = typeof declared === "function" ? declared({ api: API, key }) : declared;
-    // Most walks run the plugin out of this checkout. The update walk has to run it from a
-    // directory named by a commit sha, because that is where the sha it reports comes from.
-    const pluginDir = walk.pluginDir?.() ?? PLUGIN_DIR;
-    const args = editor.args(prompt, walk.tools, pluginDir);
-    console.log(`api ${API} · project ${slug} · ${about} · editor ${name} · walk ${walkName}`);
-    console.log(`asking ${editor.binary} for "${prompt}", this takes a few minutes\n`);
-
-    let messages;
-    let credentials;
-    try {
-      messages = runSession(editor, args, repo, home);
-    } finally {
-      credentials = configLeftBehind(home);
-      rmSync(home, { recursive: true, force: true });
-    }
-
-    const text = developerText(messages);
-    const toolCalls = editor.toolCalls(messages);
-    const commands = shellCommandsOf(toolCalls);
-    mkdirSync(OUTPUT_DIR, { recursive: true });
-    const date = new Date().toISOString().slice(0, 10);
-    const transcript = join(OUTPUT_DIR, `${walk.transcript}${editor.suffix}-${date}.txt`);
-    writeTranscript(transcript, { editor, args, repo, slug, about, toolCalls, text });
-    console.log(`transcript: ${transcript}\n`);
-
-    check("the agent said something to the developer", text.length > 0);
-    // The repository is read by the checks, so it outlives the session and is removed after them.
-    try {
-      await walk.checks({ repo, text, commands, toolCalls, key, credentials, slug });
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-    for (const { what, pattern } of walk.forbidden) {
-      check(`the developer is never shown ${what}`, !pattern.test(text), firstMatch(text, pattern));
+    console.log(`walk ${walkName}`);
+    if (walk.sweep) {
+      // The fourth argument is a comma-separated list of entries, so a sweep that was killed
+      // halfway can be finished without paying again for the sessions that already ran.
+      const only = (process.argv[4] ?? "").split(",").map((one) => one.trim()).filter(Boolean);
+      await walk.sweep({ walk, editor, editorName: name, key, slug, only, readingStem });
+    } else {
+      await walk.before?.(key);
+      // Most prompts are fixed strings. A walk that reads the setup conversation needs the server
+      // and the key this run created, so its prompt is a function and gets them.
+      const declared = walk.prompts[name];
+      const prompt = typeof declared === "function" ? declared({ api: API, key }) : declared;
+      const session = walkOnce({ walk, editor, editorName: name, key, slug, prompt, transcript: walk.transcript });
+      check("the agent said something to the developer", session.text.length > 0);
+      // The repository is read by the checks, so it outlives the session and is removed after them.
+      try {
+        await walk.checks({ ...session, key, slug, readingStem });
+      } finally {
+        rmSync(session.repo, { recursive: true, force: true });
+      }
+      for (const { what, pattern } of walk.forbidden) {
+        check(`the developer is never shown ${what}`, !pattern.test(session.text), firstMatch(session.text, pattern));
+      }
     }
   } finally {
     // A failed walk tidies up too: 52 projects nobody will open again is what not doing this

@@ -3726,7 +3726,7 @@ Acceptance:
 What breaks for a developer if this does not exist: the only claim anyone can make about Pergamon's
 output is that one session of it did not trip a quiet ruleset.
 
-### [x] Y3. A walk that is killed leaves its project behind — 7267287
+### [x] Y3. A walk that is killed leaves its project behind — 4c333a9
 
 X2 measured **9** `walk-%` projects in the database, four days after W5 emptied it. The cause is in
 the note: `discardProject` runs in a `finally`, so it covers a walk that fails and not a walk that is

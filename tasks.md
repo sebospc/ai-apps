@@ -5458,7 +5458,7 @@ session has two chances and takes both. Two runs of 16 are the first clean ones 
 Run 3 is 14 and not 16 for a defect that is not this one, found by being the first run that ever got
 this far: AN3.
 
-### [x] AN3. The number the developer sees is not the number the server mutes — done, commit SHA_AN3
+### [x] AN3. The number the developer sees is not the number the server mutes — done, commit d368704
 
 Found by AN1, on the first `review-argue` runs that reached `respond` at all. In 1 of 3 the
 dismissals landed on the wrong findings, and the agent said so:

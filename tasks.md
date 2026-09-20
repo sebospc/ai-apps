@@ -5310,7 +5310,7 @@ What is still not proven, and cannot be from here: the timer actually firing on 
 The unit content, the install, the idempotence and both scripts are drilled; `systemd` starting them
 at 03:20 is read the first morning after `provision.sh` runs on the box.
 
-### [ ] AM3. The investigation stops after the second defect
+### [x] AM3. The investigation stops after the second defect — done, commit PENDING_SHA
 
 Measured by `scripts/review_score.mjs`: the parallel-implementation defect is found **2 of 2 when it
 is the only thing planted** and **3 of 6 when it is one of three**. A transcript of a miss shows
@@ -5329,6 +5329,71 @@ the command is tuned until the set passes, the set measures the tuning. So:
 - If nothing structural helps, **that is the answer**: write down what was tried and what it scored,
   and leave the command alone. A review that finds two of three real defects is still worth having,
   and this repository has deleted more rules than it has added for exactly this reason.
+
+The change is in `plugin/commands/smith-review.md`, step 4, and it is structural in the way the task
+asks for: the investigation is **written down before it is run**. Read the change, name every check
+it calls for, then answer each one you named. The budget is one search per check rather than a pool
+the first finding can drain — *a check named after the one that found something gets looked at just
+as hard*. Step 5 reports those checks by name in half a line, because a check said out loud is one a
+developer can see you skip. The three checks are the shapes a defect takes and not the cases it was
+measured on: prior art, what the changed lines depend on, and a second copy of what it changed.
+Nothing in the file names a storefront, a threshold or a stock badge.
+
+**The measurement found a second half the task did not predict, and it is the half that mattered.**
+Naming the checks made the agent *find* the third defect and then not send it:
+
+> One thing outside the diff, not sent: `StoreStockBadgeController.badgeFor` still uses
+> `getOnHand() > 0`, so b2c shows a different answer than this facade.
+
+Told after the verdict instead of submitted, it never reaches the lead and the review holds no record
+of it, so by every measure the server keeps the review still missed it — and a walk reading the
+assistant's prose would have scored that run a pass. Step 4 now says where a check's answer goes:
+into the list, on the changed line that leaves it wrong, because a second copy nobody fixed is a
+finding on the fix that skipped it.
+
+`stock-badge` is the held-out case, written after the change and never used to arrive at it. A facade
+that labels stock availability, changed in a way that reads well on its own — a null guard, a named
+threshold, a label per state — and wrong three times: the threshold already exists in core, what can
+be sold is stored and `onHand - reserved` is not it, and the other storefront's badge decides the
+same thing a different way. The third shares no identifier with the changed lines, so it is only
+reachable by listing the siblings of what changed. It lives in `scripts/lib/review_cases.mjs` as
+`HELD_OUT`, runs only when it is named, and `--record` refuses it: the day a held-out case becomes a
+number somebody watches, it is not held out any more.
+
+The reading, one real session per run, every run a fresh project:
+
+| the command | runs | recall | noise |
+| --- | --- | --- | --- |
+| before AK1, `ebc6330` | 3 | 2/3 every time | 0 |
+| before this change, `b71e8aa` | 3 | 2/3 every time | 0 |
+| naming the checks, without saying where the answer goes | 3 | 2/3 every time | 0 |
+| this change | 5 | **3/3 every time** | 0 |
+
+Every control run misses the same one — the storefront — and the three runs at `b71e8aa` do not mention
+it at all, in the findings or in prose. The middle row is what makes the second half of the change
+evidence rather than a guess: those three sessions all named the storefront check out loud and two of
+them answered it to the developer in a sentence beginning *"One thing outside the diff"*. Searches did
+not go up. Every run in the table used 0 or 1, so "one search per check" bought the third defect
+without turning a review into the repository audit the same paragraph rules out.
+
+`scripts/review_score.mjs` grew one guard while this was measured, and it is not a detail. The run
+before this one recorded a reading of **five missed defects out of six** that nobody had run: five of
+its eight sessions were killed part-way by a session limit, and a killed session still carries
+messages, so `session.ran` was true and every planted defect scored as missed. `refuseToScore`
+separates the two cases that were being conflated — a project holding no review at all never reached
+`smith plan` and is not a reading, while a review with an empty finding list is an answer and on a
+case with defects planted is a real miss. The run now aborts and prints what the session answered
+instead of writing a zero. Proved both ways: `--self-check` goes red naming it when the predicate is
+removed, and it fired for real on a killed control session during this task — *"the session opened no
+review, so it never reached `smith plan` — not a reading, and not a zero"*. That is the half that
+counts, because a guard nobody has seen catch anything is indistinguishable from one that cannot.
+
+`scripts/review_score.json` was restored to its 2026-09-13 reading rather than re-recorded. The
+scored set is a regression detector for this change and it has not been re-read against the new
+command; sessions were dying part-way through every batch attempted today, and a reading taken under
+that is the exact defect the guard above exists to refuse. `sanity.py` holds — that reading is 7 days
+old against a 60-day budget — but the honest statement is that the held-out case is measured and the
+scored set is not. Re-reading it is the first thing to do the next time sessions are healthy.
 
 
 ## Phase AN — what Y5's walk found the day it was written
@@ -7690,3 +7755,28 @@ Append here when a task forces a decision. One line each: what was decided and w
 - 2026-09-19 — `mktemp -t <prefix>` is macOS-only. On Debian it exits 1 with *"mktemp: : Invalid
   argument"*, checked in the postgres container. Anything that runs on the host uses plain `mktemp`;
   the two drill scripts keep the `-t` form because they only ever run on this laptop.
+- 2026-09-20 — AM3 found the tree dirty and the work in it was AM3's own, left by a run a session
+  limit killed part-way. The command change and the held-out case were coherent and measured, so
+  they were finished rather than reverted; the one thing discarded was `scripts/review_score.json`,
+  which that run had recorded from five sessions that never ran.
+- 2026-09-20 — AM3's structural change is two instructions, not one, and the second was found by the
+  measurement rather than predicted. Naming the checks before running them got the agent to *find*
+  the parallel storefront; it then told the developer in prose after the verdict — "One thing outside
+  the diff, not sent" — which the server has no record of, so the review still missed it. Step 4 now
+  says where a check's answer lands. The held-out case goes 2/3 → 3/3 on that second sentence.
+- 2026-09-20 — AM3 ran the control at `b71e8aa`, the command as committed before this change, not
+  only at the default `ebc6330` from before AK1. `SMITH_CONTROL_SHA` is what makes that possible and
+  it is the comparison that isolates one change; a control two edits back proves the case
+  discriminates and nothing about the edit being judged.
+- 2026-09-20 — `refuseToScore` in `scripts/review_score.mjs`: a project holding no review at all is
+  not a reading and must not score as a review that found nothing. A session killed part-way still
+  carries messages, so the existing `session.ran` guard passed it through and every planted defect
+  counted as missed. Seen positive on a real killed session, not only in `--self-check`.
+- 2026-09-20 — AM3 did not re-record `scripts/review_score.json` against the new command. Every
+  batch attempted today lost sessions part-way, and a scored-set reading taken under that is exactly
+  what the new guard refuses. The 2026-09-13 reading stands, 7 days against sanity's 60-day budget,
+  and the held-out case is the measured half. Re-reading the scored set is the first thing worth
+  doing the next time sessions hold.
+- 2026-09-20 — `smith-review` is now **5181 tokens against the 5200 budget** in `sanity.py`, 19 to
+  spare. The next sentence added to that command file breaks the budget rather than bending it, so
+  whoever needs one deletes first or argues the budget up with a number.

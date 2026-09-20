@@ -208,19 +208,24 @@ diff alone hides context you need. Never truncate either one: a review of the fi
 review that missed the rest, and nobody can tell which findings it lost.
 
 **Where a finding is discovered is not where it lands.** You are standing in the whole repository,
-not only in the diff, and some defects can only be seen from outside it. So before you write any
-finding, run a few targeted searches — driven by what this change actually is:
+not only in the diff, and some defects can only be seen from outside it. So write the investigation
+down before you run it: read the change, name every check below that it calls for, then answer each
+one you named.
 
-- **Prior art.** It adds or moves a rule, a threshold, a calculation, a constant: search for the
+- **Prior art** — it adds or moves a rule, a threshold, a calculation, a constant. Search for the
   same thing already implemented somewhere else. Two live copies that can disagree is a finding, on
   the line that added the second one.
-- **What the changed lines depend on.** It is about a number: read the code that produces the
-  inputs. Arithmetic is only wrong once you know what the values it works on can be.
-- **Parallel implementations.** The same block exists in a second storefront, controller or
-  extension: a fix applied to one and not to the other is a finding on the fix.
+- **What the changed lines depend on** — it works on a value it did not compute. Read the code that
+  writes that value. Arithmetic is only wrong once you know what the values it works on can be.
+- **A second copy of what it changed** — it fixes, guards or extends one controller, storefront,
+  extension or job. Whether a sibling of that one exists is not in the diff; list them and look. A
+  fix applied to one and not the other is a finding on the fix.
 
-Skip all of it for a change that adds no rule and moves no logic, and keep it to a handful of
-searches either way. Twenty greps is a repository audit charged to one developer.
+**The budget is one search per check, never a shared one.** A check named after the one that found
+something gets looked at just as hard: the review that spends everything on its first two findings
+is the one measured missing the third. A change that adds no rule and moves no logic names no
+checks, and three searches is a whole investigation — twenty greps is a repository audit charged to
+one developer.
 
 - Apply the `guidelines`. Each has an `id`; put it in `rule_id` when you report against it.
 - The guidelines you were given are the ones that can apply to these files. Others exist and were
@@ -230,7 +235,10 @@ searches either way. Twenty greps is a repository audit charged to one developer
 - **Do not repeat `deterministic_findings`.** They are already recorded, and repeating them makes
   the review look padded.
 - Only report what you can point at with a file and a line the developer changed. A finding on an
-  untouched line is discarded by the server.
+  untouched line is discarded by the server. That is where a finding lands, not what counts as one:
+  what a check found outside the diff goes in the list too, on the changed line that leaves it wrong
+  — a second copy nobody fixed is a finding on the fix that skipped it. Told to the developer after
+  the verdict instead of sent, it never reaches their lead and the review did not record it.
 - Report nothing rather than padding. An empty list on a clean change is the correct answer.
 
 ```bash
@@ -263,7 +271,8 @@ Four parts, in this order, and nothing else:
 
 1. **What you reviewed**, one line, from `compared`: uncommitted work or this branch against its
    base, the file count, the project from `project`, and the ticket if there is one. The developer
-   never chose any of it and cannot see it. A `stale` base is said here too.
+   never chose any of it and cannot see it. A `stale` base is said here too. Then, when step 4 named
+   checks, what they were — half a line, because a check said out loud is one they can see you skip.
 2. **The verdict**, one line: blocked or clear, and the server's reason. They need to know whether
    they can push before they read anything else.
 3. **The findings**, numbered, blocking first, one line each.
@@ -271,6 +280,7 @@ Four parts, in this order, and nothing else:
 
 ```
 Reviewing your 2 uncommitted files in acme, ticket ABC-123.
+Checked core for the same threshold, what writes the discount, and the other storefront.
 
 Blocked: 1 critical finding.
 

@@ -669,3 +669,227 @@ export const CASES = {
 
 /** What each case plants, for a caller that wants the totals without building a repository. */
 export const plantedCount = (name) => CASES[name].planted.length;
+
+// --------------------------------------------------------------------------------------------
+// held out of the scored set — a stock badge, with all three shapes at once
+// --------------------------------------------------------------------------------------------
+
+const STOCK_LEVEL = "core/src/com/acme/core/stock/AcmeStockLevel.java";
+const STOCK_LEVEL_SOURCE = `package com.acme.core.stock;
+
+/** One product's stock in one warehouse, as the warehouse feed leaves it. */
+public class AcmeStockLevel {
+
+  private String productCode;
+  private int onHand;
+  private int reserved;
+  private int availableToSell;
+
+  public String getProductCode() {
+    return productCode;
+  }
+
+  public void setProductCode(final String productCode) {
+    this.productCode = productCode;
+  }
+
+  /** Every unit the site counted, whatever state it is in. */
+  public int getOnHand() {
+    return onHand;
+  }
+
+  public void setOnHand(final int onHand) {
+    this.onHand = onHand;
+  }
+
+  public int getReserved() {
+    return reserved;
+  }
+
+  public void setReserved(final int reserved) {
+    this.reserved = reserved;
+  }
+
+  /** What a customer can actually buy today. Written by the ledger, read by every channel. */
+  public int getAvailableToSell() {
+    return availableToSell;
+  }
+
+  public void setAvailableToSell(final int availableToSell) {
+    this.availableToSell = availableToSell;
+  }
+}
+`;
+
+const STOCK_RULES = "core/src/com/acme/core/stock/AcmeStockRules.java";
+const STOCK_RULES_SOURCE = `package com.acme.core.stock;
+
+/** The thresholds every channel reads stock against. */
+public final class AcmeStockRules {
+
+  /** At or below this many sellable units the product counts as running low. */
+  public static final int LOW_STOCK_THRESHOLD = 10;
+
+  private AcmeStockRules() {
+  }
+
+  public static boolean isRunningLow(final int sellable) {
+    return sellable > 0 && sellable <= LOW_STOCK_THRESHOLD;
+  }
+}
+`;
+
+// Names the rule without implementing it, so a search answers with more than one hit.
+const STOCK_NOTIFIER = "core/src/com/acme/core/stock/AcmeStockNotificationService.java";
+const STOCK_NOTIFIER_SOURCE = `package com.acme.core.stock;
+
+public class AcmeStockNotificationService {
+
+  public boolean warnsBuyer(final AcmeStockLevel level) {
+    return AcmeStockRules.isRunningLow(level.getAvailableToSell());
+  }
+}
+`;
+
+// The fact the change is wrong about, two hops from the diff: the diff subtracts two getters, and
+// only whoever writes the fields knows that the difference is not what can be sold.
+const STOCK_LEDGER = "core/src/com/acme/core/stock/AcmeStockLedger.java";
+const STOCK_LEDGER_SOURCE = `package com.acme.core.stock;
+
+/**
+ * Keeps the sellable figure in step with what the warehouse holds.
+ *
+ * On-hand counts every unit the site has, quarantined and damaged ones included, so it is not what
+ * can be sold; the sellable figure is, and it is what every channel reads. Reservations are held
+ * against the catalogue entry rather than one site, so the count can cover holds this row does not
+ * carry, and the subtraction floors at zero for that reason.
+ */
+public class AcmeStockLedger {
+
+  public void refresh(final AcmeStockLevel level, final int reserved, final int quarantined) {
+    level.setReserved(reserved);
+    level.setAvailableToSell(Math.max(level.getOnHand() - reserved - quarantined, 0));
+  }
+}
+`;
+
+const AVAILABILITY_FACADE = "facades/src/com/acme/facades/stock/StockAvailabilityFacade.java";
+const AVAILABILITY_FACADE_SOURCE = `package com.acme.facades.stock;
+
+import com.acme.core.stock.AcmeStockLevel;
+
+public interface StockAvailabilityFacade {
+
+  String availabilityLabelFor(AcmeStockLevel level);
+}
+`;
+
+const AVAILABILITY_IMPL = "facades/src/com/acme/facades/stock/StockAvailabilityFacadeImpl.java";
+const AVAILABILITY_IMPL_BEFORE = `package com.acme.facades.stock;
+
+import com.acme.core.stock.AcmeStockLevel;
+
+public class StockAvailabilityFacadeImpl implements StockAvailabilityFacade {
+
+  private static final String IN_STOCK = "In stock";
+  private static final String SOLD_OUT = "Sold out";
+
+  @Override
+  public String availabilityLabelFor(final AcmeStockLevel level) {
+    return level.getOnHand() > 0 ? IN_STOCK : SOLD_OUT;
+  }
+}
+`;
+// Read alone this is a good change: a null guard where there was none, a named threshold, a label
+// per state. It is wrong three times over, and none of the three is visible from these lines.
+const AVAILABILITY_IMPL_AFTER = `package com.acme.facades.stock;
+
+import com.acme.core.stock.AcmeStockLevel;
+
+public class StockAvailabilityFacadeImpl implements StockAvailabilityFacade {
+
+  /** Under this many units the product page warns that stock is short. */
+  private static final int FEW_LEFT_UNDER = 5;
+
+  private static final String IN_STOCK = "In stock";
+  private static final String FEW_LEFT = "Only a few left";
+  private static final String SOLD_OUT = "Sold out";
+
+  @Override
+  public String availabilityLabelFor(final AcmeStockLevel level) {
+    if (level == null) {
+      return SOLD_OUT;
+    }
+    final int sellable = level.getOnHand() - level.getReserved();
+    if (sellable <= 0) {
+      return SOLD_OUT;
+    }
+    return sellable < FEW_LEFT_UNDER ? FEW_LEFT : IN_STOCK;
+  }
+}
+`;
+
+// The same badge on the other storefront's product page, written by the other team: no guard, no
+// short-stock state, and no identifier in common with the changed lines.
+const STORE_BADGE = "b2cstorefront/src/com/acme/b2c/product/StoreStockBadgeController.java";
+const STORE_BADGE_SOURCE = `package com.acme.b2c.product;
+
+import com.acme.core.stock.AcmeStockLevel;
+
+public class StoreStockBadgeController {
+
+  private static final String AVAILABLE = "Available";
+  private static final String UNAVAILABLE = "Out of stock";
+
+  public String badgeFor(final AcmeStockLevel level) {
+    return level.getOnHand() > 0 ? AVAILABLE : UNAVAILABLE;
+  }
+}
+`;
+
+/**
+ * Cases the scored set does not run.
+ *
+ * `CASES` is a regression detector, and a command tuned until it passes is a command the set
+ * measures instead of the review. So a change to `plugin/commands/smith-review.md` is judged here:
+ * a case written after the change, never used to arrive at it, and run against both revisions of
+ * the command — `SMITH_CONTROL_SHA=<sha> node scripts/review_score.mjs --case stock-badge --control`.
+ *
+ * It is never recorded in `review_score.json`: the day a held-out case becomes a number somebody
+ * watches, it is not held out any more.
+ */
+export const HELD_OUT = {
+  "stock-badge": {
+    about: "a stock badge on one storefront: three shapes at once, held out of the scored set",
+    changed: AVAILABILITY_IMPL,
+    files: () => ({
+      ...ordinaryCode(),
+      ...secondStorefront(),
+      [STOCK_LEVEL]: unchanged(STOCK_LEVEL_SOURCE),
+      [STOCK_RULES]: unchanged(STOCK_RULES_SOURCE),
+      [STOCK_NOTIFIER]: unchanged(STOCK_NOTIFIER_SOURCE),
+      [STOCK_LEDGER]: unchanged(STOCK_LEDGER_SOURCE),
+      [AVAILABILITY_FACADE]: unchanged(AVAILABILITY_FACADE_SOURCE),
+      [STORE_BADGE]: unchanged(STORE_BADGE_SOURCE),
+      [AVAILABILITY_IMPL]: { before: AVAILABILITY_IMPL_BEFORE, after: AVAILABILITY_IMPL_AFTER },
+    }),
+    planted: [
+      {
+        name: "the low-stock threshold already exists in core",
+        evidence: /AcmeStockRules|LOW_STOCK_THRESHOLD|isRunningLow/,
+        lands: AVAILABILITY_IMPL,
+      },
+      {
+        name: "what can be sold is stored, and on-hand minus reserved is not it",
+        evidence: /availableToSell|AvailableToSell|AcmeStockLedger|quarantined/,
+        lands: AVAILABILITY_IMPL,
+      },
+      {
+        name: "the other storefront's badge was left as it was",
+        evidence: /StoreStockBadgeController|b2cstorefront|badgeFor/,
+        lands: AVAILABILITY_IMPL,
+      },
+    ],
+    quiet: [],
+  },
+};

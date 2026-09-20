@@ -797,10 +797,15 @@ test("step 4 separates where a finding is found from where it lands", () => {
   );
   assert.match(command, /discovered is not where it lands/i);
   assert.match(command, /Prior art/);
-  assert.match(command, /Parallel implementations/);
+  assert.match(command, /second copy of what it changed/i);
+  // AM3, measured on the held-out case: the investigation found two defects and stopped, and the
+  // third was never searched for. The repair is that the checks are named before any of them runs
+  // and each named one is answered, so a skipped check is visible instead of silent.
+  assert.match(command, /name every check[^.]*then answer each one you named/i);
+  assert.match(command, /budget is one search per check, never a shared one/i);
   // Unbounded, this is a repository audit charged to one developer, so the ceiling is part of the
   // instruction rather than something the agent is left to judge.
-  assert.match(command, /handful of\s*searches|handful\b[^.]*searches/i);
+  assert.match(command, /three searches is a whole investigation/i);
 });
 
 // Measured on 2026-08-21: the skill used to tell the agent to recommend the PATH install line, and

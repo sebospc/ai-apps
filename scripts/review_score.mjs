@@ -11,6 +11,7 @@
  *   SMITH_API_URL=http://localhost:8094 node scripts/review_score.mjs            # every case, twice
  *   SMITH_API_URL=http://localhost:8094 node scripts/review_score.mjs --case duplicate-rule --runs 3
  *   SMITH_API_URL=http://localhost:8094 node scripts/review_score.mjs --control  # a command that should miss
+ *   SMITH_CONTROL_SHA=<sha> ... --case stock-badge --control   # a held-out case, against an older command
  *   node scripts/review_score.mjs --self-check                                   # the scoring, without a session
  *   ... --record                                                                 # write scripts/review_score.json
  *
@@ -38,11 +39,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildPlainRepo } from "./lib/plain_repo.mjs";
-import { CASES } from "./lib/review_cases.mjs";
+import { CASES, HELD_OUT } from "./lib/review_cases.mjs";
 import { PLUGIN_DIR, pluginWithCommandAt, runSession, searchesOf, seedCredentials } from "./lib/review_session.mjs";
 import { throwawaySlug, tidyAfterEarlierRuns } from "./lib/throwaway_project.mjs";
 
 const API = process.env.SMITH_API_URL ?? "http://localhost:8094";
+const EVERY_CASE = { ...CASES, ...HELD_OUT };
 const ROOT = new URL("..", import.meta.url).pathname;
 const OUTPUT_DIR = join(ROOT, "output");
 const SCORE_FILE = join(ROOT, "scripts", "review_score.json");
@@ -53,7 +55,10 @@ const LEAD_PASSWORD = "score-password";
 // The last commit before AK1 taught step 4 to look outside the diff. A case that scores the same
 // against this command as against the current one is a case that measures nothing, so every case
 // gets run against it once before its number is believed.
-const BEFORE_THE_FIX = "ebc6330ed4ef407d90b27fecd95db83151694b21";
+//
+// `SMITH_CONTROL_SHA` points the control at a different revision, which is how a change to the
+// command is read against the revision before it rather than against AK1's.
+const BEFORE_THE_FIX = process.env.SMITH_CONTROL_SHA || "ebc6330ed4ef407d90b27fecd95db83151694b21";
 
 const PROMPT = "/smith-review my uncommitted changes";
 const TOOLS = "Bash,Read,Glob,Grep";
@@ -127,6 +132,22 @@ async function discardProject(slug) {
 const said = (finding) => `${finding.message} ${finding.suggestion ?? ""}`;
 
 /**
+ * Why this run is not a reading, or "" when it is one.
+ *
+ * A session killed part-way — a quota limit is how it happens here — still carries messages, so
+ * `session.ran` is true and every planted defect scores as missed. That reads as a review that
+ * looked and found nothing, which is the one thing it is not. The project holding no review at all
+ * is what separates them: `smith plan` is the first thing the command runs and the server creates
+ * the review there, so a run with none never started reviewing. A review with an empty finding list
+ * is the opposite — it is an answer, and on a case with defects planted it is a real miss.
+ */
+export function refuseToScore(reviews) {
+  return reviews.length === 0
+    ? "the session opened no review, so it never reached `smith plan` — not a reading, and not a zero"
+    : "";
+}
+
+/**
  * One run's score.
  *
  * Only findings the *session* produced are scored. The deterministic checks are measured everywhere
@@ -186,7 +207,7 @@ export function scoreRun(theCase, reviews) {
 // --------------------------------------------------------------------------------------------
 
 async function runCase(name, { control }) {
-  const theCase = CASES[name];
+  const theCase = EVERY_CASE[name];
   const slug = throwawaySlug(`score-${name.slice(0, 12)}`);
   const key = bootstrapProject(slug);
   const repo = buildPlainRepo(`smith-score-${name}-`, theCase.files());
@@ -200,6 +221,8 @@ async function runCase(name, { control }) {
     if (!session.ran) throw new Error(`the session did not run: ${session.failure}`);
 
     const reviews = await reviewsInProject(slug);
+    const refusal = refuseToScore(reviews);
+    if (refusal) throw new Error(`${refusal}\n  what it answered: ${session.text.slice(0, 200) || "(nothing)"}`);
     const score = scoreRun(theCase, reviews);
     score.searches = searchesOf(session.toolCalls).length;
     score.opened = reviews.length;
@@ -219,7 +242,7 @@ function writeTranscript(name, control, { session, score, slug }) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const path = join(OUTPUT_DIR, `score-${name}${control ? "-control" : ""}-${stamp}.txt`);
   const lines = [
-    `case ${name}${control ? " (control: the command before AK1)" : ""}`,
+    `case ${name}${control ? ` (control: the command at ${BEFORE_THE_FIX.slice(0, 7)})` : ""}`,
     `project ${slug} · ${score.searches} searches · ${score.opened} reviews opened`,
     `recall ${score.recall}/${score.planted} · noise ${score.noise} · blocking ${score.blocking}`,
     "",
@@ -349,6 +372,9 @@ function selfCheck() {
     ["a deterministic finding is not the agent's noise", noisy.deterministic === 1],
     ["the known non-defect is reported and blocking", falsePositive.quiet[0].reported && falsePositive.quiet[0].blocking],
     ["and it is noise as well as a non-defect", falsePositive.noise === 1 && falsePositive.missed === 3],
+    // Both halves, because conflating them is what wrote a reading of five misses nobody ran.
+    ["a session that opened no review is refused, not scored", refuseToScore([]) !== ""],
+    ["a review that found nothing is scored, and it is a miss", refuseToScore([{ findings: [] }]) === "" && empty.missed === 3],
   ];
   let bad = 0;
   for (const [what, ok] of rows) {
@@ -374,10 +400,12 @@ async function main() {
   const control = process.argv.includes("--control");
   const runs = Number(arg("--runs", control ? "1" : "2"));
   const only = arg("--case", "");
+  // A held-out case runs only when it is named. Putting one in the default set would make it part
+  // of what the command is tuned against, which is the one thing it is for.
   const names = only ? only.split(",") : Object.keys(CASES);
   for (const name of names) {
-    if (!CASES[name]) {
-      console.error(`unknown case "${name}" — one of: ${Object.keys(CASES).join(", ")}`);
+    if (!EVERY_CASE[name]) {
+      console.error(`unknown case "${name}" — one of: ${Object.keys(EVERY_CASE).join(", ")}`);
       process.exit(1);
     }
   }
@@ -391,7 +419,10 @@ async function main() {
   // A run killed mid-case never reaches its own cleanup, so this one clears what the last one left.
   console.log(await tidyAfterEarlierRuns({ api: API, email: LEAD_EMAIL, password: LEAD_PASSWORD }));
 
-  console.log(`api ${API} · ${names.length} cases · ${runs} runs each${control ? " · against the command before AK1" : ""}\n`);
+  console.log(
+    `api ${API} · ${names.length} cases · ${runs} runs each` +
+      `${control ? ` · against the command at ${BEFORE_THE_FIX.slice(0, 7)}` : ""}\n`
+  );
   const cases = {};
   for (const name of names) {
     cases[name] = [];
@@ -406,6 +437,11 @@ async function main() {
   if (process.argv.includes("--record")) {
     if (control) {
       console.error("\na control reading is not the score. --record writes what the shipped command did.");
+      process.exit(1);
+    }
+    const heldOut = names.filter((name) => name in HELD_OUT);
+    if (heldOut.length) {
+      console.error(`\n${heldOut.join(", ")} is held out. Recording it makes it part of the scored set.`);
       process.exit(1);
     }
     writeFileSync(SCORE_FILE, `${JSON.stringify(reading, null, 2)}\n`);

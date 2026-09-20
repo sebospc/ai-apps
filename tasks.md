@@ -5251,7 +5251,7 @@ Acceptance:
   the values it expects. A script that silently skips a step is worse than a list.
 - A deploy to the running host is one command, and it takes a backup before it changes anything.
 
-### [x] AM2. Backups run when somebody remembers — done, commit AM2SHA
+### [x] AM2. Backups run when somebody remembers — done, commit beaec10
 
 `scripts/backup.sh` exists, dumps the database and proves the dump is a readable archive. Nothing
 calls it. Both backups this server has were taken by hand, minutes before a deploy, because whoever

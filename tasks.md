@@ -5310,7 +5310,7 @@ What is still not proven, and cannot be from here: the timer actually firing on 
 The unit content, the install, the idempotence and both scripts are drilled; `systemd` starting them
 at 03:20 is read the first morning after `provision.sh` runs on the box.
 
-### [x] AM3. The investigation stops after the second defect — done, commit PENDING_SHA
+### [x] AM3. The investigation stops after the second defect — done, commit ba7fa42
 
 Measured by `scripts/review_score.mjs`: the parallel-implementation defect is found **2 of 2 when it
 is the only thing planted** and **3 of 6 when it is one of three**. A transcript of a miss shows

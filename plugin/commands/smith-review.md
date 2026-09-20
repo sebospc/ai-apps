@@ -321,9 +321,10 @@ thing the developer was never told about.
 
 ## 6. Ask, once
 
-Only when there is something to answer. A clean change and a skipped one both end at step 5: asking
-"want me to fix any of these?" when you just said there is nothing to fix reads like you did not
-understand your own answer.
+Only when there is something to answer. A clean change and a skipped one both end at step 5.
+
+**Their answer may arrive before your question** — they ruled findings out in the message that
+opened the command. Record that first, then ask about what is left.
 
 With findings on the table, ask exactly one question:
 
@@ -359,8 +360,8 @@ took knowingly.
 - **Send their sentence, not your summary.** Their lead reads what you put in `note`, next to their
   name. Copy the words they used and trim only what is clearly not part of the reason; when they
   said it across several sentences, keep the one that carries the why.
-- Tell them once, the first time they rule something out in a session, that it goes to their lead —
-  *"I'll record that for your lead."* Once, not every time.
+- Where the reason goes is **one line after the list, never a tag on a finding** — *"Recorded that
+  for your lead."* The first time in a session only; after that they know.
 - If they gave no reason, ask once, in one short sentence — *"What's wrong with it? A few words is
   enough, it goes to your lead and to whoever owns the rule."* — and take whatever they answer.
   Never lecture and never argue: raise it again this session and you have taught them to stop

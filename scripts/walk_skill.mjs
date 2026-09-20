@@ -2323,17 +2323,19 @@ async function reviewArgueChecks({ text, commands, slug }) {
     warnings.length >= 1,
     warnings.join(" / ").slice(0, 300) || text.slice(-400)
   );
-  // Two findings were ruled out, so an agent that warns on each has said it twice. Being told once
-  // is the instruction; being told every time is the other way of getting it wrong, and a check
-  // that cannot tell those apart is not reading the instruction.
-  check(
-    "they were told once, not once per finding they ruled out",
-    warnings.length <= 1,
-    warnings.join(" / ").slice(0, 300)
-  );
 
   const findings = answeredOnce(await findingsInProject(slug));
   const muted = findings.filter((f) => f.answer?.disposition === "dismissed");
+  // "Once, not every time" is only readable when there was more than one chance to say it, and a
+  // session that ruled nothing out satisfies `<= 1` without answering the question — three runs on
+  // 2026-09-20 passed this while nothing at all reached the lead. Count the chances first.
+  check(
+    "they were told once, not once per finding they ruled out",
+    muted.length >= 2 && warnings.length === 1,
+    muted.length < 2
+      ? `only ${muted.length} ruled out, so there was never a second chance to repeat it`
+      : warnings.join(" / ").slice(0, 300)
+  );
   check(
     "both findings the developer argued with were ruled out",
     muted.length === 2,

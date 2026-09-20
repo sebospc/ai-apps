@@ -5402,7 +5402,7 @@ Y5 built the walk that reads whether a developer is warned before their words re
 was reported green on one run. Run three times it reads **16, 15 and 13 of 16**, and the two failures
 are not noise — they are the contract not being kept.
 
-### [ ] AN1. The warning is given once per dismissal, not once per session
+### [x] AN1. The warning is given once per dismissal, not once per session — done, commit PENDING
 
 `plugin/commands/smith-review.md` step 7: *"Tell them once, the first time they rule something out in
 a session — 'I'll record that for your lead.' Once, not every time."*
@@ -5422,6 +5422,75 @@ Acceptance: `review-argue` passes its "told once" assertion across at least thre
 If the wording cannot carry it, say so and change the shape rather than the adjective — the
 instruction has been in the file for weeks and has been ignored in two runs out of three, which is
 evidence about the instruction, not about the model.
+
+**Done.** The number the task asked for could not be read at all. Three control runs on 2026-09-20
+passed *told once* while `respond` never ran: nothing was recorded, so there was never a second
+chance to repeat anything. The assertion was green on the worst sessions this walk has produced —
+the developer's two sentences never reached their lead in any of them.
+
+`scripts/walk_skill.mjs` counts the chances before it reads the answer. `warnings.length <= 1` is
+satisfied by a session with one dismissal and equally by a session with none, which is how it stayed
+green through all three. It now needs two findings actually ruled out, and says `only 0 ruled out,
+so there was never a second chance to repeat it` when they were not.
+
+Step 6 of `plugin/commands/smith-review.md` is what stopped the recording. The loop is report, ask,
+listen, respond — and a developer who ruled two findings out in the message that opened the command
+answered before the question. All three controls asked it anyway and stopped there: *"Want me to fix
+any of these, or is something off?"*, nothing sent. Step 6 now says the answer may arrive before the
+question, and to record that first.
+
+Step 7 got the shape rather than the adjective, as the task asked. With recording working the
+warning came straight back, twice, tagged onto the numbered list — `3. ... Ruled out, recorded for
+your lead.` / `4. ... Ruled out, recorded for your lead.` The instruction now says where the sentence
+goes, one line after the list and never a tag on a finding, instead of how often to say it.
+
+| `review-argue` | told once | reached `respond` | run |
+| --- | --- | --- | --- |
+| control x3, before | green, on nothing | **0 of 3** | 12, 11, 11 of 16 |
+| step 6 alone | **red**, quoting both repeats | 1 of 1 | 13 of 16 |
+| this change x3 | **green, 2+ ruled out every run** | 3 of 3 | **16, 16**, 14 of 16 |
+
+The middle row is what makes the top row worth anything: the same assertion goes red the moment a
+session has two chances and takes both. Two runs of 16 are the first clean ones this walk has had.
+`smith-review` is 5193 tokens against its 5200 budget — the two edits were paid for by cutting step
+6's restatement of why you do not ask about a clean change, which step 5 already says. Plugin 0.5.1.
+
+Run 3 is 14 and not 16 for a defect that is not this one, found by being the first run that ever got
+this far: AN3.
+
+### [ ] AN3. The number the developer sees is not the number the server mutes
+
+Found by AN1, on the first `review-argue` runs that reached `respond` at all. In 1 of 3 the
+dismissals landed on the wrong findings, and the agent said so:
+
+> I sent your two dismissals against the wrong finding numbers. What got muted was the Jalo call and
+> the real bug below. Then I muted the two you meant. The CLI has no way to reopen a finding, so all
+> four sit muted on the record with two wrong reasons attached, and your lead will read it that way.
+
+The verdict went from blocked on a critical finding to clear, on a change nobody argued the critical
+finding of, and the developer's reason for a `System.out` line is now filed against a Jalo call they
+never mentioned. Their lead reads it next to their name.
+
+The mechanism is in the command, not in the model. Step 7 says *"`finding` is the number you showed
+them"*; step 5 says to number them *blocking first*. `ReviewService._resolve` takes an integer as an
+index into the server's own order — the deterministic findings by file and line, then the agent's.
+The two agree only when the blocking finding happens to sort first, which is why this is one run in
+three and not every run. Nothing refuses it: a well-formed number for the wrong finding is a valid
+request.
+
+Acceptance:
+
+- `review-argue` passes *both findings the developer argued with were ruled out* and *the finding
+  the developer said nothing about was left alone* across three consecutive runs. Today: 2 of 3.
+- Following the command as written cannot mute a finding the developer did not name. The `fingerprint`
+  is the obvious thing to send and the server already accepts one (`_resolve` takes `int | str`); the
+  developer still never sees it, per the existing rule.
+- A test in `tests/test_reviewer.py` pinning what an integer `finding` means, which fails if
+  `_resolve`'s order and the command's numbering ever disagree again. Run it once against the code
+  from before the fix and check the message names the mismatch.
+- Not in scope, worth writing down while in there: there is **no way to undo a dismissal**. Both
+  agents that hit this tried `"disposition": "open"` and the server refused it, so a mis-sent
+  dismissal is permanent on the record. What the product records, a lead must be able to remove.
 
 ### [ ] AN2. The agent judged a developer's reason and declined to record it
 
@@ -7780,3 +7849,23 @@ Append here when a task forces a decision. One line each: what was decided and w
 - 2026-09-20 — `smith-review` is now **5181 tokens against the 5200 budget** in `sanity.py`, 19 to
   spare. The next sentence added to that command file breaks the budget rather than bending it, so
   whoever needs one deletes first or argues the budget up with a number.
+- 2026-09-20 — AN1's own acceptance could not be read when the task was picked up. Three control
+  runs passed *told once* while zero of them called `respond`: `warnings.length <= 1` is true of a
+  session with one warning and just as true of a session with none, so the check had been green on
+  the three worst runs this walk has produced. A measurement nobody has seen go red is not a
+  measurement — it went red on the very next run, quoting both repeated sentences, once the
+  recording was fixed.
+- 2026-09-20 — What stopped `review-argue` from ever recording was step 6, not step 7. The command's
+  loop is report, ask, listen, respond, and this walk's developer rules two findings out in the
+  message that opens the command — so they answered before the question and every run asked it
+  anyway and stopped. The command never said what to do with an answer that arrives early. One
+  sentence in step 6 took the walk from 0 of 3 reaching `respond` to 3 of 3.
+- 2026-09-20 — The repeated warning was never about the adjective. "Once, not every time" sat in a
+  list of per-finding rules, so "once" read as once per finding, and with recording working the
+  agent tagged the sentence onto each numbered finding. Naming its place — one line after the list,
+  never a tag on a finding — is what made it once, which is AN1's own instruction to change the
+  shape rather than the adjective.
+- 2026-09-20 — The two edits were paid for out of the 5200-token budget rather than argued into it,
+  by deleting step 6's explanation of why you do not ask a question about a clean change. Step 5
+  already says a clean change gets the verdict and nothing else, so the deleted half was a
+  restatement. 5193 tokens, 7 to spare.

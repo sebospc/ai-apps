@@ -5232,7 +5232,7 @@ on `main` costs more than an idle run. A `[>]` with no commit behind it goes bac
 Three things this repository depends on that live in nobody's file. None were found by a test; all
 three were found by doing the thing by hand and noticing there was no other way.
 
-### [ ] AM1. The deployment is a set of commands nobody wrote down
+### [x] AM1. The deployment is a set of commands nobody wrote down — done, commit 15b14e5
 
 `CLAUDE.md` has said so since the server went up: it "was built by hand and lives nowhere in this
 repository, so recreating it means repeating commands nobody wrote down." That is still true, and
@@ -5340,6 +5340,29 @@ Acceptance:
 
 
 ## Notes and decisions log
+- 2026-09-19 — **AM1: the deployment is two scripts, and the first version of the drill was the
+  defect the drill exists to catch.** `provision.sh` detects before every step and reports `changed`
+  or `ok` for each one, which is the whole reason it can be pointed at the host that has users on it;
+  `deploy.sh` dumps the database first and refuses a checkout somebody edited by hand, because a
+  hand-edited `Caddyfile` on the box is how `/v2` shipped switched off. Both are driven here against
+  podman by `scripts/provision_drill.sh` — 30 checks, about seven minutes cold and three with the
+  images cached.
+  Three things it proves rather than assumes. The "no secret is printed" check was made to fire by
+  echoing `SMITH_SECRET_KEY` out of the script, and it named the file it found it in. The "second run
+  changes nothing" check is held up by a third run with a different `SMITH_DB_PASSWORD`, which the
+  script refuses rather than writes — otherwise a comparison that can never find work would read the
+  same as one that finds none. And the drill's own second run failed: `compose down -v` needs the
+  environment file and picks whichever compose provider podman finds, so the postgres volume survived
+  with the old password and the next run could not authenticate. It now removes containers, then the
+  pod, then the volumes, and refuses to start when anything is left. Two consecutive green runs are
+  the evidence.
+  What a laptop cannot rehearse is written into the script rather than left out: apt installing
+  docker, port 443, a public certificate, DNS. Those print on every run with the values they expect,
+  and provision refuses to ask Let's Encrypt for a certificate when the hostname resolves to somebody
+  else — a failed issuance costs a rate limit. The second cost this host paid is checked too: files
+  under the docker config directory that the build cannot read, which is what an old `sudo docker`
+  leaves behind. A missing function exits 127, and the first version of that check read the status
+  rather than the list, so it reported files it had never found; it reads the list now.
 - 2026-09-19 — **Y5's walk was reported green on one run and is 13–16 of 16 across three.** Both
   failures are the contract being broken, not flakiness: the warning given twice in a session that
   should get it once, and an agent that read a developer's reason, decided it did not match the

@@ -391,6 +391,7 @@ uv run uvicorn smith.main:app --reload          # API on :8000
 cd web && npm run dev                           # UI on :3100 (needs Node >= 20.9)
 uv run python scripts/bootstrap.py --help       # first user, project, API key
 scripts/provision_drill.sh                      # provision + deploy, drilled against podman
+scripts/backup_drill.sh                         # what the nightly backup timer runs, drilled here
 ```
 
 Kill every dev server you start. No orphan uvicorn processes left behind.

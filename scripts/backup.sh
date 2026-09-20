@@ -3,6 +3,7 @@
 #
 #   scripts/backup.sh                → writes backups/reviewer-20260821-140000.dump
 #   SMITH_BACKUP_DIR=/mnt/x scripts/backup.sh
+#   SMITH_BACKUP_KEEP=30 scripts/backup.sh   → keeps 30 instead of 14; 0 keeps everything
 #
 # The dump runs inside the container, so no postgres client is needed on the host. Custom format
 # because it is already compressed and pg_restore reads it; a plain .sql file would need psql and
@@ -15,6 +16,8 @@ CONTAINER="${SMITH_PG_CONTAINER:-smith-postgres}"
 DB="${SMITH_DB_NAME:-reviewer}"
 DB_USER="${SMITH_DB_USER:-smith}"
 DIR="${SMITH_BACKUP_DIR:-backups}"
+# A disk that fills is an outage the backup caused, so the number of dumps is bounded by default.
+KEEP="${SMITH_BACKUP_KEEP:-14}"
 # podman on the laptop, docker on the host: the container is the same, the command that reaches it is not.
 RUNTIME="${SMITH_CONTAINER_RUNTIME:-podman}"
 
@@ -44,4 +47,17 @@ FILE="${DIR}/${DB}-$(date +%Y%m%d-%H%M%S).dump"
 }
 
 say "$(wc -c <"$FILE" | tr -d ' ') bytes → ${FILE}"
+
+# Pruning runs only after the new dump has been read back, so a failing backup can never be the
+# thing that deletes the last good one. The glob is this database's dumps and nothing else.
+if [ "$KEEP" -gt 0 ]; then
+  pruned=0
+  while IFS= read -r old; do
+    [ -n "$old" ] || continue
+    rm -f "$old"
+    pruned=$((pruned + 1))
+  done <<<"$(ls -t "${DIR}/${DB}"-*.dump 2>/dev/null | tail -n "+$((KEEP + 1))")"
+  [ "$pruned" = 0 ] || say "kept the newest ${KEEP}, deleted ${pruned} older"
+fi
+
 echo "$FILE"

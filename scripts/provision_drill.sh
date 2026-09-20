@@ -130,6 +130,8 @@ holds "clones the repository" "changed  cloned" "$TMP/first.log"
 holds "writes the environment file" "changed  wrote" "$TMP/first.log"
 holds "brings the stack up" "changed  the stack is up" "$TMP/first.log"
 holds "reads the certificate back" "certificate issued by" "$TMP/first.log"
+holds "names the backup units it cannot install without systemd" "smith-backup.timer" "$TMP/first.log"
+holds "and reports there is no dump yet" "no dump on disk yet" "$TMP/first.log"
 
 mode="$(stat -f '%Lp' "$SMITH_REPO_DIR/.env.prod" 2>/dev/null || stat -c '%a' "$SMITH_REPO_DIR/.env.prod")"
 [ "$mode" = 600 ] && ok ".env.prod is mode 600" || bad ".env.prod is mode ${mode}"
@@ -156,6 +158,63 @@ set -e
 [ "$rotated_code" = 1 ] && ok "a changed database password is refused, not written" || bad "a changed database password exited ${rotated_code}"
 holds "and says why" "Postgres kept the old one" "$TMP/rotated.log"
 
+# ---------------------------------------------------------------- the backup timer, on a stub systemd
+
+# This laptop has no systemd, so the branch that installs the timer is never read on a real run —
+# only the one that says it cannot. A stub systemctl and a unit directory under the temp tree
+# exercise the part that can actually be wrong here: what the units say, and whether a second run
+# quietly rewrites them.
+STUB="$TMP/bin"
+UNITS="$TMP/units"
+mkdir -p "$STUB" "$UNITS"
+export SYSTEMCTL_CALLS="$TMP/systemctl.calls"
+cat >"$STUB/systemctl" <<'STUBSH'
+#!/usr/bin/env bash
+echo "$*" >>"$SYSTEMCTL_CALLS"
+case "$1" in
+is-enabled) [ -f "${SYSTEMCTL_CALLS}.enabled" ] && echo enabled || { echo disabled; exit 1; } ;;
+enable) touch "${SYSTEMCTL_CALLS}.enabled" ;;
+show) echo "Sat 2026-09-20 03:20:00 UTC" ;;
+esac
+exit 0
+STUBSH
+chmod +x "$STUB/systemctl"
+
+with_stub() { # name of the log
+  local log="$TMP/$1.log"
+  set +e
+  PATH="$STUB:$PATH" SMITH_UNIT_DIR="$UNITS" \
+    SMITH_SECRET_KEY="$SECRET_KEY" SMITH_DB_PASSWORD="$DB_PASSWORD" \
+    "$REPO/scripts/provision.sh" >"$log" 2>&1
+  echo $? >"$TMP/$1.code"
+  set -e
+}
+
+with_stub timer_first
+[ "$(code_of timer_first)" = 0 ] || bad "the run with systemd exited $(code_of timer_first)"
+holds "installs the timer where there is systemd" "changed  smith-backup.timer runs at 03:20" "$TMP/timer_first.log"
+holds "enables it" "enable --now smith-backup.timer" "$SYSTEMCTL_CALLS"
+holds "after reloading the units" "daemon-reload" "$SYSTEMCTL_CALLS"
+holds "the timer is nightly" "OnCalendar=*-*-* 03:20:00" "$UNITS/smith-backup.timer"
+holds "and catches up after the host was off" "Persistent=true" "$UNITS/smith-backup.timer"
+holds "the unit takes the dump" "ExecStart=${SMITH_REPO_DIR}/scripts/backup.sh" "$UNITS/smith-backup.service"
+holds "and restores it afterwards" "ExecStart=${SMITH_REPO_DIR}/scripts/backup_verify.sh" "$UNITS/smith-backup.service"
+holds "bounded, so the disk cannot fill" "SMITH_BACKUP_KEEP=14" "$UNITS/smith-backup.service"
+
+unit_mtime() { stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1"; }
+timer_before="$(unit_mtime "$UNITS/smith-backup.timer")"
+with_stub timer_second
+holds "a second run leaves the timer alone" "ok       smith-backup.timer is enabled" "$TMP/timer_second.log"
+[ "$timer_before" = "$(unit_mtime "$UNITS/smith-backup.timer")" ] &&
+  ok "the unit was not rewritten" || bad "the unit was rewritten on a run that reported no change"
+
+# That it finds no work is worth nothing unless it can find some: an edited unit must come back.
+echo "# somebody edited this" >>"$UNITS/smith-backup.timer"
+with_stub timer_edited
+holds "a hand-edited unit is written back" "changed  smith-backup.timer runs at 03:20" "$TMP/timer_edited.log"
+grep -q "somebody edited this" "$UNITS/smith-backup.timer" &&
+  bad "the hand edit survived a run that said it rewrote the unit" || ok "and the edit is gone"
+
 # ---------------------------------------------------------------- deploying to it
 
 say "deploying to the stack it just started"
@@ -172,6 +231,18 @@ holds "and the dump is real" ".dump" "$TMP/deploy.log"
 holds "deploy ends on the running product" "serves" "$TMP/deploy.log"
 dumps="$(ls "$SMITH_REPO_DIR"/backups/*.dump 2>/dev/null | wc -l | tr -d ' ')"
 [ "$dumps" -ge 1 ] && ok "the dump is on disk (${dumps})" || bad "no dump was written"
+
+# The age of the newest dump is the only thing on the host that would show the schedule had stopped,
+# so it is read once with a dump behind it rather than only in its empty state.
+SMITH_PG_CONTAINER=smith-prod-postgres SMITH_CONTAINER_RUNTIME=podman \
+  scripts/backup_verify.sh "$(ls -t "$SMITH_REPO_DIR"/backups/*.dump | head -1)" >"$TMP/verify.log" 2>&1 &&
+  ok "the dump the deploy took restores into a scratch database" ||
+  {
+    bad "the deploy's dump does not restore:"
+    sed 's/^/       /' "$TMP/verify.log" >&2
+  }
+provision reported
+holds "provision reports how old the newest dump is" "dumps, newest 0h old" "$TMP/reported.log"
 
 # The other cost this host paid: files under the docker config directory that the build cannot read.
 # Mode 000 stands in for root-owned, which is how they got there and is not reproducible without sudo.

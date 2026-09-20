@@ -121,7 +121,7 @@ SMITH_SITE=smith.example.com SMITH_TLS=you@example.com \
 SMITH_SECRET_KEY=$(openssl rand -hex 32) SMITH_DB_PASSWORD=$(openssl rand -hex 16) \
   scripts/provision.sh              # docker, the checkout, .env.prod, the stack, the certificate
 
-scripts/provision.sh --check        # the same detection, changing nothing
+scripts/provision.sh --check        # the same detection, changing nothing, plus the backup's age
 scripts/deploy.sh                   # backup, then origin/main, then rebuild and check
 scripts/provision_drill.sh          # both of those, drilled here against podman
 ```
@@ -155,21 +155,35 @@ Revisions target postgres, so the unit suite builds its sqlite schema from the m
 ## Backups
 
 ```bash
-scripts/backup.sh            # → backups/reviewer-20260821-052651.dump
+scripts/backup.sh            # → backups/reviewer-20260821-052651.dump, keeping the newest 14
+scripts/backup_verify.sh     # newest dump → a scratch database, counted against the live one
 scripts/restore.sh           # newest dump in backups/, asks before it drops anything
-scripts/restore_drill.sh     # dump, drop, restore, then check nothing was lost
+scripts/backup_drill.sh      # what the schedule runs, including both ways the verify says no
+scripts/restore_drill.sh     # dump, drop, restore over the real database, check nothing was lost
 ```
 
-Both run inside the postgres container, so the host needs no client installed. `backup.sh` reads the
-archive back before keeping it, and deletes it if it is not readable.
+All of them run inside the postgres container, so the host needs no client installed. `backup.sh`
+reads the archive back before keeping it, deletes it if it is not readable, and then deletes the
+dumps past the newest `SMITH_BACKUP_KEEP` — a disk that fills is an outage the backup caused.
 
-Restoring is destructive: it drops the database, terminates whatever was connected, and recreates it
-from the dump. It asks for a typed `yes` first, and refuses outright when there is no terminal to
-ask on — pass `--yes` when a script is driving it.
+On a host, `provision.sh` installs `smith-backup.timer`, which runs the dump at 03:20 and then
+`backup_verify.sh` on what it just wrote. That second half is the point: a dump `pg_restore` can
+list is a readable file, and only restoring it says it still holds the database. The restore goes
+into a scratch database and the live one is never written to.
 
-The drill is the part worth running. It takes a real backup, restores it over the real database, and
-compares every table, index and constraint against what was there before. Until that has run, a
-backup is a file, not a recovery plan.
+Nothing on the host pages anybody. `scripts/provision.sh --check` prints how old the newest dump is
+and shouts when that is over two days, and `journalctl -u smith-backup` is what it did last. That is
+a number somebody has to read, not monitoring, and calling it monitoring would be the lie.
+
+Restoring for real is destructive: it drops the database, terminates whatever was connected, and
+recreates it from the dump. It asks for a typed `yes` first, and refuses outright when there is no
+terminal to ask on — pass `--yes` when a script is driving it.
+
+The two drills are the part worth running. `backup_drill.sh` is cheap and non-destructive: it checks
+the pruning keeps what it should and deletes only what it should, then shows the verify passing on a
+good dump and failing on a dump that no longer matches the database. `restore_drill.sh` is the
+expensive one, restoring over the real database and comparing every table, index and constraint.
+Until those have run, a backup is a file, not a recovery plan.
 
 ## Logs
 

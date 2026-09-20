@@ -5251,7 +5251,7 @@ Acceptance:
   the values it expects. A script that silently skips a step is worse than a list.
 - A deploy to the running host is one command, and it takes a backup before it changes anything.
 
-### [ ] AM2. Backups run when somebody remembers
+### [x] AM2. Backups run when somebody remembers — done, commit AM2SHA
 
 `scripts/backup.sh` exists, dumps the database and proves the dump is a readable archive. Nothing
 calls it. Both backups this server has were taken by hand, minutes before a deploy, because whoever
@@ -5265,6 +5265,50 @@ Acceptance:
   same host and count the rows against the live one. A backup nobody has restored is a file.
 - The schedule reports where a person would notice it stopped. If that is a log nobody reads, say so
   in the phase rather than pretending it is monitoring.
+
+`provision.sh` installs `smith-backup.service` and `smith-backup.timer`: one oneshot unit that runs
+`scripts/backup.sh` and then `scripts/backup_verify.sh`, nightly at 03:20, `Persistent=true` so a
+host that was switched off catches up instead of skipping a night. Retention is `SMITH_BACKUP_KEEP`,
+default 14, and it lives in `backup.sh` — which prunes only *after* the new dump has been read back,
+because a failing backup must never be the thing that deletes the last good one.
+
+`scripts/backup_verify.sh` is the half that makes it a recovery plan. It restores the newest dump
+into a scratch database, counts every table plus indexes and constraints on both sides, and drops
+the scratch afterwards. The live database is read and never written.
+
+**The monitoring is a number somebody has to read, and calling it anything else would be the lie.**
+Nothing on this host pages anyone. What exists is one line in the command an operator already runs
+to ask whether the host still matches this repository: `provision.sh`, including `--check` which
+changes nothing, prints how old the newest dump is and says `STALE` past 48 hours.
+`journalctl -u smith-backup` is what the timer did last. That is the honest description.
+
+Measured, not assumed. `scripts/backup_drill.sh` is new, non-destructive and takes about twenty
+seconds against the development database. Seven dumps with `SMITH_BACKUP_KEEP=3` leave three, the
+oldest is gone, and another database's dump and a file that is not a dump are both untouched. The
+dump restores to **406 rows in 11 tables matching `reviewer`**, and the scratch database is dropped.
+
+Then the two readings that make the other eight worth having. Run against `backup.sh` with the
+pruning deleted, the drill goes red naming the defect — *"SMITH_BACKUP_KEEP=3 left 7 dumps"* and
+*"the oldest dump is still there"*. And the verify is shown saying no twice: a database holding a
+table the dump does not have fails naming `smith_backup_drill`, and a truncated dump fails before
+anything is compared. A verify nobody has seen go red is indistinguishable from one that cannot.
+
+`provision_drill.sh` went from 30 green checks to 46. macOS has no systemd, so the branch that installs
+the timer would never have been read at all: a stub `systemctl` and a unit directory under the temp
+tree exercise what the units say, that a second run does not rewrite them, and that a unit somebody
+edited by hand is written back — the same shape of check `.env.prod` already had, for the same
+reason. The real run still reads the other branch, the one that names the two files it cannot
+install here rather than skipping them in silence.
+
+Two defects the drills found before the host did, both of which would have been silent there. The
+`SUDO=()` array blew up under `set -u` on bash 3.2 with *"SUDO[@]: unbound variable"*, so the
+install path exited 1; it is a function now. And `mktemp -t smith-verify` is macOS-only — on Debian
+it answers *"mktemp: : Invalid argument"*, which means the timer's second `ExecStart` would have
+failed every night on the real host while the dump kept being written. Plain `mktemp` on both.
+
+What is still not proven, and cannot be from here: the timer actually firing on a host with systemd.
+The unit content, the install, the idempotence and both scripts are drilled; `systemd` starting them
+at 03:20 is read the first morning after `provision.sh` runs on the box.
 
 ### [ ] AM3. The investigation stops after the second defect
 
@@ -7634,3 +7678,15 @@ Append here when a task forces a decision. One line each: what was decided and w
   machine — which a change touching two files that genuinely import nothing also produces. The
   module docstring already refuses to guess about someone's machine, and that decision still holds;
   the test is the place that can ask, because a test can run a probe of its own first.
+- 2026-09-19 — AM2's verify compares the restored dump against the live database *now*, and fails on
+  any difference. A write landing between the dump and the count reads exactly like a dump that lost
+  a row, so the message says so and says to rerun. The alternative — reading the live counts before
+  and after to tell drift from loss — is a branch that cannot be drilled without a concurrent
+  writer, and a branch nobody has seen run is the thing this repository keeps paying for. Simpler
+  and honest beat clever and unread.
+- 2026-09-19 — The scheduled backup runs the dump *and* the restore in one unit, every night, rather
+  than verifying weekly. The database is 54 KB; the restore costs about two seconds, and a second
+  schedule is a second thing that can stop without anyone noticing.
+- 2026-09-19 — `mktemp -t <prefix>` is macOS-only. On Debian it exits 1 with *"mktemp: : Invalid
+  argument"*, checked in the postgres container. Anything that runs on the host uses plain `mktemp`;
+  the two drill scripts keep the `-t` form because they only ever run on this laptop.

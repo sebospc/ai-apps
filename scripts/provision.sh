@@ -217,6 +217,93 @@ else
   die "the stack is up but the certificate is not usable yet. Caddy retries; '${RUNTIME} logs smith-prod-caddy' shows the ACME exchange, and DNS or a closed port 80 is the usual reason."
 fi
 
+# ---------------------------------------------------------------- the backup schedule
+
+# Both backups this server ever had were taken by hand, minutes before a deploy, because whoever was
+# deploying thought of it. The unit runs the dump and then restores that dump into a scratch
+# database: a dump nobody has restored is a file, and an incident is a late moment to learn which.
+BACKUP_AT="${SMITH_BACKUP_AT:-03:20}"
+BACKUP_KEEP="${SMITH_BACKUP_KEEP:-14}"
+UNIT_DIR="${SMITH_UNIT_DIR:-/etc/systemd/system}"
+
+desired_service() {
+  cat <<UNIT
+[Unit]
+Description=Smith: dump the database, then restore the dump into a scratch database
+
+[Service]
+Type=oneshot
+WorkingDirectory=${REPO_DIR}
+Environment=SMITH_CONTAINER_RUNTIME=${RUNTIME}
+Environment=SMITH_PG_CONTAINER=smith-prod-postgres
+Environment=SMITH_BACKUP_KEEP=${BACKUP_KEEP}
+ExecStart=${REPO_DIR}/scripts/backup.sh
+ExecStart=${REPO_DIR}/scripts/backup_verify.sh
+UNIT
+}
+
+desired_timer() {
+  cat <<UNIT
+[Unit]
+Description=Smith database backup, nightly
+
+[Timer]
+OnCalendar=*-*-* ${BACKUP_AT}:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+}
+
+if ! command -v systemctl >/dev/null 2>&1; then
+  say "not this script's job here, because this host has no systemd. The schedule is two files:"
+  echo "  ${UNIT_DIR}/smith-backup.service   oneshot in ${REPO_DIR}: scripts/backup.sh, then scripts/backup_verify.sh"
+  echo "  ${UNIT_DIR}/smith-backup.timer     OnCalendar=*-*-* ${BACKUP_AT}:00, Persistent=true"
+  echo "  backup.sh keeps the newest ${BACKUP_KEEP} dumps and deletes the rest itself"
+else
+  # sudo only when it is needed. Root does not want one, and neither does a unit directory this
+  # user can already write — a password prompt half way through a provision is a stalled provision.
+  as_root() {
+    if [ "$(id -u)" = 0 ] || [ -w "$UNIT_DIR" ]; then "$@"; else sudo "$@"; fi
+  }
+  unit_holds() { [ -f "$1" ] && [ "$(cat "$1")" = "$2" ]; }
+  timer_enabled="$(systemctl is-enabled smith-backup.timer 2>/dev/null || echo no)"
+
+  if unit_holds "${UNIT_DIR}/smith-backup.service" "$(desired_service)" &&
+    unit_holds "${UNIT_DIR}/smith-backup.timer" "$(desired_timer)" &&
+    [ "$timer_enabled" = enabled ]; then
+    kept "smith-backup.timer is enabled, next $(systemctl show -p NextElapseUSecRealtime --value smith-backup.timer 2>/dev/null || echo unknown)"
+  elif [ "$CHECK" = 1 ]; then
+    plan "write ${UNIT_DIR}/smith-backup.{service,timer} and enable the timer — ${BACKUP_AT} daily, keeping ${BACKUP_KEEP} dumps"
+  else
+    desired_service | as_root tee "${UNIT_DIR}/smith-backup.service" >/dev/null
+    desired_timer | as_root tee "${UNIT_DIR}/smith-backup.timer" >/dev/null
+    as_root systemctl daemon-reload
+    as_root systemctl enable --now smith-backup.timer
+    did "smith-backup.timer runs at ${BACKUP_AT} daily, keeping ${BACKUP_KEEP} dumps"
+  fi
+fi
+
+# Nothing on this host pages anybody, and this line is the whole of the monitoring: the age of the
+# newest dump, printed by the command an operator already runs to ask whether the host is still
+# right. A backup that stopped three weeks ago looks exactly like one that ran last night until
+# somebody reads a number.
+dump_count="$( { find "${REPO_DIR}/backups" -name '*.dump' -type f 2>/dev/null || true; } | wc -l | tr -d ' ')"
+newest_dump="$(ls -t "${REPO_DIR}"/backups/*.dump 2>/dev/null | head -1 || true)"
+if [ -z "$newest_dump" ]; then
+  echo "           no dump on disk yet; the first one is at ${BACKUP_AT}"
+else
+  dump_mtime="$(stat -f '%m' "$newest_dump" 2>/dev/null || stat -c '%Y' "$newest_dump")"
+  dump_age_h=$((($(date +%s) - dump_mtime) / 3600))
+  if [ "$dump_age_h" -gt 48 ]; then
+    echo "           STALE the newest of ${dump_count} dumps is ${dump_age_h}h old — the schedule is not running"
+    echo "           journalctl -u smith-backup --since -14d   says what it did last"
+  else
+    echo "           ${dump_count} dumps, newest ${dump_age_h}h old"
+  fi
+fi
+
 if [ "$CHECK" = 1 ]; then
   say "--check: ${changed} would change, ${unchanged} already right"
   exit 0
@@ -227,4 +314,5 @@ say "${changed} changed, ${unchanged} already right — https://${SMITH_SITE}:${
 say "the first lead, if this host has none yet:"
 echo "  ${RUNTIME} exec smith-prod-api python scripts/bootstrap.py --email you@co.com --password '...' --project acme"
 say "deploying a change afterwards is 'scripts/deploy.sh', which backs the database up first."
+say "nothing here pages anyone: 'scripts/provision.sh --check' prints how old the newest dump is."
 exit 0

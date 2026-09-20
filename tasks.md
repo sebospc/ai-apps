@@ -5458,7 +5458,7 @@ session has two chances and takes both. Two runs of 16 are the first clean ones 
 Run 3 is 14 and not 16 for a defect that is not this one, found by being the first run that ever got
 this far: AN3.
 
-### [ ] AN3. The number the developer sees is not the number the server mutes
+### [x] AN3. The number the developer sees is not the number the server mutes — done, commit SHA_AN3
 
 Found by AN1, on the first `review-argue` runs that reached `respond` at all. In 1 of 3 the
 dismissals landed on the wrong findings, and the agent said so:
@@ -5492,6 +5492,55 @@ Acceptance:
   agents that hit this tried `"disposition": "open"` and the server refused it, so a mis-sent
   dismissal is permanent on the record. What the product records, a lead must be able to remove.
 
+**Done.** A number was never an identity. The agent built the list it numbered — the plan's
+deterministic findings plus the ones it sent, blocking first — and `_resolve` counted the stored
+order, which is deterministic-by-rule then agent. The two agree only by luck. In the review the new
+test builds they disagree completely: the server counts `no-system-out`, `properties-duplicate-key`,
+`properties-hardcoded-secret`, then the agent's critical, so "1" reads as the `System.out` line while
+the developer was shown the password.
+
+`submit` now answers with the findings the review holds, numbered, and step 7 sends the
+`fingerprint` of the one the developer pointed at. Both halves come from the same list and the
+display order is free again, so step 5 still shows blocking first. `_shown` is the one place that
+list is built, read back from the store by everything that hands numbers out and by the call that
+reads them — the duplication was the defect.
+
+The answer carries more than identity: it is what the review actually holds, after the server
+dropped what landed off the diff and muted what was already answered. Step 5 reports that instead of
+the agent's merge, so a finding the server discarded can no longer be read out as if it counted.
+
+| `review-argue` | argued findings ruled out | untouched finding left alone | run |
+| --- | --- | --- | --- |
+| before (AN1's three runs) | 2 of 3 | 2 of 3 | 16, 16, 14 of 16 |
+| this change x3 | **3 of 3** | **3 of 3** | **16, 16, 16 of 16** |
+
+All three runs sent a fingerprint, in one `respond` call, and *the developer is never shown a
+fingerprint* stayed green — the identity moved without any of it reaching the developer.
+
+`tests/test_reviewer.py::test_submit_hands_back_the_findings_respond_counts_through` pins the round
+trip. Against the code from before the fix it says *"submit answered with a verdict and no findings,
+so the agent has to number a list of its own and respond resolves those numbers against a different
+one"*. With the fix in and `respond` made to count a different order, it names every swap: *"1.
+no-system-out:12 was recorded as 'reason for no-business-logic-in-controller on line 12'"*. A guard
+above it fails the test if the stored order ever matches blocking-first on its own, which would make
+the round trip pin nothing.
+
+`smith-review` is 5190 tokens against its 5200 budget. The edits were paid for by cutting step 2's
+third statement that the plan opens no review — step 4 and step 7 both say where the id comes from —
+and the `$SMITH status` escape hatch in step 0, which invited the call the paragraph above it
+forbids. Plugin 0.5.2.
+
+Two things found while in there, neither of them this task:
+
+- **A dismissal still cannot be undone.** Unchanged and now cheaper to hit wrongly in reverse: the
+  fingerprint is right, so a mis-typed *reason* is what sticks. `"disposition": "open"` is refused.
+- **`scripts/rehearse.mjs` has been 22 of 25 since before this task**, and the three failures are
+  the same cause: `a critical finding blocks the review`, `dismissing a finding recomputes the
+  verdict` and `a dismissed finding no longer counts` all read `counts.critical` against a fixture
+  whose only candidate, `service-no-session`, is a `warning` in `rules/sap-commerce-base.yaml:34`.
+  `criticals - 1` is `-1`, so two of the three can never pass. Confirmed as not this change by
+  running the same script against `main` at `6c0af02`: 22 passed, 3 failed, the same three.
+
 ### [ ] AN2. The agent judged a developer's reason and declined to record it
 
 The more serious of the two. A session answered:
@@ -5518,6 +5567,15 @@ Acceptance:
 
 
 ## Notes and decisions log
+- 2026-09-20 — **AN3: a display number is not an identity, and the two lists were never the same
+  one.** Step 7 sent the number the agent had printed; `_resolve` read it as a position in the
+  store's own order. Rather than making the two orders agree, the identity moved: `submit` answers
+  with the findings the review holds and step 7 sends a `fingerprint`, so the number is free to be
+  whatever reads best to the developer. That is also why blocking-first survived — it is useful to
+  them and it was only ever unsafe because it doubled as an id.
+  Where `rehearse.mjs` stands was measured and not guessed: 22 of 25 both with this change and
+  against `main` at `6c0af02`, so it is not a regression from here. The three are one bug, written
+  up under AN3 for whoever picks it up.
 - 2026-09-19 — **AM1: the deployment is two scripts, and the first version of the drill was the
   defect the drill exists to catch.** `provision.sh` detects before every step and reports `changed`
   or `ok` for each one, which is the whole reason it can be pointed at the host that has users on it;

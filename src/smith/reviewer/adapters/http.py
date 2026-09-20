@@ -157,7 +157,7 @@ def build_router() -> APIRouter:
     ) -> dict:
         files = {f.path: f.content for f in body.files}
         try:
-            review_id, verdict = _guard(
+            review_id, verdict, shown = _guard(
                 lambda: svc.reviewer.create_review(
                     actor,
                     body.diff,
@@ -177,6 +177,11 @@ def build_router() -> APIRouter:
             "blocking": verdict.blocking,
             "reason": verdict.reason,
             "counts": verdict.counts,
+            # What the review actually holds, numbered. The agent reports these rather than its own
+            # merge of the plan and what it sent: the server drops findings off the diff and mutes
+            # answered ones, and a number `respond` reads differently from the one the developer was
+            # shown files their reason against a finding they never argued with.
+            "findings": _numbered(shown),
         }
 
     @router.post("/v1/reviews", status_code=status.HTTP_201_CREATED)
@@ -232,12 +237,13 @@ def build_router() -> APIRouter:
         svc: Annotated[Services, Depends(get_services)],
     ) -> dict:
         findings = _agent_findings(body.findings)
-        verdict = _guard(lambda: svc.reviewer.submit(actor, review_id, findings))
+        verdict, shown = _guard(lambda: svc.reviewer.submit(actor, review_id, findings))
         return {
             "review_id": review_id,
             "blocking": verdict.blocking,
             "reason": verdict.reason,
             "counts": verdict.counts,
+            "findings": _numbered(shown),
         }
 
     @router.post("/v1/reviews/{review_id}/respond")

@@ -626,6 +626,73 @@ def test_a_change_with_nothing_wrong_gets_a_clear_verdict_rather_than_silence(cl
     assert verdict.json()["counts"] == {}
 
 
+def test_submit_hands_back_the_findings_respond_counts_through(client, lead_session) -> None:
+    """A number is only an identity while both halves count the same list.
+
+    The agent used to build its own: the plan's deterministic findings plus the ones it sent,
+    ordered blocking first. `_resolve` counted the stored order instead, so a developer who ruled
+    out "1" and "3" had their reasons recorded against two findings they never mentioned, and the
+    verdict cleared on a critical nobody argued with.
+    """
+    api, key = client
+    auth = {"Authorization": f"Bearer {key}"}
+
+    submitted = api.post(
+        "/v2/reviews/findings",
+        headers=auth,
+        # Critical, and last in the stored order because the agent's findings are stored after the
+        # deterministic ones. Numbering blocking first puts it at 1; the server reads 1 as another.
+        json=V2_BODY
+        | {
+            "findings": [
+                {
+                    "file": "core/src/DefaultFooFacade.java",
+                    "line": 12,
+                    "severity": "critical",
+                    "rule_id": "no-business-logic-in-controller",
+                    "message": "this belongs in a service",
+                }
+            ]
+        },
+    )
+    assert submitted.status_code == 201, submitted.text
+    body = submitted.json()
+    assert "findings" in body, (
+        "submit answered with a verdict and no findings, so the agent has to number a list of its "
+        "own and respond resolves those numbers against a different one"
+    )
+    shown = body["findings"]
+    assert len(shown) >= 2, "one finding cannot be numbered wrongly; this test needs a list"
+    assert [f["index"] for f in shown] == list(range(1, len(shown) + 1))
+    assert [f["severity"] for f in shown] != sorted(
+        [f["severity"] for f in shown], key=lambda s: s != "critical"
+    ), "the stored order already matches blocking-first, so this pins nothing"
+
+    # Every number, answered with a reason naming the finding it was printed against.
+    for f in shown:
+        _respond(
+            api,
+            auth,
+            body["review_id"],
+            f["index"],
+            disposition="dismissed",
+            note=f"reason for {f['rule_id']} on line {f['line']}",
+        )
+
+    detail = lead_session.get(f"/projects/acme/reviews/{body['review_id']}").json()
+    by_fingerprint = {f["fingerprint"]: f for f in detail["findings"]}
+    mismatched = [
+        f"{f['index']}. {f['rule_id']}:{f['line']} was recorded as "
+        f"{by_fingerprint[f['fingerprint']]['answer']['note']!r}"
+        for f in shown
+        if by_fingerprint[f["fingerprint"]]["answer"]["note"]
+        != f"reason for {f['rule_id']} on line {f['line']}"
+    ]
+    assert not mismatched, "a number resolved to a finding other than the one shown at it: " + "; ".join(
+        mismatched
+    )
+
+
 def test_responding_about_a_finding_that_is_not_there_says_which_number_is_wrong(client) -> None:
     """The agent numbered the findings, so a bad number is its mistake to fix, not the developer's."""
     api, key = client

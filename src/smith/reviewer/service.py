@@ -468,7 +468,9 @@ class ReviewService:
 
     # --- call 2: submit ---
 
-    def submit(self, actor: Principal, review_id: int, agent_findings: list[Finding]) -> Verdict:
+    def submit(
+        self, actor: Principal, review_id: int, agent_findings: list[Finding]
+    ) -> tuple[Verdict, list[Finding]]:
         project_id, _, status = self._own_review(actor, review_id)
 
         config = self._config.config_for(project_id)
@@ -502,7 +504,7 @@ class ReviewService:
             "verdict",
             {"blocking": verdict.blocking, "reason": verdict.reason, "counts": verdict.counts},
         )
-        return verdict
+        return verdict, self._shown(review_id)
 
     def create_review(
         self,
@@ -513,7 +515,7 @@ class ReviewService:
         branch: str = "",
         title: str = "",
         platform_version: str = "",
-    ) -> tuple[int, Verdict]:
+    ) -> tuple[int, Verdict, list[Finding]]:
         """`/v2`: from a diff and the agent's findings to a review that already has its verdict.
 
         The deterministic half runs a second time here instead of being carried over from the plan,
@@ -561,7 +563,7 @@ class ReviewService:
             "verdict",
             {"blocking": verdict.blocking, "reason": verdict.reason, "counts": verdict.counts},
         )
-        return review_id, verdict
+        return review_id, verdict, self._shown(review_id)
 
     # --- call 3: respond ---
 
@@ -573,7 +575,7 @@ class ReviewService:
         """
         project_id, _, _ = self._own_review(actor, review_id)
         stored = self._store.findings(review_id)
-        shown = [f for f in stored if not f.suppressed]
+        shown = self._shown(review_id)
 
         for response in responses:
             if response.disposition in MUTING_DISPOSITIONS and not response.note.strip():
@@ -605,6 +607,16 @@ class ReviewService:
         )
         self._store.complete(review_id, verdict)
         return verdict
+
+    def _shown(self, review_id: int) -> list[Finding]:
+        """The findings of a review a developer is shown, in the order a number counts through.
+
+        Read back from the store by everything that hands numbers out and by the call that reads
+        them, so the two cannot drift. They did: the agent numbered its own merge of the plan and
+        its findings, blocking first, while `_resolve` counted the stored order, and a developer's
+        reason for one finding was recorded against another.
+        """
+        return [f for f in self._store.findings(review_id) if not f.suppressed]
 
     @staticmethod
     def _resolve(finding: int | str, shown: list[Finding]) -> str:

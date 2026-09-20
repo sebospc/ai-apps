@@ -69,8 +69,7 @@ $SMITH auth --url <server> --key <api key>
 `auth` proves the credential against the server before it saves, so a typo fails here rather than
 half way through their first review.
 
-- **Never ask twice.** Once saved, every later run finds them and asks nothing. `$SMITH status`
-  prints what is configured, for the one case where you genuinely do not know.
+- **Never ask twice.** Once saved, every later run finds them and asks nothing.
 - **Never echo the key back.** Not in a summary, not in a confirmation, not when something fails.
   It is a credential and this conversation gets pasted into bug reports.
 - **Never invent one.** If they do not have a key, their project lead issues it and this command
@@ -127,9 +126,7 @@ Add `--base <ref>` to review a whole branch instead of uncommitted work. Say not
 and never suggest installing anything.
 
 The plan carries `project`, `compared`, `guidelines`, `policy`, `conventions`,
-`deterministic_findings`, `suppressed_findings` and `platform_version`. **No review id, because the
-plan does not open one** — the review is created by the submit in step 4, and that is what hands the
-id back. The rules were filtered to
+`deterministic_findings`, `suppressed_findings` and `platform_version`. The rules were filtered to
 that platform release; an empty `platform_version` means none was detected and every rule applied.
 Mention it only if the developer asks why a rule fired or did not.
 
@@ -245,8 +242,8 @@ one developer.
 echo '{"findings": [...]}' | $SMITH submit
 ```
 
-No id: this call is what creates the review, and its answer carries the `review_id` that step 7
-needs. Run it from the same directory you planned in — it sends the change again, so the server
+No id: this call is what creates the review. Its answer carries the `review_id` and the `findings` the
+review holds, after the server dropped what was off the diff and muted what was answered. Run it from the same directory you planned in: it sends the change again, so the server
 computes its own half over the same diff rather than trusting yours.
 
 Each finding:
@@ -275,7 +272,8 @@ Four parts, in this order, and nothing else:
    checks, what they were — half a line, because a check said out loud is one they can see you skip.
 2. **The verdict**, one line: blocked or clear, and the server's reason. They need to know whether
    they can push before they read anything else.
-3. **The findings**, numbered, blocking first, one line each.
+3. **The findings** `submit` answered with, not your own list: numbered, blocking first, one line
+   each.
 4. **What was hidden**, one line, only when there was any.
 
 ```
@@ -301,7 +299,8 @@ logger", and `modelService` does not become "the right service".
 A finding with no `suggestion` stops after what is wrong, the way 4 does. Never write an empty
 clause, never pad it with a fix nobody computed, and never say a fix was not available.
 
-Numbers are how the developer points at a finding. Keep them stable for the rest of the conversation.
+Numbers are how the developer points at a finding. Keep them stable for the rest of the
+conversation, and keep each one's `fingerprint` beside it — step 7 sends that, not the number.
 
 A clean change gets part 2 and nothing else:
 
@@ -310,10 +309,9 @@ Clear. Nothing to fix.
 ```
 
 Part 4 belongs to `suppressed_findings`: findings hidden because someone on the team already
-answered them, with a reason saying who and why. Keep them out of the numbered list and close with
-one line naming how many were hidden and why, in their words. The developer cannot ask about
-something nobody told them was there, and a review that quietly drops a finding is a review they
-stop trusting.
+answered them, with a reason saying who and why. Close with one line naming how many were hidden
+and why, in their words. The developer cannot ask about something nobody told them was there, and a
+review that quietly drops a finding is a review they stop trusting.
 
 When that list is empty nothing was hidden, so there is no closing line and the numbered findings
 are the whole answer. Never close by saying nothing was ruled out: that reports the absence of a
@@ -335,14 +333,12 @@ Then stop talking. Do not pre-empt the answer, do not suggest which ones they sh
 ## 7. Turn the answer into one `respond`
 
 ```bash
-echo '{"responses": [{"finding": 3, "disposition": "dismissed", "note": "we do that on purpose"}]}' \
+echo '{"responses": [{"finding": "<fingerprint>", "disposition": "dismissed", "note": "on purpose"}]}' \
   | $SMITH respond <review_id>
 ```
 
-`<review_id>` is the one the submit in step 4 answered with, not something the plan gave you.
-
-`finding` is the number you showed them. Match what they said on the left and send the value in the
-middle:
+Both come from the `submit` answer: the `review_id`, and the `fingerprint` of the finding they
+pointed at. Never the number you showed them — that list is yours, and the server counts its own. Match what they said on the left and send the value in the middle:
 
 | They said | Send | Then |
 | --- | --- | --- |
@@ -381,7 +377,7 @@ the command you ran, its exit code, or its raw output.
 | `may have been revoked` | Their API key no longer works, and their project lead issues a new one. Do not retry and do not go looking for another key. |
 | `belongs to a different project` | Their key was issued for another project, so their lead has to issue one for this one. |
 | `too large to review in one go` | The change is too big for a single review. Offer to take it a commit at a time, and run `plan --base <ref>` yourself if they agree. |
-| `there is no finding` | You numbered the findings, so a number that does not exist is your mistake. Re-read your own list, send the right one, and say nothing about it to the developer. |
+| `not part of this review` | The `fingerprint` you sent is not in this review's `submit` answer. Re-read it, send the right one, and say nothing about this to the developer. |
 | `only a project lead` | They are not this project's lead, so the finding is muted as theirs rather than filed as a risk the project took. Send it again as `dismissed` with the same reason, tell them in one line that their lead has to be the one to accept it, and move on. |
 
 ## Never

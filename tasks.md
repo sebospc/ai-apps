@@ -3699,9 +3699,20 @@ Acceptance:
 What breaks for a developer if this does not exist: they ask for a feature, the catalog holds three,
 and they go back to writing it by hand — which is the problem Pergamon exists to solve.
 
-### [>] Y2. The measurement three entries could not give
+### [ ] Y2. The measurement three entries could not give
 
-*In flight 2026-09-19: the walk is written and committed (`2a111e0`); the catalog sweep is running now. Reopen as `[ ]` if no measurement is recorded by the next reader.*
+*The walk is written and committed (`2a111e0`). The sweep is still owed, and two things learned
+trying to take it on 2026-09-19 change how it has to be run:*
+
+- ***It does not fit in one run.*** *Eight entries at an apply session each is over an hour, and the
+  night runner's watchdog stops a run at 55 minutes — so a run that starts the whole sweep can never
+  finish it, and would take the same task forever. Run it in chunks with the entry list the walk
+  already accepts, record what each chunk read, and mark the task done only when every entry has a
+  reading. A chunk that completes is progress; a sweep that restarts from the top is not.*
+- ***Nothing else may touch the database while it runs.*** *The first attempt died at entry 3 of 8
+  with `the API key is not valid` and its project delete refused with a 403. The cause was not the
+  product: another agent's hand cleanup deleted a live walk's project out from under it. The sweep
+  bootstraps a project per entry and a concurrent cleanup takes its authorization with it.*
 
 X2 built the pipeline and ran it once. This runs it across the catalog and reads the result as a
 rate, which is the only form in which it can be compared to anything.

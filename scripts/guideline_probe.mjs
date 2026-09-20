@@ -27,6 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { bootstrapProject, buildRepo } from "./lib/corpus_repo.mjs";
+import { SESSION_ENV } from "./lib/review_session.mjs";
 import { throwawaySlug, tidyAfterEarlierRuns } from "./lib/throwaway_project.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -247,7 +248,7 @@ function review(repo, key) {
       "claude",
       ["--plugin-dir", join(ROOT, "plugin"), "-p", "/smith-review my uncommitted changes",
        "--allowedTools", "Bash,Read,Glob,Grep", "--output-format", "stream-json", "--verbose"],
-      { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, SMITH_HOME: home } },
+      { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ...SESSION_ENV, SMITH_HOME: home } },
     );
 
     // The session runs its own `plan`, so its findings land on a review this function never created.

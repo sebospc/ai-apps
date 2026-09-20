@@ -58,6 +58,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
 import { bootstrapProject, buildRepo, INJECTED_FIXES, introduceProblems } from "./lib/corpus_repo.mjs";
+import { SESSION_ENV } from "./lib/review_session.mjs";
 
 const API = process.env.SMITH_API_URL ?? "http://localhost:8099";
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
@@ -143,6 +144,7 @@ const EDITORS = {
       "stream-json",
       "--verbose",
     ],
+    env: SESSION_ENV,
     suffix: "",
     toolCalls: (messages) =>
       messages
@@ -242,7 +244,7 @@ function configLeftBehind(home) {
 }
 
 function runSession(editor, args, repo, home, timeout = SESSION_TIMEOUT_MS) {
-  const env = { ...process.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
+  const env = { ...process.env, ...editor.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
   // The plugin is not on PATH in either editor after a real install, so this is the developer's
   // setup: whatever the agent finds, it finds by reading the skill.
   delete env.SMITH_URL;
@@ -364,7 +366,8 @@ function firstMatch(text, pattern) {
 // --------------------------------------------------------------------------------------------
 
 /**
- * A minimal SAP Commerce project: a manifest, a registration file and one custom extension.
+ * A minimal SAP Commerce project: a manifest, a registration file, one custom extension and a
+ * Spartacus storefront.
  *
  * The apply skill's second step is reading the project before writing anything, so the walk has to
  * hand it a project with something to find. It is written here rather than taken from the corpus
@@ -395,6 +398,7 @@ const TAKEN_EXTENSION_DIR = `core-customize/hybris/bin/custom/${TAKEN_EXTENSION}
 const TAKEN_SPRING = `${TAKEN_EXTENSION_DIR}/resources/${TAKEN_EXTENSION}-spring.xml`;
 const TAKEN_BEAN = "duplicateOrderService";
 const TAKEN_BEAN_CLASS = "com.acme.duplicateorder.AcmeDuplicateOrderService";
+const STOREFRONT = "js-storefront/acmestorefront";
 
 const SKELETON = {
   "core-customize/manifest.json": `${JSON.stringify(
@@ -463,6 +467,97 @@ public class AcmeDuplicateOrderService {
         return order.getCode() != null && order.getPaymentAddress() == null;
     }
 }
+`,
+  // Six of the eight catalog entries end in a storefront module and two are nothing else. Without a
+  // storefront here, measured 2026-09-13 and 2026-09-19, the same entry either invented one or
+  // stopped to ask where it lives, and every other entry left its storefront half for later — so the
+  // generated code the reviewer read was the backend half of the catalog, and the part that varied
+  // was the agent's nerve rather than the entry.
+  "js-storefront/manifest.json": `${JSON.stringify(
+    { applications: [{ name: "acmestorefront", path: "acmestorefront", ssr: { enabled: true } }], nodeVersion: "20" },
+    null,
+    2
+  )}\n`,
+  [`${STOREFRONT}/package.json`]: `${JSON.stringify(
+    {
+      name: "acmestorefront",
+      private: true,
+      dependencies: {
+        "@angular/common": "^17.3.0",
+        "@angular/core": "^17.3.0",
+        "@angular/platform-browser": "^17.3.0",
+        "@angular/router": "^17.3.0",
+        "@ngrx/effects": "^17.2.0",
+        "@ngrx/store": "^17.2.0",
+        "@spartacus/cart": "~2211.21.0",
+        "@spartacus/checkout": "~2211.21.0",
+        "@spartacus/core": "~2211.21.0",
+        "@spartacus/storefront": "~2211.21.0",
+        rxjs: "^7.8.1",
+      },
+    },
+    null,
+    2
+  )}\n`,
+  [`${STOREFRONT}/src/app/app.component.ts`]: `import { Component } from "@angular/core";
+
+@Component({ selector: "app-root", template: "<cx-storefront></cx-storefront>" })
+export class AppComponent {}
+`,
+  [`${STOREFRONT}/src/app/app.module.ts`]: `import { HttpClientModule } from "@angular/common/http";
+import { NgModule } from "@angular/core";
+import { BrowserModule } from "@angular/platform-browser";
+import { EffectsModule } from "@ngrx/effects";
+import { StoreModule } from "@ngrx/store";
+import { AppRoutingModule } from "@spartacus/storefront";
+import { AppComponent } from "./app.component";
+import { SpartacusModule } from "./spartacus/spartacus.module";
+
+@NgModule({
+  declarations: [AppComponent],
+  imports: [BrowserModule, HttpClientModule, AppRoutingModule, StoreModule.forRoot({}), EffectsModule.forRoot([]), SpartacusModule],
+  bootstrap: [AppComponent],
+})
+export class AppModule {}
+`,
+  [`${STOREFRONT}/src/app/spartacus/spartacus.module.ts`]: `import { NgModule } from "@angular/core";
+import { provideConfig } from "@spartacus/core";
+import { BaseStorefrontModule, layoutConfig } from "@spartacus/storefront";
+import { SpartacusFeaturesModule } from "./spartacus-features.module";
+
+@NgModule({
+  imports: [BaseStorefrontModule, SpartacusFeaturesModule],
+  exports: [BaseStorefrontModule],
+  providers: [
+    provideConfig(layoutConfig),
+    provideConfig({
+      backend: { occ: { baseUrl: "https://api.acme.example", prefix: "/occ/v2/" } },
+      context: { baseSite: ["acme"], currency: ["USD"], language: ["en"] },
+    }),
+  ],
+})
+export class SpartacusModule {}
+`,
+  [`${STOREFRONT}/src/app/spartacus/spartacus-features.module.ts`]: `import { NgModule } from "@angular/core";
+import { AuthModule, ProductModule, ProductOccModule } from "@spartacus/core";
+import { CartBaseRootModule } from "@spartacus/cart/base/root";
+import { CheckoutRootModule } from "@spartacus/checkout/base/root";
+import { NavigationModule, ProductDetailsPageModule, ProductListingPageModule, SearchBoxModule } from "@spartacus/storefront";
+
+@NgModule({
+  imports: [
+    AuthModule.forRoot(),
+    ProductModule.forRoot(),
+    ProductOccModule,
+    NavigationModule,
+    SearchBoxModule,
+    ProductListingPageModule,
+    ProductDetailsPageModule,
+    CartBaseRootModule,
+    CheckoutRootModule,
+  ],
+})
+export class SpartacusFeaturesModule {}
 `,
 };
 
@@ -1552,11 +1647,15 @@ const CATALOG_REQUESTS = {
  * types alone, and said what it wrote. Everything past that is one entry's own shape and belongs to
  * the `apply` walk.
  */
+/** Whether the session asked for this entry by id, which is the only way it could have applied it. */
+const readTheEntry = (entry, commands) =>
+  commands.some((c) => new RegExp(`\\bcatalog\\s+["']?${entry}\\b`).test(c));
+
 function catalogEntryChecks(entry, { repo, text, commands }) {
   const catalogCalls = commands.filter((c) => /\bcatalog\b/.test(c));
   check(
     `${entry}: the agent read the entry the developer described`,
-    catalogCalls.some((c) => new RegExp(`\\bcatalog\\s+["']?${entry}\\b`).test(c)),
+    readTheEntry(entry, commands),
     catalogCalls.join(" ; ").slice(0, 300) || "the catalog was never read"
   );
   const written = filesWritten(repo);
@@ -1647,6 +1746,10 @@ async function catalogSweep({ walk, editor, editorName, key, slug, only, reading
       for (const { what, pattern } of applyForbiddenFor(entry)) {
         check(`${entry}: the developer is never shown ${what}`, !pattern.test(session.text), firstMatch(session.text, pattern));
       }
+      // A session that never read the entry applied nothing, so an empty checkout says nothing about
+      // the entry. Measured 2026-09-19: two sessions that could not reach the CLI went into the
+      // reading as entries that "wrote nothing", which is what a measurement looks like and is not one.
+      if (!readTheEntry(entry, session.commands)) continue;
       const { plan, verdict, size, diff } = await reviewWhatWasWritten(session.repo, key, `pergamon: ${entry}`);
       const reading = recordReading(readingStem, { entry, plan, verdict, size }, diff);
       console.log(`reviewed what the session wrote: ${reading}`);
@@ -2661,6 +2764,18 @@ function selfCheck() {
     leaks("duplicate-order-prevention", "This is duplicate-order-prevention.") &&
       !leaks("duplicate-order-prevention", "Specs in docs/duplicate-order-prevention-spec.md"),
     "the apply walk's own id check no longer reads the way it did"
+  );
+
+  // A sweep records an entry only when the session read it. The first list is what a session ran on
+  // 2026-09-19 with the CLI off PATH: it found a stale copy with no catalog, wrote nothing, and was
+  // recorded as a measurement.
+  assert.ok(
+    !readTheEntry("dashboard", ["smith catalog", "node ~/.claude/plugins/cache/smith/smith/0.1.0/bin/smith catalog"]),
+    "a session that never got past the list of entries counts as having read one"
+  );
+  assert.ok(
+    readTheEntry("cost-center", ["smith catalog", "smith catalog cost-center 2>&1"]),
+    "a session that read its entry does not count as having read it"
   );
 
   // The editor ending a session for usage, measured as it reached the transcript on 2026-09-05, and

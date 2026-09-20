@@ -18,6 +18,18 @@ export const PLUGIN_DIR = join(REPO_ROOT, "plugin");
 // A session that reads 50 files and searches the repository is minutes of work.
 export const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 
+/**
+ * Every nested Claude Code session runs its commands through bash.
+ *
+ * Claude Code builds a session's shell by sourcing the login profile, and since 2.1.278 it leaves
+ * plugin `bin/` directories off PATH when that fails. Measured 2026-09-19: a zsh profile on this
+ * host blocks on a file read, the snapshot timed out at ten seconds, `smith` was not found, and two
+ * apply sessions ran a stale copy out of the plugin cache and wrote nothing. Bash reads a different
+ * profile, so the snapshot succeeds and the editor still puts `bin/` on PATH by itself: the part of
+ * Claude Code the commands depend on stays under test.
+ */
+export const SESSION_ENV = { CLAUDE_CODE_SHELL: "/bin/bash" };
+
 const SHELL_TOOL = "Bash";
 
 function toolDetail(args) {
@@ -88,7 +100,7 @@ export function runSession({ prompt, tools, repo, home, pluginDir }) {
     "stream-json",
     "--verbose",
   ];
-  const env = { ...process.env, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
+  const env = { ...process.env, ...SESSION_ENV, SMITH_HOME: home, PATH: pathWithoutForeignSmith() };
   delete env.SMITH_URL;
   delete env.SMITH_KEY;
 

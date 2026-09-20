@@ -3816,7 +3816,6 @@ Acceptance:
 What breaks for a developer if this does not exist: `uv run pytest` is not a signal any more, and the
 next person to see red assumes it is this one.
 
-### [x] Y5. The sentence that protects the developer is written and never checked — done, commit 9fba8a6
 **The environment had changed under the diagnosis.** `typescript@5.9.3` is installed globally here
 now, so both depcruise tests pass and the red X1 recorded could not be reproduced by running them.
 It was reproduced by rebuilding the environment instead: `dependency-cruiser@17.4.3` installed on
@@ -3846,7 +3845,7 @@ The third is the one that makes the guard worth having. With the bundled rule fl
 `assert [] == ['depcruise:no-circular']` and its sibling fails on a finding it should never see.
 The guard skips a machine that cannot answer; it does not skip an answer that is wrong.
 
-### [ ] Y5. The sentence that protects the developer is written and never checked
+### [x] Y5. The sentence that protects the developer is written and never checked — done, commit 9fba8a6
 
 `plugin/commands/smith-review.md`, step 7, already tells the agent to say it: *"I'll record that for
 your lead."* Once per session, the first time the developer rules something out. The bullet above it

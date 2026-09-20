@@ -5402,7 +5402,7 @@ Y5 built the walk that reads whether a developer is warned before their words re
 was reported green on one run. Run three times it reads **16, 15 and 13 of 16**, and the two failures
 are not noise — they are the contract not being kept.
 
-### [x] AN1. The warning is given once per dismissal, not once per session — done, commit PENDING
+### [x] AN1. The warning is given once per dismissal, not once per session — done, commit abe5aef
 
 `plugin/commands/smith-review.md` step 7: *"Tell them once, the first time they rule something out in
 a session — 'I'll record that for your lead.' Once, not every time."*

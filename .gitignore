@@ -18,3 +18,4 @@ output/*.json
 output/*.diff
 tests/data/corpus-baseline.jsonl
 tests/data/analyzer-baseline.jsonl
+.env.prod

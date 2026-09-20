@@ -14,6 +14,8 @@ CONTAINER="${SMITH_PG_CONTAINER:-smith-postgres}"
 DB="${SMITH_DB_NAME:-reviewer}"
 DB_USER="${SMITH_DB_USER:-smith}"
 DIR="${SMITH_BACKUP_DIR:-backups}"
+# podman on the laptop, docker on the host: the container is the same, the command that reaches it is not.
+RUNTIME="${SMITH_CONTAINER_RUNTIME:-podman}"
 
 FILE=""
 ASSUME_YES=0
@@ -38,13 +40,13 @@ fi
   exit 1
 }
 
-podman exec "$CONTAINER" pg_isready -U "$DB_USER" -d postgres >/dev/null 2>&1 || {
+"$RUNTIME" exec "$CONTAINER" pg_isready -U "$DB_USER" -d postgres >/dev/null 2>&1 || {
   say "postgres is not answering in container ${CONTAINER}; run scripts/ensure_db.sh"
   exit 1
 }
 
 # Read the archive before destroying anything: a truncated dump must cost nothing.
-podman exec -i "$CONTAINER" pg_restore --list <"$FILE" >/dev/null 2>&1 || {
+"$RUNTIME" exec -i "$CONTAINER" pg_restore --list <"$FILE" >/dev/null 2>&1 || {
   say "${FILE} is not a readable archive, nothing was touched"
   exit 1
 }
@@ -62,7 +64,7 @@ if [ "$ASSUME_YES" -eq 0 ]; then
   }
 fi
 
-psql_admin() { podman exec "$CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -qtA "$@"; }
+psql_admin() { "$RUNTIME" exec "$CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -qtA "$@"; }
 
 # Separate statements: DROP DATABASE cannot run inside a transaction block. FORCE terminates the
 # sessions still holding the database, which is every uvicorn that happens to be running.
@@ -71,7 +73,7 @@ psql_admin -c "CREATE DATABASE \"${DB}\" OWNER \"${DB_USER}\"" >/dev/null
 say "dropped and recreated ${DB}"
 
 # --exit-on-error because a restore that "mostly worked" is the failure this script exists to catch.
-podman exec -i "$CONTAINER" pg_restore -U "$DB_USER" -d "$DB" --exit-on-error <"$FILE" || {
+"$RUNTIME" exec -i "$CONTAINER" pg_restore -U "$DB_USER" -d "$DB" --exit-on-error <"$FILE" || {
   say "pg_restore failed; ${DB} is now empty or partial, and ${FILE} is still on disk"
   exit 1
 }

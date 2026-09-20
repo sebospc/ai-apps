@@ -110,10 +110,34 @@ one: it starts from empty volumes, waits for every service to report itself heal
 first lead, hands Node the CA Caddy invented so the plugin verifies the chain rather than skipping
 it, and then runs the 64-check browser suite against the containers over HTTPS.
 
-Two things it will not do for you. The generated `SMITH_DB_PASSWORD` only reaches postgres on the run
+One thing it will not do for you. The generated `SMITH_DB_PASSWORD` only reaches postgres on the run
 that initialises its data directory, so changing it later means the API cannot log in — that is
-postgres, not Smith, and the fix is to change the role's password rather than the variable. And
-nothing here provisions a host, obtains a public certificate or opens a firewall.
+postgres, not Smith, and the fix is to change the role's password rather than the variable.
+
+## On a host
+
+```bash
+SMITH_SITE=smith.example.com SMITH_TLS=you@example.com \
+SMITH_SECRET_KEY=$(openssl rand -hex 32) SMITH_DB_PASSWORD=$(openssl rand -hex 16) \
+  scripts/provision.sh              # docker, the checkout, .env.prod, the stack, the certificate
+
+scripts/provision.sh --check        # the same detection, changing nothing
+scripts/deploy.sh                   # backup, then origin/main, then rebuild and check
+scripts/provision_drill.sh          # both of those, drilled here against podman
+```
+
+Provisioning is idempotent on purpose: the host that has users on it is the only host there is to
+test against, so running it there has to be a diagnosis rather than a risk. It says what changed and
+what was already right, and it leaves the four secrets to you — a secret a script invents is one
+nobody has a copy of, and it ends up in whatever log ran it.
+
+Three things it does not do, printed on every run with the values it expects: the instance itself,
+the DNS record, and opening 80 and 443. It does check the one that is cheap to get wrong — when the
+hostname resolves somewhere that is not this host, it stops before asking Let's Encrypt for a
+certificate and burning the rate limit.
+
+Deploying takes a dump before it changes anything, refuses a checkout somebody edited by hand, and
+ends by fetching `/health` through Caddy rather than trusting that the containers came up.
 
 Bootstrap prints the API key once. It is stored argon2-hashed and cannot be recovered.
 

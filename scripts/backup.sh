@@ -15,11 +15,13 @@ CONTAINER="${SMITH_PG_CONTAINER:-smith-postgres}"
 DB="${SMITH_DB_NAME:-reviewer}"
 DB_USER="${SMITH_DB_USER:-smith}"
 DIR="${SMITH_BACKUP_DIR:-backups}"
+# podman on the laptop, docker on the host: the container is the same, the command that reaches it is not.
+RUNTIME="${SMITH_CONTAINER_RUNTIME:-podman}"
 
 # Progress goes to stderr so the only thing on stdout is the path, which callers capture.
 say() { echo "backup: $*" >&2; }
 
-podman exec "$CONTAINER" pg_isready -U "$DB_USER" -d "$DB" >/dev/null 2>&1 || {
+"$RUNTIME" exec "$CONTAINER" pg_isready -U "$DB_USER" -d "$DB" >/dev/null 2>&1 || {
   say "postgres is not answering in container ${CONTAINER}; run scripts/ensure_db.sh"
   exit 1
 }
@@ -27,7 +29,7 @@ podman exec "$CONTAINER" pg_isready -U "$DB_USER" -d "$DB" >/dev/null 2>&1 || {
 mkdir -p "$DIR"
 FILE="${DIR}/${DB}-$(date +%Y%m%d-%H%M%S).dump"
 
-podman exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB" --format=custom >"$FILE" || {
+"$RUNTIME" exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB" --format=custom >"$FILE" || {
   say "pg_dump failed"
   rm -f "$FILE"
   exit 1
@@ -35,7 +37,7 @@ podman exec "$CONTAINER" pg_dump -U "$DB_USER" -d "$DB" --format=custom >"$FILE"
 
 # A dump nobody can read is not a backup. Reading its table of contents costs milliseconds here and
 # catches a truncated or empty file now, instead of during a restore when the database is gone.
-podman exec -i "$CONTAINER" pg_restore --list <"$FILE" >/dev/null 2>&1 || {
+"$RUNTIME" exec -i "$CONTAINER" pg_restore --list <"$FILE" >/dev/null 2>&1 || {
   say "the file is not a readable archive, refusing to keep it"
   rm -f "$FILE"
   exit 1

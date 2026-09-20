@@ -360,8 +360,19 @@ storage, authorisation or what a developer's words become. It is a Lightsail box
 `docker-compose.prod.yml` behind Caddy with a Let's Encrypt certificate; `scripts/prod_drill.sh`
 brings the same stack up locally and drives the browser suite against it.
 
-Nothing about the deployment lives in this repository yet — it was built by hand — so recreating it
-means repeating commands nobody wrote down. That is a task waiting to be written, not a decision.
+`scripts/provision.sh` is how that host gets built, and running it again is how anyone checks the
+host still matches this repository: every step detects before it acts and says which of the two it
+did, so it is safe against the box that has users on it. It is given its four secrets and invents
+none of them. What it cannot do — the instance, DNS, the firewall — it prints on every run with the
+values it expects, because a list can be followed and a silent skip cannot.
+
+`scripts/deploy.sh` is the one command that ships a change, and it dumps the database before it
+touches anything. It refuses a checkout with hand edits rather than resetting over them; the
+`Caddyfile` has been edited on the box before, and that is how a route disappears from production
+without anything going red.
+
+`scripts/provision_drill.sh` runs both against podman here, with Caddy's own CA and a clone of this
+repository. What it cannot rehearse is what only a host has: apt, port 443, a public certificate.
 
 ## Commands
 
@@ -379,6 +390,7 @@ uv run alembic upgrade head                     # schema (bootstrap does this fo
 uv run uvicorn smith.main:app --reload          # API on :8000
 cd web && npm run dev                           # UI on :3100 (needs Node >= 20.9)
 uv run python scripts/bootstrap.py --help       # first user, project, API key
+scripts/provision_drill.sh                      # provision + deploy, drilled against podman
 ```
 
 Kill every dev server you start. No orphan uvicorn processes left behind.
